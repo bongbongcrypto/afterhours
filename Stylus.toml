@@ -1,2 +1,13 @@
-# cargo-stylus 0.10 project manifest. Deployments are driven by .github/workflows/deploy.yml.
+# cargo-stylus 0.10 manifest: the workspace root needs [workspace] (named networks),
+# a contract needs [contract]. Single-crate repo, so both live here. Deployments
+# are driven by .github/workflows/deploy.yml, not by this file.
+
+[workspace]
+
+[workspace.networks]
+robinhood-testnet = { endpoint = "https://rpc.testnet.chain.robinhood.com" }
+robinhood-mainnet = { endpoint = "https://rpc.mainnet.chain.robinhood.com" }
+
 [contract]
+
+[contract.deployments]

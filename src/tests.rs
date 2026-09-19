@@ -249,15 +249,78 @@ fn initialize_rejects_bad_parameters() {
     let w = World::new();
     let mut c = AfterHours::from(&w.vm);
     let cases: [(u64, u32, u64, u128, u64, u8); 9] = [
-        (0, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_ZERO_LIVE_MAX_AGE),
-        (LIVE_MAX_AGE, 0, MAX_DEV_BPS, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_ZERO_TWAP_WINDOW),
-        (LIVE_MAX_AGE, 86_401, MAX_DEV_BPS, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_WINDOW_TOO_LONG),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 0, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 10_000, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 20_000, MIN_LIQUIDITY, MAX_ANCHOR_AGE, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, 0, MAX_ANCHOR_AGE, CONFIG_ZERO_MIN_LIQUIDITY),
-        (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY, LIVE_MAX_AGE, CONFIG_ANCHOR_AGE),
-        (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY, LIVE_MAX_AGE - 1, CONFIG_ANCHOR_AGE),
+        (
+            0,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_ZERO_LIVE_MAX_AGE,
+        ),
+        (
+            LIVE_MAX_AGE,
+            0,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_ZERO_TWAP_WINDOW,
+        ),
+        (
+            LIVE_MAX_AGE,
+            86_401,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_WINDOW_TOO_LONG,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            0,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            10_000,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            20_000,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            0,
+            MAX_ANCHOR_AGE,
+            CONFIG_ZERO_MIN_LIQUIDITY,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            LIVE_MAX_AGE,
+            CONFIG_ANCHOR_AGE,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            LIVE_MAX_AGE - 1,
+            CONFIG_ANCHOR_AGE,
+        ),
     ];
     for (age, window, dev, min_liq, anchor, expected) in cases {
         let err = c
@@ -280,10 +343,8 @@ fn initialize_rejects_bad_parameters() {
 fn initialize_rejects_a_pool_without_the_stock() {
     let w = World::new();
     let other = Address::repeat_byte(0x99);
-    w.vm
-        .mock_static_call(POOL, token0Call {}.abi_encode(), Ok(other.abi_encode()));
-    w.vm
-        .mock_static_call(POOL, token1Call {}.abi_encode(), Ok(USDG.abi_encode()));
+    w.vm.mock_static_call(POOL, token0Call {}.abi_encode(), Ok(other.abi_encode()));
+    w.vm.mock_static_call(POOL, token1Call {}.abi_encode(), Ok(USDG.abi_encode()));
     assert_eq!(
         config_reason(w.try_deploy().expect_err("stock is neither token")),
         CONFIG_STOCK_NOT_IN_POOL
@@ -312,8 +373,7 @@ fn initialize_rejects_a_pool_that_cannot_be_observed() {
 fn initialize_rejects_a_scale_that_would_underflow() {
     let w = World::new();
     // 36 + 6 < 36 + 8: Morpho's scale would need a negative exponent.
-    w.vm
-        .mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(enc_u8(36)));
+    w.vm.mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(enc_u8(36)));
     assert_eq!(
         config_reason(w.try_deploy().expect_err("scale underflow")),
         CONFIG_SCALE_UNDERFLOW
@@ -323,8 +383,7 @@ fn initialize_rejects_a_scale_that_would_underflow() {
 #[test]
 fn initialize_rejects_absurd_decimals() {
     let w = World::new();
-    w.vm
-        .mock_static_call(USDG, decimalsCall {}.abi_encode(), Ok(enc_u8(37)));
+    w.vm.mock_static_call(USDG, decimalsCall {}.abi_encode(), Ok(enc_u8(37)));
     assert_eq!(
         config_reason(w.try_deploy().expect_err("37 decimals")),
         CONFIG_DECIMALS_TOO_LARGE
@@ -334,8 +393,7 @@ fn initialize_rejects_absurd_decimals() {
 #[test]
 fn initialize_requires_the_pause_flag_to_be_readable() {
     let w = World::new();
-    w.vm
-        .mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Err(Vec::new()));
+    w.vm.mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Err(Vec::new()));
     let err = w.try_deploy().expect_err("token without oraclePaused()");
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
 }
@@ -410,8 +468,7 @@ fn fresh_feed_passes_through_verbatim() {
         U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE)
     );
 
-    let (session, reason, ans, feed_answer, feed_updated, twap, liq, clamped) =
-        c.state().unwrap();
+    let (session, reason, ans, feed_answer, feed_updated, twap, liq, clamped) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_LIVE_FEED, REASON_NONE));
     assert_eq!(ans, U256::from(FRIDAY_ANSWER));
     assert_eq!(feed_answer, U256::from(FRIDAY_ANSWER));
@@ -472,10 +529,17 @@ fn stale_feed_switches_to_the_pool_twap() {
         U256::from(NOW - 40 * 3600),
         "startedAt = last exchange print"
     );
-    assert_eq!(updated, U256::from(NOW), "updatedAt = now, the TWAP is fresh");
+    assert_eq!(
+        updated,
+        U256::from(NOW),
+        "updatedAt = now, the TWAP is fresh"
+    );
     assert_eq!(answered_in, U80::from(ROUND));
 
-    assert_eq!(c.latest_answer().unwrap(), I256::try_from(AAPL_TWAP).unwrap());
+    assert_eq!(
+        c.latest_answer().unwrap(),
+        I256::try_from(AAPL_TWAP).unwrap()
+    );
     assert_eq!(c.latest_timestamp().unwrap(), U256::from(NOW));
     assert_eq!(c.latest_round().unwrap(), U256::from(ROUND));
     assert_eq!(
@@ -489,7 +553,10 @@ fn stale_feed_switches_to_the_pool_twap() {
     assert_eq!(ans, U256::from(AAPL_TWAP));
     assert_eq!(twap, U256::from(AAPL_TWAP));
     assert_eq!(feed_answer, U256::from(FRIDAY_ANSWER));
-    assert_eq!(liq, MIN_LIQUIDITY, "harmonic-mean liquidity over the window");
+    assert_eq!(
+        liq, MIN_LIQUIDITY,
+        "harmonic-mean liquidity over the window"
+    );
     assert!(!clamped);
 }
 
@@ -605,8 +672,7 @@ fn liquidity_is_the_window_average_not_the_spot_value() {
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
     assert_eq!(liq, MIN_LIQUIDITY / 2);
     assert!(
-        w.vm
-            .call_log()
+        w.vm.call_log()
             .iter()
             .all(|(to, data)| *to != POOL || data.starts_with(&observeCall::SELECTOR)),
         "the pool is only ever asked observe()"
@@ -628,7 +694,10 @@ fn pool_without_history_refuses_to_price() {
         })
     ));
     let (session, reason, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
 }
 
 #[test]
@@ -639,14 +708,20 @@ fn malformed_observations_refuse_to_price() {
     // one observation instead of two
     w.mock_observe_raw(vec![I56::ZERO], vec![U160::ZERO]);
     let (session, reason, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
     // no liquidity-seconds recorded across the window
     w.mock_observe_raw(
         vec![I56::ZERO, I56::ZERO],
         vec![U160::from(5u64), U160::from(5u64)],
     );
     let (session, reason, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
     // a mean tick outside Uniswap's range
     let spl_delta = U160::from((U256::from(TWAP_WINDOW) << 128usize) / U256::from(MIN_LIQUIDITY));
     w.mock_observe_raw(
@@ -657,7 +732,10 @@ fn malformed_observations_refuse_to_price() {
         vec![U160::ZERO, spl_delta],
     );
     let (session, reason, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
 }
 
 #[test]
@@ -786,8 +864,7 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
 fn unreadable_feed_is_a_call_failure_not_a_price() {
     let w = World::new();
     let c = w.deploy();
-    w.vm
-        .mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
+    w.vm.mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
     assert!(matches!(
         c.state().expect_err("feed reverted"),
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED

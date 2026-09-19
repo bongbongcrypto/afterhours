@@ -50,8 +50,19 @@ jobs:
           grep -q "StylusDeployer deployed" /tmp/devnode.log || { echo "dev node did not come up"; tail -50 /tmp/devnode.log; exit 1; }
           tail -5 /tmp/devnode.log
           cast chain-id --rpc-url http://127.0.0.1:8547
-      - name: run the scenario
+      - name: dev node versions (ArbOS / Stylus) vs Robinhood Chain
+        shell: bash
         run: |
+          for rpc in http://127.0.0.1:8547 https://rpc.testnet.chain.robinhood.com; do
+            echo "$rpc"
+            echo "  arbOSVersion (ArbSys 0x64):   $(cast call --rpc-url $rpc 0x0000000000000000000000000000000000000064 'arbOSVersion()(uint64)')"
+            echo "  stylusVersion (ArbWasm 0x71): $(cast call --rpc-url $rpc 0x0000000000000000000000000000000000000071 'stylusVersion()(uint16)')"
+          done
+          cargo stylus check --endpoint http://127.0.0.1:8547 2>&1 | tail -5 || true
+      - name: run the scenario
+        shell: bash
+        run: |
+          set -o pipefail
           KEY=$(cat /tmp/devkey) bash e2e/run.sh 2>&1 | tee e2e/result.txt
       - uses: actions/upload-artifact@v4
         if: always()

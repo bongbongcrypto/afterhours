@@ -8,8 +8,9 @@
 //!
 //! * passes the Chainlink answer through while it is fresh (`LIVE_FEED`),
 //! * otherwise prices the token from where it actually trades: a time-weighted
-//!   average of the Uniswap v3 pool, bounded to a per-asset band around the
-//!   last exchange print and refused when the pool is too thin (`ONCHAIN_TWAP`),
+//!   average of the deepest of its Uniswap v3 pools, bounded to a per-asset
+//!   band around the last exchange print and refused when every pool is too
+//!   thin (`ONCHAIN_TWAP`),
 //! * refuses to price while the issuer has paused the token's oracle for a
 //!   corporate action (`PAUSED`), when neither source is usable, or when the
 //!   last exchange print is older than any market closure can explain
@@ -65,12 +66,18 @@ pub const CONFIG_ANCHOR_AGE: u8 = 8;
 pub const CONFIG_WINDOW_TOO_LONG: u8 = 9;
 /// `observe([twapWindow, 0])` failed at deployment: not a v3 pool, or no history yet.
 pub const CONFIG_POOL_NOT_OBSERVABLE: u8 = 10;
+/// Between 1 and `MAX_POOLS` pools must be given.
+pub const CONFIG_POOL_COUNT: u8 = 11;
+/// Every pool must pair the stock with the same quote token.
+pub const CONFIG_POOL_QUOTE_MISMATCH: u8 = 12;
 
 const BPS: u64 = 10_000;
 /// Longest TWAP window accepted (one day); longer windows are always unavailable.
 const MAX_TWAP_WINDOW: u32 = 86_400;
 /// Token/feed decimals above this would overflow the fixed-point scales.
 const MAX_DECIMALS: u8 = 36;
+/// Pools read per evaluation; the deepest over the window is used.
+const MAX_POOLS: usize = 3;
 
 sol_interface! {
     interface IAggregatorV3 {
@@ -135,13 +142,15 @@ sol_storage! {
         address initializer;
         /// Chainlink-style feed for the stock (8 decimals on Robinhood Chain).
         address feed;
-        /// Uniswap v3 pool where the stock trades against the quote token.
-        address pool;
+        /// Uniswap v3 pools where the stock trades against the quote token (1-3).
+        /// Every read observes all of them and prices from the deepest over the window.
+        address[] pools;
+        /// Per pool: true when the stock is token0 (the pool's tick is quote per stock).
+        bool[] pool_stock_is_token0;
         /// The stock token (also queried for the issuer's oracle pause flag).
         address stock;
-        /// The quote token of the pool (USDG on Robinhood Chain).
+        /// The quote token shared by every pool (USDG on Robinhood Chain).
         address quote;
-        bool stock_is_token0;
         uint8 feed_decimals;
         uint8 stock_decimals;
         uint8 quote_decimals;
@@ -174,10 +183,12 @@ pub struct Quote {
     pub feed_answered_in_round: U80,
     /// Raw pool TWAP in feed decimals before the band is applied (0 outside ONCHAIN_TWAP).
     pub twap: U256,
-    /// Harmonic-mean in-range liquidity over the TWAP window (0 unless the pool was read).
+    /// Harmonic-mean in-range liquidity over the TWAP window of the pool that was used.
     pub liquidity: u128,
     /// True when the TWAP was pulled back to the edge of the allowed band.
     pub clamped: bool,
+    /// The pool the answer came from (zero outside ONCHAIN_TWAP / pool refusals).
+    pub pool: Address,
 }
 
 #[public]
@@ -186,13 +197,14 @@ impl AfterHours {
     /// activation, from the same script (Robinhood Chain mainnet has no
     /// StylusDeployer factory, so a constructor cannot be used there). Token
     /// order and decimals are read from the contracts themselves, and every
-    /// read on the price path (feed round, pool observe, pause flag) is
+    /// read on the price path (feed round, every pool's observe, pause flag) is
     /// exercised once, so a wrong pool or a token without the pause flag fails
-    /// here rather than at the first weekend.
+    /// here rather than at the first weekend. `pools` holds one to three
+    /// Uniswap v3 pools of the stock against one quote token.
     pub fn initialize(
         &mut self,
         feed: Address,
-        pool: Address,
+        pools: Vec<Address>,
         stock: Address,
         live_max_age: u64,
         twap_window: u32,
@@ -221,27 +233,40 @@ impl AfterHours {
         if max_anchor_age <= live_max_age {
             return Err(invalid(CONFIG_ANCHOR_AGE));
         }
+        if pools.is_empty() || pools.len() > MAX_POOLS {
+            return Err(invalid(CONFIG_POOL_COUNT));
+        }
 
-        let pool_iface = IUniswapV3PoolMinimal::new(pool);
-        let token0 = pool_iface
-            .token_0(self.vm(), Call::new())
-            .map_err(|_| call_failed(pool))?;
-        let token1 = pool_iface
-            .token_1(self.vm(), Call::new())
-            .map_err(|_| call_failed(pool))?;
-        let (stock_is_token0, quote) = if token0 == stock {
-            (true, token1)
-        } else if token1 == stock {
-            (false, token0)
-        } else {
-            return Err(invalid(CONFIG_STOCK_NOT_IN_POOL));
-        };
-        // A v2 pair has token0/token1 too; only a v3 pool with enough history
-        // answers observe() for the window this oracle will ask for.
-        match pool_iface.observe(self.vm(), Call::new(), vec![twap_window, 0]) {
-            Ok((cumulatives, seconds_per_liquidity))
-                if cumulatives.len() == 2 && seconds_per_liquidity.len() == 2 => {}
-            _ => return Err(invalid(CONFIG_POOL_NOT_OBSERVABLE)),
+        let mut quote = Address::ZERO;
+        let mut stock_first: Vec<bool> = Vec::with_capacity(pools.len());
+        for &pool in &pools {
+            let pool_iface = IUniswapV3PoolMinimal::new(pool);
+            let token0 = pool_iface
+                .token_0(self.vm(), Call::new())
+                .map_err(|_| call_failed(pool))?;
+            let token1 = pool_iface
+                .token_1(self.vm(), Call::new())
+                .map_err(|_| call_failed(pool))?;
+            let (is_token0, other) = if token0 == stock {
+                (true, token1)
+            } else if token1 == stock {
+                (false, token0)
+            } else {
+                return Err(invalid(CONFIG_STOCK_NOT_IN_POOL));
+            };
+            if quote == Address::ZERO {
+                quote = other;
+            } else if other != quote {
+                return Err(invalid(CONFIG_POOL_QUOTE_MISMATCH));
+            }
+            // A v2 pair has token0/token1 too; only a v3 pool with enough history
+            // answers observe() for the window this oracle will ask for.
+            match pool_iface.observe(self.vm(), Call::new(), vec![twap_window, 0]) {
+                Ok((cumulatives, seconds_per_liquidity))
+                    if cumulatives.len() == 2 && seconds_per_liquidity.len() == 2 => {}
+                _ => return Err(invalid(CONFIG_POOL_NOT_OBSERVABLE)),
+            }
+            stock_first.push(is_token0);
         }
 
         let feed_iface = IAggregatorV3::new(feed);
@@ -282,10 +307,12 @@ impl AfterHours {
         self.initialized.set(true);
         self.initializer.set(self.vm().tx_origin());
         self.feed.set(feed);
-        self.pool.set(pool);
+        for (&pool, &is_token0) in pools.iter().zip(stock_first.iter()) {
+            self.pools.push(pool);
+            self.pool_stock_is_token0.push(is_token0);
+        }
         self.stock.set(stock);
         self.quote.set(quote);
-        self.stock_is_token0.set(stock_is_token0);
         self.feed_decimals.set(U8::from(feed_decimals));
         self.stock_decimals.set(U8::from(stock_decimals));
         self.quote_decimals.set(U8::from(quote_decimals));
@@ -381,8 +408,10 @@ impl AfterHours {
     // ---- AfterHours -----------------------------------------------------------
 
     /// The full picture, never reverting for market reasons (only for failed reads):
-    /// (session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped).
-    pub fn state(&self) -> Result<(u8, u8, U256, U256, U256, U256, u128, bool), AfterHoursError> {
+    /// (session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped, pool).
+    pub fn state(
+        &self,
+    ) -> Result<(u8, u8, U256, U256, U256, U256, u128, bool, Address), AfterHoursError> {
         let q = self.evaluate()?;
         Ok((
             q.session,
@@ -393,13 +422,21 @@ impl AfterHours {
             q.twap,
             q.liquidity,
             q.clamped,
+            q.pool,
         ))
     }
 
+    /// The configured pools, in the order given to `initialize`.
+    pub fn pools(&self) -> Vec<Address> {
+        (0..self.pools.len())
+            .filter_map(|i| self.pools.get(i))
+            .collect()
+    }
+
     /// Deployment parameters:
-    /// (initialized, initializer, feed, pool, stock, quote, stockIsToken0, feedDecimals,
-    ///  stockDecimals, quoteDecimals, liveMaxAge, twapWindow, maxDeviationBps, minLiquidity,
-    ///  maxAnchorAge).
+    /// (initialized, initializer, feed, firstPool, stock, quote, stockIsToken0OfFirstPool,
+    ///  feedDecimals, stockDecimals, quoteDecimals, liveMaxAge, twapWindow, maxDeviationBps,
+    ///  minLiquidity, maxAnchorAge). See `pools()` for every pool.
     pub fn config(
         &self,
     ) -> (
@@ -423,10 +460,10 @@ impl AfterHours {
             self.initialized.get(),
             self.initializer.get(),
             self.feed.get(),
-            self.pool.get(),
+            self.pools.get(0).unwrap_or(Address::ZERO),
             self.stock.get(),
             self.quote.get(),
-            self.stock_is_token0.get(),
+            self.pool_stock_is_token0.get(0).unwrap_or(false),
             self.feed_decimals.get().to::<u8>(),
             self.stock_decimals.get().to::<u8>(),
             self.quote_decimals.get().to::<u8>(),
@@ -448,7 +485,6 @@ impl AfterHours {
         }
         let feed = self.feed.get();
         let stock = self.stock.get();
-        let pool = self.pool.get();
 
         let paused = IStockOraclePause::new(stock)
             .oracle_paused(self.vm(), Call::new())
@@ -502,27 +538,47 @@ impl AfterHours {
             return Ok(q);
         }
 
-        // Closed market: price from the pool, guarded by depth and the band.
+        // Closed market: price from the deepest pool, guarded by depth and the band.
+        // Every configured pool is observed; the one with the most harmonic-mean
+        // liquidity over the window wins, so liquidity migrating to another fee
+        // tier does not strand the oracle and a thinned pool cannot be chosen.
         let window = self.twap_window.get().to::<u32>();
-        let observed = IUniswapV3PoolMinimal::new(pool)
-            .observe(self.vm(), Call::new(), vec![window, 0])
-            .ok()
-            .filter(|(ticks, liq)| ticks.len() == 2 && liq.len() == 2);
-        // A pool with too little history reverts with "OLD"; treat it as no data.
-        let Some((cumulatives, seconds_per_liquidity)) = observed else {
+        let mut best: Option<(Address, bool, u128, i64, i64)> = None;
+        for i in 0..self.pools.len() {
+            let Some(pool) = self.pools.get(i) else {
+                continue;
+            };
+            let is_token0 = self.pool_stock_is_token0.get(i).unwrap_or(false);
+            // A pool with too little history reverts with "OLD"; skip it.
+            let observed = IUniswapV3PoolMinimal::new(pool)
+                .observe(self.vm(), Call::new(), vec![window, 0])
+                .ok()
+                .filter(|(ticks, liq)| ticks.len() == 2 && liq.len() == 2);
+            let Some((cumulatives, seconds_per_liquidity)) = observed else {
+                continue;
+            };
+            // Harmonic-mean liquidity over the window (Uniswap OracleLibrary.consult):
+            // liquidity added in the last block cannot make a thinned pool look deep.
+            let spl_delta = seconds_per_liquidity[1].wrapping_sub(seconds_per_liquidity[0]);
+            let Some(liquidity) = harmonic_liquidity(window, spl_delta) else {
+                continue;
+            };
+            if best.is_none_or(|b| liquidity > b.2) {
+                best = Some((
+                    pool,
+                    is_token0,
+                    liquidity,
+                    cumulatives[0].as_i64(),
+                    cumulatives[1].as_i64(),
+                ));
+            }
+        }
+        let Some((pool, stock_is_token0, liquidity, cum_then, cum_now)) = best else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
             return Ok(q);
         };
-
-        // Harmonic-mean liquidity over the window (Uniswap OracleLibrary.consult):
-        // liquidity added in the last block cannot make a thinned pool look deep.
-        let spl_delta = seconds_per_liquidity[1].wrapping_sub(seconds_per_liquidity[0]);
-        let Some(liquidity) = harmonic_liquidity(window, spl_delta) else {
-            q.session = SESSION_NO_DATA;
-            q.reason = REASON_TWAP_UNAVAILABLE;
-            return Ok(q);
-        };
+        q.pool = pool;
         q.liquidity = liquidity;
         if liquidity < self.min_liquidity.get().to::<u128>() {
             q.session = SESSION_NO_DATA;
@@ -530,12 +586,12 @@ impl AfterHours {
             return Ok(q);
         }
 
-        let twap = tickmath::mean_tick(cumulatives[0].as_i64(), cumulatives[1].as_i64(), window)
+        let twap = tickmath::mean_tick(cum_then, cum_now, window)
             .and_then(tickmath::ratio_q96)
             .and_then(|ratio| {
                 tickmath::stock_price(
                     ratio,
-                    self.stock_is_token0.get(),
+                    stock_is_token0,
                     self.stock_decimals.get().to::<u8>(),
                     self.quote_decimals.get().to::<u8>(),
                     self.feed_decimals.get().to::<u8>(),

@@ -74,7 +74,8 @@ jobs:
         run: |
           set -o pipefail
           cargo stylus deploy --endpoint "${{ steps.net.outputs.rpc }}" --private-key "$DEPLOYER_KEY" --no-verify 2>&1 | tee deploy.log
-          addr=$(grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' deploy.log | grep -oE '0x[0-9a-fA-F]{40}' | tail -1)
+          # cargo-stylus colours the address (ANSI codes sit between "address:" and "0x").
+          addr=$(sed -E 's/\x1b\[[0-9;]*m//g' deploy.log | grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' | grep -oE '0x[0-9a-fA-F]{40}' | tail -1)
           test -n "$addr" || { echo "no address in cargo stylus output"; exit 1; }
           echo "address=$addr" >> "$GITHUB_OUTPUT"
       - name: initialize

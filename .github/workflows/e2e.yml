@@ -44,7 +44,7 @@ jobs:
           nohup ./run-dev-node.sh > /tmp/devnode.log 2>&1 &
           for i in $(seq 1 120); do
             grep -q "StylusDeployer deployed" /tmp/devnode.log && break
-            grep -q "Failed" /tmp/devnode.log && { cat /tmp/devnode.log; exit 1; }
+            grep -qE "Failed to (deploy|register|start)" /tmp/devnode.log && { cat /tmp/devnode.log; exit 1; }
             sleep 5
           done
           grep -q "StylusDeployer deployed" /tmp/devnode.log || { echo "dev node did not come up"; tail -50 /tmp/devnode.log; exit 1; }

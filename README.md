@@ -114,6 +114,17 @@ feed do (Robinhood's stock tokens scale their UI balance with a multiplier),
 so a split changes nothing here; while the issuer processes one, the token's
 `oraclePaused()` flag makes AfterHours refuse until the feed is back.
 
+## Every stock, not just AAPL
+
+`scripts/measure/discover_assets.py` asks the chain the same questions
+`initialize` asks — pause flag, decimals, a Chainlink feed named
+`Robinhood <SYMBOL> / USD`, USDG pools and their liquidity — for every token
+the explorer lists as a Robinhood stock token, and writes `assets.json`.
+As of 2026-09-20 **27 assets** pass all of them and can be deployed with the
+same wasm and the `deploy` workflow's inputs: SGOV, NVDA, SPCX, QQQ, GOOGL, USO, AMZN, GME, AAPL, CRCL, SLV, SPY, MSFT, TSLA, MU, PLTR, BABA, USAR, INTC, MSTR, META, DELL, TSM, AMD, SNDK, ASML, IONQ. The rest lack a Chainlink
+feed or a USDG pool today; they become deployable the day those appear,
+with no code change.
+
 ## Deployments
 
 See [DEPLOYMENTS.md](DEPLOYMENTS.md).

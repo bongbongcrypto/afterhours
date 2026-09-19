@@ -666,17 +666,20 @@ fn liquidity_is_the_window_average_not_the_spot_value() {
     // does not enter the check. Encode a pool that spent the window thin.
     let w = World::new();
     let c = w.deploy();
+    let calls_before = w.vm.call_log().len();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
     w.mock_observe(AAPL_TICK, MIN_LIQUIDITY / 2);
     let (session, reason, _, _, _, _, liq, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
     assert_eq!(liq, MIN_LIQUIDITY / 2);
+    let reads = w.vm.call_log().split_off(calls_before);
     assert!(
-        w.vm.call_log()
+        reads
             .iter()
             .all(|(to, data)| *to != POOL || data.starts_with(&observeCall::SELECTOR)),
-        "the pool is only ever asked observe()"
+        "after initialize the pool is only ever asked observe(): {reads:?}"
     );
+    assert!(reads.iter().any(|(to, _)| *to == POOL), "the pool was read");
 }
 
 #[test]

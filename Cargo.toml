@@ -19,6 +19,7 @@ alloy-sol-types = { version = "1.5.7", default-features = false, features = ["st
 
 [features]
 export-abi = ["stylus-sdk/export-abi"]
+contract-client-gen = []
 
 [lib]
 crate-type = ["lib", "cdylib"]

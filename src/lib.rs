@@ -20,6 +20,7 @@
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
 #![allow(clippy::type_complexity)]
 
+#[macro_use]
 extern crate alloc;
 
 use alloc::{string::String, vec::Vec};
@@ -29,7 +30,7 @@ use alloy_primitives::{
     Address, I256, U256,
 };
 use alloy_sol_types::sol;
-use stylus_sdk::{call::Call, prelude::*};
+use stylus_sdk::prelude::*;
 
 pub mod tickmath;
 
@@ -80,16 +81,22 @@ sol_interface! {
 
 sol! {
     /// The issuer has paused the token's oracle (corporate action in progress).
+    #[derive(Debug, PartialEq, Eq)]
     error IssuerPaused();
     /// Neither the feed nor the pool can be trusted right now.
+    #[derive(Debug, PartialEq, Eq)]
     error NoData(uint8 reason);
     /// A read from one of the configured contracts failed.
+    #[derive(Debug, PartialEq, Eq)]
     error CallFailed(address target);
     /// A deployment parameter is inconsistent (CONFIG_* codes).
+    #[derive(Debug, PartialEq, Eq)]
     error InvalidConfig(uint8 reason);
     /// `initialize` has already run; the configuration is permanent.
+    #[derive(Debug, PartialEq, Eq)]
     error AlreadyInitialized();
     /// `initialize` has not run yet.
+    #[derive(Debug, PartialEq, Eq)]
     error NotInitialized();
 }
 
@@ -413,7 +420,7 @@ impl AfterHours {
         }
 
         let window = self.twap_window.get().to::<u32>();
-        let seconds_agos: Vec<u32> = alloc::vec![window, 0];
+        let seconds_agos: Vec<u32> = vec![window, 0];
         let twap = match pool_iface.observe(self.vm(), Call::new(), seconds_agos) {
             Ok((cumulatives, _)) if cumulatives.len() == 2 => {
                 tickmath::mean_tick(cumulatives[0].as_i64(), cumulatives[1].as_i64(), window)

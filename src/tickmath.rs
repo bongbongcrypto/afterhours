@@ -23,7 +23,7 @@ fn base_q96() -> U256 {
 /// (a * b) / 2^96 with a 512-bit intermediate, so the product never overflows.
 fn mul_q96(a: U256, b: U256) -> U256 {
     let wide: U512 = a.widening_mul(b);
-    (wide >> 96).to::<U256>()
+    (wide >> 96usize).to::<U256>()
 }
 
 /// 1.0001^tick as a Q96 ratio (token1 raw units per token0 raw unit).
@@ -48,7 +48,7 @@ pub fn ratio_q96(tick: i32) -> Option<U256> {
     }
     if tick < 0 {
         // 1 / x in Q96 = 2^96 * 2^96 / x_q96
-        let numerator: U512 = U512::from(ONE_Q96) << 96;
+        let numerator: U512 = U512::from(ONE_Q96) << 96usize;
         let inverted = (numerator / U512::from(result)).to::<U256>();
         if inverted.is_zero() {
             return None;
@@ -96,10 +96,10 @@ pub fn stock_price(
     let ratio = U512::from(ratio);
     let price = if stock_is_token0 {
         // quote_raw per stock_raw = ratio / 2^96
-        (ratio * numerator_pow) / (quote_pow << 96)
+        (ratio * numerator_pow) / (quote_pow << 96usize)
     } else {
         // stock_raw per quote_raw = ratio / 2^96  ->  invert
-        (numerator_pow << 96) / (ratio * quote_pow)
+        (numerator_pow << 96usize) / (ratio * quote_pow)
     };
     if price.is_zero() || price > U512::from(U256::MAX) {
         return None;

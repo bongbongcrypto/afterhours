@@ -36,11 +36,13 @@ struct Calls {
 }
 
 #[derive(Clone)]
+#[allow(dead_code)] // helpers a future test may need (mock_call, call_log)
 pub struct MockVM {
     inner: TestVM,
     calls: Rc<RefCell<Calls>>,
 }
 
+#[allow(dead_code)]
 impl MockVM {
     pub fn new() -> Self {
         MockVM {

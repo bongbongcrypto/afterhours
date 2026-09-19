@@ -35,6 +35,8 @@ jobs:
       - name: install cargo-stylus
         if: steps.stylus-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: lockfile (minimal update; cargo-stylus builds --locked)
+        run: cargo update --workspace
       - name: start nitro dev node (Stylus enabled, pre-funded dev account)
         run: |
           git clone --depth 1 https://github.com/OffchainLabs/nitro-devnode.git /tmp/nitro-devnode

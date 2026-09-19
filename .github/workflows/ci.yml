@@ -28,8 +28,8 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all
-      - name: lockfile (committed for reproducible cargo-stylus builds)
-        run: test -f Cargo.lock || cargo generate-lockfile
+      - name: lockfile (committed for reproducible cargo-stylus builds; minimal update when deps change)
+        run: cargo update --workspace
       - name: push formatting / lockfile if anything changed
         run: |
           git add -u
@@ -72,8 +72,8 @@ jobs:
       - name: install cargo-stylus
         if: steps.stylus-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
-      - name: lockfile
-        run: test -f Cargo.lock || cargo generate-lockfile
+      - name: lockfile (minimal update; cargo-stylus builds --locked)
+        run: cargo update --workspace
       - name: cargo stylus check (compiles to wasm, validates against the chain)
         run: cargo stylus check --endpoint "$CHECK_ENDPOINT"
       - name: export Solidity ABI

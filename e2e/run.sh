@@ -5,6 +5,7 @@
 # tests expect. Also records gas per read. Needs: cast, forge, cargo-stylus,
 # python3, jq, and a dev node on $RPC funded for $KEY (nitro-devnode).
 set -euo pipefail
+trap 'echo "  ABORT at line $LINENO (exit $?)"; exit 1' ERR
 RPC="${RPC:-http://127.0.0.1:8547}"
 KEY="${KEY:?dev private key}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -59,9 +60,13 @@ send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW
 
 echo "== deploy AfterHours (cargo stylus)"
 cd "$ROOT"
-cargo stylus deploy --endpoint "$RPC" --private-key "$KEY" --no-verify 2>&1 | tee "$HERE/deploy.log" | grep -iE "contract size|data fee|deployed code|activated" || true
-ADDR=$(sed -E 's/\x1b\[[0-9;]*m//g' "$HERE/deploy.log" | grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' | grep -oE '0x[0-9a-fA-F]{40}' | tail -1)
-test -n "$ADDR" || { echo "no address"; exit 1; }
+strip() { sed -E 's/\x1b\[[0-9;]*m//g'; }
+if ! cargo stylus deploy --endpoint "$RPC" --private-key "$KEY" --no-verify > "$HERE/deploy.log" 2>&1; then
+  echo "  cargo stylus deploy failed:"; strip < "$HERE/deploy.log" | grep -v Compiling | tail -15; exit 1
+fi
+strip < "$HERE/deploy.log" | grep -iE "contract size|data fee|deployed code|activat" || true
+ADDR=$(strip < "$HERE/deploy.log" | grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' | grep -oE '0x[0-9a-fA-F]{40}' | tail -1 || true)
+test -n "$ADDR" || { echo "no address in deploy output"; exit 1; }
 echo "  AfterHours at $ADDR"
 
 echo "== initialize"

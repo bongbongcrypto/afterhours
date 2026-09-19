@@ -9,7 +9,7 @@
 //! data of the mock that actually matched. An unmocked call panics with the
 //! target and selector so a missing mock can never pass as a revert.
 
-use alloc::{vec::Vec, format};
+use alloc::{format, vec::Vec};
 use core::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -58,7 +58,10 @@ impl MockVM {
     }
 
     pub fn mock_static_call(&self, to: Address, data: Vec<u8>, ret: Outcome) {
-        self.calls.borrow_mut().static_returns.insert((to, data), ret);
+        self.calls
+            .borrow_mut()
+            .static_returns
+            .insert((to, data), ret);
     }
 
     pub fn mock_call(&self, to: Address, data: Vec<u8>, ret: Outcome) {

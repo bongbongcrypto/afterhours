@@ -24,7 +24,8 @@ from datetime import datetime, timezone
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 
 SESSIONS = {0: "LIVE_FEED", 1: "ONCHAIN_TWAP", 2: "PAUSED", 3: "NO_DATA"}
-REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable"}
+REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable",
+           4: "last print older than maxAnchorAge"}
 
 # Function selectors used below, all computed with ethers.id() from the
 # Solidity signatures (AfterHours ones from the `cargo stylus export-abi` output).
@@ -101,9 +102,10 @@ def main():
     stock_is_token0 = bool(word(cfg, 6))
     feed_dec, stock_dec, quote_dec = word(cfg, 7), word(cfg, 8), word(cfg, 9)
     live_max_age, twap_window, dev_bps = word(cfg, 10), word(cfg, 11), word(cfg, 12)
+    min_liq, max_anchor = word(cfg, 13), word(cfg, 14)
     print("AfterHours %s  initialized=%s  feed=%s  pool=%s" % (args.oracle, initialized, feed, pool))
-    print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%%  decimals feed/stock/quote=%d/%d/%d\n"
-          % (live_max_age, twap_window, dev_bps / 100, feed_dec, stock_dec, quote_dec))
+    print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
+          % (live_max_age, twap_window, dev_bps / 100, min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
 
     while True:
         now = int(time.time())
@@ -130,7 +132,8 @@ def main():
             if session in (0, 1):
                 line += "  answer $%.4f" % (answer / 10 ** feed_dec)
             if session == 1:
-                line += "  (twap $%.4f, %s)" % (tw / 10 ** feed_dec, "CLAMPED to band" if clamped else "inside band")
+                line += "  (twap $%.4f, %s, window liquidity %.3g)" % (
+                    tw / 10 ** feed_dec, "CLAMPED to band" if clamped else "inside band", liq)
             if session == 3:
                 line += "  (%s)" % REASONS.get(reason, reason)
             print(line)

@@ -84,17 +84,28 @@ lending market changes one address.
                      +-------------------------------+
 ```
 
-Decision per read:
+Decision per read, in this order:
 
 1. `oraclePaused()` on the stock token (the issuer's corporate-action flag,
-   which Chainlink documents as advisory) -> **PAUSED**, reads revert.
+   which Chainlink documents as advisory) -> **PAUSED**, reads revert. This
+   wins over everything else: while a split or dividend is being processed
+   neither the feed nor the pool price means what it says.
 2. Feed round invalid (answer <= 0, `updatedAt` 0 or in the future) ->
    **NO_DATA(1)**, reads revert.
 3. Feed age <= `liveMaxAge` -> **LIVE_FEED**: the feed's round, verbatim.
-4. Otherwise the market is closed for this oracle's purposes:
-   - in-range pool liquidity < `minLiquidity` -> **NO_DATA(2)**;
-   - `observe([twapWindow, 0])` fails (pool without history) or the tick
-     converts to nothing usable -> **NO_DATA(3)**;
+4. Feed age > `maxAnchorAge` -> **NO_DATA(4)**. No market closure lasts this
+   long (5 days covers a holiday weekend); the feed has been deprecated or the
+   stock is halted, and a band anchored to that print would only look fresh.
+5. Otherwise the market is closed for this oracle's purposes. One
+   `observe([twapWindow, 0])` call gives both legs:
+   - it fails (not a v3 pool, no history) or returns the wrong shape ->
+     **NO_DATA(3)**;
+   - the harmonic-mean in-range liquidity over the window
+     (`window * 2^128 / delta(secondsPerLiquidityCumulativeX128)`, Uniswap's
+     own `OracleLibrary.consult`) is below `minLiquidity` -> **NO_DATA(2)**.
+     A window average, not the spot value: liquidity added in the block
+     before a read cannot make a pool that spent the window thin look deep;
+   - the mean tick converts to nothing usable -> **NO_DATA(3)**;
    - else **ONCHAIN_TWAP**: the time-weighted pool price, converted to the
      feed's decimals, then bounded to
      `[feedAnswer * (1 - band), feedAnswer * (1 + band)]`. If the TWAP sits
@@ -102,11 +113,24 @@ Decision per read:
 
 `latestRoundData()` in ONCHAIN_TWAP keeps the feed's round ids, reports the
 last exchange print as `startedAt` and `block.timestamp` as `updatedAt`
-(the answer is derived from trades happening now). `state()` never reverts
-for market reasons, so dashboards and keepers can see why the oracle refuses.
+(the answer is derived from trades happening now). Consequences for
+consumers: staleness checks pass, `answeredInRound >= roundId` holds, but
+`roundId` does not advance between closed-market reads, so it cannot be used
+as a change detector. `getRoundData(id)` forwards historical rounds to the
+feed and answers the feed's current round exactly like `latestRoundData()`;
+the v2 getters (`latestAnswer/latestTimestamp/latestRound`) are provided for
+older integrations. `state()` never reverts for market reasons, so dashboards
+and keepers can see why the oracle refuses. In PAUSED and NO_DATA a Morpho
+market built on AfterHours cannot borrow, withdraw collateral or liquidate
+(those read the oracle); supplying and repaying keep working.
 
 The configuration is written once by `initialize` and cannot be changed.
-There is no owner, no pause switch, no upgrade path. Robinhood Chain mainnet
+There is no owner, no pause switch, no upgrade path. `initialize` exercises
+every read the oracle will ever make (token order, decimals, the pause flag,
+`observe` for the configured window) so a wrong pool or a token without the
+flag fails at deployment; the deploy workflow then reads the configuration
+back and fails unless every field matches its inputs and the feed's
+`description()` names the expected asset. Robinhood Chain mainnet
 does not have the canonical StylusDeployer factory
 (`0xcEcba2F1DC234f70Dd89F2041029807F8D03A990` has no code there, while it
 exists on the testnet and Arbitrum One), so a Stylus constructor cannot be used
@@ -137,15 +161,18 @@ does two things at once:
 | `liveMaxAge` | 21,600 s (6 h) | Regular-session prints arrive every few minutes; overnight (24/5 session) the feed is silent for up to 17 h because the price does not move 0.5%. Six hours means the pool takes over ~6 h after Friday's last print and during long overnight gaps, and the feed takes back over at the first print of a session. |
 | `twapWindow` | 1,800 s (30 min) | Same window PARE trusts for its pool leg. With ~1 swap every 7 s on the weekend, 30 minutes averages ~250 fills. |
 | `maxDeviationBps` | 1,000 (10%) | Single-stock LULD band for closed-session moves; AAPL's largest weekend gap in the measured windows was 0.25%. |
-| `minLiquidity` | 2e17 | The 0.05% pool holds L = 1.6e18 today; refusing below 1/8 of that means a pool most LPs have left is not trusted. |
+| `minLiquidity` | 2e17 | The 0.05% pool's window-averaged liquidity was 1.3-1.6e18 on the days measured; refusing below roughly 1/8 of that means a pool most LPs have left is not trusted. This is a sanity floor, not the manipulation defence (that is the band). |
+| `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
 Manipulation cost, order of magnitude (`scripts/measure`, uniform-range model
 which overstates depth away from the current tick; the pool's $355k USDG
 reserve bounds it from below): pushing the current range 10% takes roughly
 $0.4-1.5M of one-sided flow, which then has to be held for the whole 30-minute
-window against ~$80k/hour of organic weekend volume and any arbitrageur, and
-unwound through the same 0.05% fee and price impact. The maximum effect on the
-oracle is the band.
+window against ~$80k/hour of organic weekend flow, and unwound through the
+same 0.05% fee and price impact. There is no external AAPL market to arbitrage
+against on a Saturday, so organic flow is the only pressure; the hard cap on
+what a manipulator can achieve through this oracle is the band, not the
+liquidity floor.
 
 ## 5. What is measured, what is assumed
 
@@ -163,7 +190,9 @@ AfterHours yet).
 
 Not handled in v1: a Chainlink L2 sequencer-uptime check (PARE deploys with it
 disabled on this chain too); multiple pools per asset; assets whose only pool
-is against a token other than the loan token.
+is against a token other than the loan token. Operational: like every Stylus
+program, the contract needs re-activation after an ArbOS upgrade (anyone can
+do it; reads revert until then).
 
 ## 6. Why Stylus, why Robinhood Chain, why USDG
 

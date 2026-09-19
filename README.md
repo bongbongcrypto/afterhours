@@ -2,7 +2,7 @@
 
 **A 24/7 price for tokenized stocks on Robinhood Chain.**
 Chainlink while the market is open; the on-chain pool, bounded, while it is closed.
-Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` + Morpho Blue `IOracle` compatible.
+Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Morpho Blue `IOracle` compatible.
 
 ## Why
 
@@ -22,10 +22,10 @@ see [DESIGN.md](DESIGN.md).
 
 | session | when | `latestRoundData().answer` | `price()` |
 |---|---|---|---|
-| `LIVE_FEED` (0) | feed younger than `liveMaxAge` | the feed's round, verbatim | feed × Morpho scale |
+| `LIVE_FEED` (0) | feed no older than `liveMaxAge` | the feed's round, verbatim | feed × Morpho scale |
 | `ONCHAIN_TWAP` (1) | feed older; pool deep enough | pool TWAP clamped to ±`maxDeviationBps` of the last print | same |
 | `PAUSED` (2) | issuer's `oraclePaused()` (corporate action) | reverts `IssuerPaused()` | reverts |
-| `NO_DATA` (3) | feed round invalid / pool too thin / no TWAP | reverts `NoData(reason)` | reverts |
+| `NO_DATA` (3) | feed round invalid / pool too thin over the window / no TWAP / last print older than `maxAnchorAge` | reverts `NoData(reason)` | reverts |
 
 `state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped)`
 and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`](abi/IAfterHours.sol).
@@ -35,7 +35,8 @@ and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`
 ```
 src/lib.rs        the contract (Stylus SDK 0.10, no owner, no upgrade)
 src/tickmath.rs   1.0001^tick in Q96 with 512-bit intermediates, reference-vector tested
-src/tests.rs      TestVM unit tests; every external read is mocked with exact calldata
+src/tests.rs      unit tests; every external read is mocked with exact calldata
+src/mockvm.rs     TestVM wrapper that serves the matched mock (stylus-test 0.10.9 serves the last registered)
 abi/              Solidity interface for integrators
 scripts/measure/  the evidence: feed cadence, weekend swaps, pool depth, PARE's oracle
 scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdlib only)

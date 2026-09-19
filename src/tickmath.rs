@@ -2,10 +2,14 @@
 //!
 //! Uniswap's own TickMath library reaches the same number through a table of
 //! twenty magic constants. This module instead raises 1.0001 (held in Q96) to
-//! the tick by square-and-multiply with 512-bit intermediates, which keeps the
-//! relative error below 1e-23 across the whole tick range and needs no
-//! constants that could be mistyped. Reference values in the tests were
-//! computed independently with 60-digit decimal arithmetic.
+//! the tick by square-and-multiply with 512-bit intermediates and needs no
+//! constants that could be mistyped. For tick >= 0 the relative error stays
+//! below 1e-23 over the whole range; for tick < 0 the result is the inverted
+//! Q96 value truncated to an integer, exact to 1 ulp (2.2e-20 relative at
+//! -218301, the AAPL region; only below about -650000 does truncation bite,
+//! far outside any stock/USDG pool). Reference values in the tests were
+//! computed independently with 60-digit decimal arithmetic
+//! (`scripts/measure/tick_vectors.py`).
 
 use alloy_primitives::{U256, U512};
 

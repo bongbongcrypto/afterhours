@@ -12,11 +12,23 @@ interface IAfterHours {
     function version() external view returns (uint256);
     /// @dev LIVE_FEED: the feed's round verbatim.
     ///      ONCHAIN_TWAP: answer = bounded pool TWAP, startedAt = last exchange
-    ///      print, updatedAt = block.timestamp. Reverts IssuerPaused / NoData.
+    ///      print, updatedAt = block.timestamp, roundId = the feed's (it does not
+    ///      advance between closed-market reads). Reverts IssuerPaused / NoData.
     function latestRoundData()
         external
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
+    /// @dev Historical rounds are forwarded to the feed; the feed's current round
+    ///      is answered exactly like latestRoundData().
+    function getRoundData(uint80 roundId)
+        external
+        view
+        returns (uint80, int256, uint256, uint256, uint80);
+
+    // ---- Chainlink AggregatorInterface (v2 getters) ------------------------
+    function latestAnswer() external view returns (int256);
+    function latestTimestamp() external view returns (uint256);
+    function latestRound() external view returns (uint256);
 
     // ---- Morpho Blue IOracle -----------------------------------------------
     /// @dev Quote-token value of one raw stock unit, scaled by 1e36.
@@ -24,9 +36,11 @@ interface IAfterHours {
 
     // ---- AfterHours ---------------------------------------------------------
     /// @dev session: 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA
-    ///      reason (NO_DATA only): 1 feed invalid, 2 pool too thin, 3 TWAP unavailable
+    ///      reason (NO_DATA only): 1 feed invalid, 2 pool too thin, 3 TWAP unavailable,
+    ///      4 last feed print older than maxAnchorAge
     ///      answer: the price the oracle stands behind (0 when it refuses)
     ///      twap: raw pool TWAP before the band (0 outside ONCHAIN_TWAP)
+    ///      liquidity: harmonic-mean in-range liquidity over the TWAP window
     ///      clamped: the TWAP was pulled back to the edge of the band
     function state()
         external
@@ -59,10 +73,15 @@ interface IAfterHours {
             uint64 liveMaxAge,
             uint32 twapWindow,
             uint64 maxDeviationBps,
-            uint128 minLiquidity
+            uint128 minLiquidity,
+            uint64 maxAnchorAge
         );
 
     /// @dev One-shot configuration, run by the deployment script right after activation.
+    ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow 0, 3 band not in
+    ///      (0, 10000), 4 minLiquidity 0, 5 stock not in pool, 6 Morpho scale underflow,
+    ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 1 day,
+    ///      10 pool does not answer observe([twapWindow, 0]).
     function initialize(
         address feed,
         address pool,
@@ -70,7 +89,8 @@ interface IAfterHours {
         uint64 liveMaxAge,
         uint32 twapWindow,
         uint64 maxDeviationBps,
-        uint128 minLiquidity
+        uint128 minLiquidity,
+        uint64 maxAnchorAge
     ) external;
 
     error IssuerPaused();

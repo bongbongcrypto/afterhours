@@ -15,4 +15,6 @@ Inputs used for AAPL on Robinhood Chain mainnet (4663):
 | liveMaxAge | 21600 |
 | twapWindow | 1800 |
 | maxDeviationBps | 1000 |
-| minLiquidity | 200000000000000000 |
+| minLiquidity (window harmonic mean) | 200000000000000000 |
+| maxAnchorAge | 432000 (5 days) |
+| expected feed description | `AAPL / USD` |

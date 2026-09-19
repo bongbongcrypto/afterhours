@@ -18,7 +18,7 @@
 //! The configuration is fixed at deployment; there is no owner and no upgrade.
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
-#![allow(clippy::type_complexity)]
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
 
 #[macro_use]
 extern crate alloc;
@@ -67,7 +67,7 @@ sol_interface! {
         function token0() external view returns (address);
         function token1() external view returns (address);
         function liquidity() external view returns (uint128);
-        function observe(uint32[] secondsAgos) external view returns (int56[], uint160[]);
+        function observe(uint32[] seconds_agos) external view returns (int56[], uint160[]);
     }
 
     interface IERC20Decimals {

@@ -89,7 +89,9 @@ pub fn stock_price(
         return None;
     }
     let ten = U512::from(10u64);
-    let numerator_pow = ten.pow(U512::from(u64::from(stock_decimals) + u64::from(feed_decimals)));
+    let numerator_pow = ten.pow(U512::from(
+        u64::from(stock_decimals) + u64::from(feed_decimals),
+    ));
     let quote_pow = ten.pow(U512::from(u64::from(quote_decimals)));
     let ratio = U512::from(ratio);
     let price = if stock_is_token0 {
@@ -124,11 +126,18 @@ mod tests {
         (-218301, "26221746671089383568"),
         (443636, "1461446703485210103244672773810124308346321380903"),
         (-443636, "4295128738"),
-        (887271, "26955224481606593845066778340113370614845985437494375745877200000000"),
+        (
+            887271,
+            "26955224481606593845066778340113370614845985437494375745877200000000",
+        ),
     ];
 
     fn assert_close(actual: U256, expected: U256, tolerance_ppb: u64) {
-        let diff = if actual > expected { actual - expected } else { expected - actual };
+        let diff = if actual > expected {
+            actual - expected
+        } else {
+            expected - actual
+        };
         // diff / expected <= tolerance / 1e9
         assert!(
             diff * U256::from(1_000_000_000u64) <= expected * U256::from(tolerance_ppb),

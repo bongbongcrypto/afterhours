@@ -315,7 +315,22 @@ impl AfterHours {
     ///  stockDecimals, quoteDecimals, liveMaxAge, twapWindow, maxDeviationBps, minLiquidity).
     pub fn config(
         &self,
-    ) -> (bool, Address, Address, Address, Address, Address, bool, u8, u8, u8, u64, u32, u64, u128) {
+    ) -> (
+        bool,
+        Address,
+        Address,
+        Address,
+        Address,
+        Address,
+        bool,
+        u8,
+        u8,
+        u8,
+        u64,
+        u32,
+        u64,
+        u128,
+    ) {
         (
             self.initialized.get(),
             self.initializer.get(),

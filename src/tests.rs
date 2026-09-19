@@ -54,7 +54,11 @@ impl World {
 
     /// token0/token1, decimals of feed and tokens. `stock_first` puts the stock at token0.
     fn mock_tokens(&self, stock_first: bool) {
-        let (t0, t1) = if stock_first { (STOCK, USDG) } else { (USDG, STOCK) };
+        let (t0, t1) = if stock_first {
+            (STOCK, USDG)
+        } else {
+            (USDG, STOCK)
+        };
         self.vm
             .mock_static_call(POOL, token0Call {}.abi_encode(), Ok(t0.abi_encode()));
         self.vm
@@ -73,8 +77,11 @@ impl World {
     }
 
     fn mock_paused(&self, paused: bool) {
-        self.vm
-            .mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Ok(paused.abi_encode()));
+        self.vm.mock_static_call(
+            STOCK,
+            oraclePausedCall {}.abi_encode(),
+            Ok(paused.abi_encode()),
+        );
     }
 
     fn mock_feed(&self, answer: i128, updated_at: u64) {
@@ -85,13 +92,19 @@ impl World {
             U256::from(updated_at),
             U80::from(645u64),
         );
-        self.vm
-            .mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Ok(ret.abi_encode()));
+        self.vm.mock_static_call(
+            FEED,
+            latestRoundDataCall {}.abi_encode(),
+            Ok(ret.abi_encode()),
+        );
     }
 
     fn mock_liquidity(&self, liquidity: u128) {
-        self.vm
-            .mock_static_call(POOL, liquidityCall {}.abi_encode(), Ok(liquidity.abi_encode()));
+        self.vm.mock_static_call(
+            POOL,
+            liquidityCall {}.abi_encode(),
+            Ok(liquidity.abi_encode()),
+        );
     }
 
     /// A pool whose time-weighted mean tick over TWAP_WINDOW is `mean_tick`.
@@ -101,7 +114,10 @@ impl World {
         let ret = (vec![then, now], vec![U160::ZERO, U160::ZERO]);
         self.vm.mock_static_call(
             POOL,
-            observeCall { secondsAgos: vec![TWAP_WINDOW, 0] }.abi_encode(),
+            observeCall {
+                secondsAgos: vec![TWAP_WINDOW, 0],
+            }
+            .abi_encode(),
             Ok(ret.abi_encode()),
         );
     }
@@ -109,7 +125,10 @@ impl World {
     fn mock_twap_reverts(&self) {
         self.vm.mock_static_call(
             POOL,
-            observeCall { secondsAgos: vec![TWAP_WINDOW, 0] }.abi_encode(),
+            observeCall {
+                secondsAgos: vec![TWAP_WINDOW, 0],
+            }
+            .abi_encode(),
             Err(b"OLD".to_vec()),
         );
     }
@@ -140,14 +159,31 @@ fn u(s: &str) -> U256 {
 fn initialize_reads_layout_and_decimals_from_the_contracts() {
     let w = World::new();
     let c = w.deploy();
-    let (initialized, initializer, feed, pool, stock, quote, stock_is_token0, fd, sd, qd, age, window, dev, min_liq) =
-        c.config();
+    let (
+        initialized,
+        initializer,
+        feed,
+        pool,
+        stock,
+        quote,
+        stock_is_token0,
+        fd,
+        sd,
+        qd,
+        age,
+        window,
+        dev,
+        min_liq,
+    ) = c.config();
     assert!(initialized);
     assert_eq!(initializer, DEPLOYER, "records tx.origin of initialize");
     assert_eq!((feed, pool, stock, quote), (FEED, POOL, STOCK, USDG));
     assert!(!stock_is_token0, "AAPL is token1 in the real pool");
     assert_eq!((fd, sd, qd), (8, 18, 6));
-    assert_eq!((age, window, dev, min_liq), (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY));
+    assert_eq!(
+        (age, window, dev, min_liq),
+        (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY)
+    );
     assert_eq!(c.decimals(), 8);
     assert_eq!(c.version(), U256::from(1u64));
     assert_eq!(c.description().unwrap(), "AAPL / USD (AfterHours)");
@@ -168,12 +204,48 @@ fn initialize_rejects_bad_parameters() {
     let w = World::new();
     let mut c = AfterHours::from(&w.vm);
     let cases: [(u64, u32, u64, u128, u8); 6] = [
-        (0, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY, CONFIG_ZERO_LIVE_MAX_AGE),
-        (LIVE_MAX_AGE, 0, MAX_DEV_BPS, MIN_LIQUIDITY, CONFIG_ZERO_TWAP_WINDOW),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 0, MIN_LIQUIDITY, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 10_000, MIN_LIQUIDITY, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, 20_000, MIN_LIQUIDITY, CONFIG_BAD_DEVIATION),
-        (LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, 0, CONFIG_ZERO_MIN_LIQUIDITY),
+        (
+            0,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            CONFIG_ZERO_LIVE_MAX_AGE,
+        ),
+        (
+            LIVE_MAX_AGE,
+            0,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            CONFIG_ZERO_TWAP_WINDOW,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            0,
+            MIN_LIQUIDITY,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            10_000,
+            MIN_LIQUIDITY,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            20_000,
+            MIN_LIQUIDITY,
+            CONFIG_BAD_DEVIATION,
+        ),
+        (
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            0,
+            CONFIG_ZERO_MIN_LIQUIDITY,
+        ),
     ];
     for (age, window, dev, min_liq, expected) in cases {
         let err = c
@@ -190,17 +262,25 @@ fn initialize_rejects_bad_parameters() {
 fn initialize_rejects_a_pool_without_the_stock() {
     let w = World::new();
     let other = Address::repeat_byte(0x99);
-    w.vm
-        .mock_static_call(POOL, token0Call {}.abi_encode(), Ok(other.abi_encode()));
-    w.vm
-        .mock_static_call(POOL, token1Call {}.abi_encode(), Ok(USDG.abi_encode()));
+    w.vm.mock_static_call(POOL, token0Call {}.abi_encode(), Ok(other.abi_encode()));
+    w.vm.mock_static_call(POOL, token1Call {}.abi_encode(), Ok(USDG.abi_encode()));
     let mut c = AfterHours::from(&w.vm);
     let err = c
-        .initialize(FEED, POOL, STOCK, LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY)
+        .initialize(
+            FEED,
+            POOL,
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+        )
         .expect_err("stock is neither token");
     assert!(matches!(
         err,
-        AfterHoursError::InvalidConfig(InvalidConfig { reason: CONFIG_STOCK_NOT_IN_POOL })
+        AfterHoursError::InvalidConfig(InvalidConfig {
+            reason: CONFIG_STOCK_NOT_IN_POOL
+        })
     ));
 }
 
@@ -208,26 +288,42 @@ fn initialize_rejects_a_pool_without_the_stock() {
 fn initialize_rejects_a_scale_that_would_underflow() {
     let w = World::new();
     // 36 + 6 < 30 + 8: Morpho's scale would need a negative exponent.
-    w.vm
-        .mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(30u8.abi_encode()));
+    w.vm.mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(30u8.abi_encode()));
     let mut c = AfterHours::from(&w.vm);
     let err = c
-        .initialize(FEED, POOL, STOCK, LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY)
+        .initialize(
+            FEED,
+            POOL,
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+        )
         .expect_err("scale underflow");
     assert!(matches!(
         err,
-        AfterHoursError::InvalidConfig(InvalidConfig { reason: CONFIG_SCALE_UNDERFLOW })
+        AfterHoursError::InvalidConfig(InvalidConfig {
+            reason: CONFIG_SCALE_UNDERFLOW
+        })
     ));
 }
 
 #[test]
 fn initialize_requires_the_pause_flag_to_be_readable() {
     let w = World::new();
-    w.vm
-        .mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Err(Vec::new()));
+    w.vm.mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Err(Vec::new()));
     let mut c = AfterHours::from(&w.vm);
     let err = c
-        .initialize(FEED, POOL, STOCK, LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY)
+        .initialize(
+            FEED,
+            POOL,
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+        )
         .expect_err("token without oraclePaused()");
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
 }
@@ -237,14 +333,32 @@ fn initialize_runs_only_once() {
     let w = World::new();
     let mut c = w.deploy();
     let err = c
-        .initialize(FEED, POOL, STOCK, LIVE_MAX_AGE, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY)
+        .initialize(
+            FEED,
+            POOL,
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+        )
         .expect_err("second initialize");
     assert!(matches!(err, AfterHoursError::AlreadyInitialized(_)));
     // and a failed initialize leaves the contract uninitialized
     let mut fresh = AfterHours::from(&TestVM::new());
     let (initialized, ..) = fresh.config();
     assert!(!initialized);
-    assert!(fresh.initialize(FEED, POOL, STOCK, 0, TWAP_WINDOW, MAX_DEV_BPS, MIN_LIQUIDITY).is_err());
+    assert!(fresh
+        .initialize(
+            FEED,
+            POOL,
+            STOCK,
+            0,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY
+        )
+        .is_err());
     let (initialized, ..) = fresh.config();
     assert!(!initialized);
 }
@@ -254,9 +368,18 @@ fn reads_refuse_before_initialize() {
     let w = World::new();
     let c = AfterHours::from(&w.vm);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 60);
-    assert!(matches!(c.latest_round_data().expect_err("uninitialized"), AfterHoursError::NotInitialized(_)));
-    assert!(matches!(c.price().expect_err("uninitialized"), AfterHoursError::NotInitialized(_)));
-    assert!(matches!(c.state().expect_err("uninitialized"), AfterHoursError::NotInitialized(_)));
+    assert!(matches!(
+        c.latest_round_data().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.price().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.state().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
 }
 
 // ---- LIVE_FEED -------------------------------------------------------------------
@@ -275,7 +398,10 @@ fn fresh_feed_passes_through_verbatim() {
     assert_eq!(answered_in, U80::from(645u64));
 
     // Morpho: answer * 10^(36 + 6 - 18 - 8) = answer * 1e16
-    assert_eq!(c.price().unwrap(), U256::from(FRIDAY_ANSWER) * u("10000000000000000"));
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(FRIDAY_ANSWER) * u("10000000000000000")
+    );
 
     let (session, reason, ans, feed_answer, feed_updated, twap, liq, clamped) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_LIVE_FEED, REASON_NONE));
@@ -307,11 +433,22 @@ fn stale_feed_switches_to_the_pool_twap() {
     let (round, answer, started, updated, answered_in) = c.latest_round_data().unwrap();
     assert_eq!(round, U80::from(645u64), "round ids stay the feed's");
     assert_eq!(answer, I256::try_from(AAPL_TWAP).unwrap());
-    assert_eq!(started, U256::from(NOW - 40 * 3600), "startedAt = last exchange print");
-    assert_eq!(updated, U256::from(NOW), "updatedAt = now, the TWAP is fresh");
+    assert_eq!(
+        started,
+        U256::from(NOW - 40 * 3600),
+        "startedAt = last exchange print"
+    );
+    assert_eq!(
+        updated,
+        U256::from(NOW),
+        "updatedAt = now, the TWAP is fresh"
+    );
     assert_eq!(answered_in, U80::from(645u64));
 
-    assert_eq!(c.price().unwrap(), U256::from(AAPL_TWAP) * u("10000000000000000"));
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(AAPL_TWAP) * u("10000000000000000")
+    );
 
     let (session, reason, ans, feed_answer, _, twap, liq, clamped) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
@@ -396,9 +533,19 @@ fn thin_pool_refuses_to_price() {
     w.mock_twap_tick(AAPL_TICK);
 
     let err = c.latest_round_data().expect_err("thin pool");
-    assert!(matches!(err, AfterHoursError::NoData(NoData { reason: REASON_POOL_TOO_THIN })));
+    assert!(matches!(
+        err,
+        AfterHoursError::NoData(NoData {
+            reason: REASON_POOL_TOO_THIN
+        })
+    ));
     let err = c.price().expect_err("thin pool");
-    assert!(matches!(err, AfterHoursError::NoData(NoData { reason: REASON_POOL_TOO_THIN })));
+    assert!(matches!(
+        err,
+        AfterHoursError::NoData(NoData {
+            reason: REASON_POOL_TOO_THIN
+        })
+    ));
     let (session, reason, ans, _, _, twap, liq, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
     assert_eq!((ans, twap), (U256::ZERO, U256::ZERO));
@@ -414,9 +561,17 @@ fn pool_without_history_refuses_to_price() {
     w.mock_twap_reverts();
 
     let err = c.latest_round_data().expect_err("observe reverted");
-    assert!(matches!(err, AfterHoursError::NoData(NoData { reason: REASON_TWAP_UNAVAILABLE })));
+    assert!(matches!(
+        err,
+        AfterHoursError::NoData(NoData {
+            reason: REASON_TWAP_UNAVAILABLE
+        })
+    ));
     let (session, reason, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
 }
 
 #[test]
@@ -430,11 +585,18 @@ fn issuer_pause_refuses_even_a_fresh_feed() {
         c.latest_round_data().expect_err("paused"),
         AfterHoursError::IssuerPaused(_)
     ));
-    assert!(matches!(c.price().expect_err("paused"), AfterHoursError::IssuerPaused(_)));
+    assert!(matches!(
+        c.price().expect_err("paused"),
+        AfterHoursError::IssuerPaused(_)
+    ));
     let (session, reason, ans, feed_answer, ..) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_PAUSED, REASON_NONE));
     assert_eq!(ans, U256::ZERO);
-    assert_eq!(feed_answer, U256::from(FRIDAY_ANSWER), "state still shows the feed");
+    assert_eq!(
+        feed_answer,
+        U256::from(FRIDAY_ANSWER),
+        "state still shows the feed"
+    );
 }
 
 #[test]
@@ -443,11 +605,21 @@ fn broken_feed_rounds_are_no_data() {
     let c = w.deploy();
     w.mock_liquidity(MIN_LIQUIDITY);
     w.mock_twap_tick(AAPL_TICK);
-    for (answer, updated_at) in [(0i128, NOW - 60), (-1, NOW - 60), (FRIDAY_ANSWER as i128, 0), (FRIDAY_ANSWER as i128, NOW + 1)] {
+    for (answer, updated_at) in [
+        (0i128, NOW - 60),
+        (-1, NOW - 60),
+        (FRIDAY_ANSWER as i128, 0),
+        (FRIDAY_ANSWER as i128, NOW + 1),
+    ] {
         w.mock_feed(answer, updated_at);
         let err = c.latest_round_data().expect_err("invalid round");
         assert!(
-            matches!(err, AfterHoursError::NoData(NoData { reason: REASON_FEED_INVALID })),
+            matches!(
+                err,
+                AfterHoursError::NoData(NoData {
+                    reason: REASON_FEED_INVALID
+                })
+            ),
             "answer {answer} updated_at {updated_at}"
         );
         let (session, reason, ..) = c.state().unwrap();
@@ -459,8 +631,7 @@ fn broken_feed_rounds_are_no_data() {
 fn unreadable_feed_is_a_call_failure_not_a_price() {
     let w = World::new();
     let c = w.deploy();
-    w.vm
-        .mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
+    w.vm.mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
     assert!(matches!(
         c.state().expect_err("feed reverted"),
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED

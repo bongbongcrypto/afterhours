@@ -12,17 +12,40 @@ env:
   # Robinhood Chain testnet: Stylus v3, same ArbOS as mainnet. Used only to validate the wasm.
   CHECK_ENDPOINT: https://rpc.testnet.chain.robinhood.com
 
+permissions:
+  contents: write
+
 jobs:
+  fmt:
+    # The development machine never runs the Rust toolchain, so rustfmt runs here
+    # and pushes the formatted files back instead of failing the build.
+    name: rustfmt
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt
+      - run: cargo fmt --all
+      - name: push formatting if anything changed
+        run: |
+          if git diff --quiet; then echo "already formatted"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -u
+          git commit -m "style: rustfmt"
+          git push
+
   test:
-    name: fmt / clippy / unit tests
+    name: clippy / unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.91.0
         with:
-          components: rustfmt, clippy
+          components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo fmt --all -- --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test --all-targets
       - run: cargo test --doc

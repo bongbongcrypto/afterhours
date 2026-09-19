@@ -1,0 +1,98 @@
+name: deploy
+
+# Manual only. Deploys + activates the contract with cargo-stylus (reproducible
+# Docker build), then runs the one-shot `initialize` in the same job so the
+# window between deployment and configuration is seconds long.
+on:
+  workflow_dispatch:
+    inputs:
+      network:
+        description: robinhood-mainnet or robinhood-testnet
+        required: true
+        default: robinhood-testnet
+        type: choice
+        options: [robinhood-testnet, robinhood-mainnet]
+      feed:
+        description: Chainlink feed address for the stock
+        required: true
+      pool:
+        description: Uniswap v3 pool address (stock / quote)
+        required: true
+      stock:
+        description: Stock token address
+        required: true
+      live_max_age:
+        description: Seconds a feed answer stays LIVE
+        required: true
+        default: "21600"
+      twap_window:
+        description: TWAP window in seconds
+        required: true
+        default: "1800"
+      max_deviation_bps:
+        description: Band around the last feed print, basis points
+        required: true
+        default: "1000"
+      min_liquidity:
+        description: Minimum in-range pool liquidity
+        required: true
+        default: "1000000000000000"
+
+env:
+  CARGO_STYLUS_VERSION: 0.10.9
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: cache cargo-stylus
+        id: stylus-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-stylus
+          key: cargo-stylus-${{ env.CARGO_STYLUS_VERSION }}-${{ runner.os }}
+      - name: install cargo-stylus
+        if: steps.stylus-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: pick endpoint
+        id: net
+        run: |
+          case "${{ inputs.network }}" in
+            robinhood-mainnet) echo "rpc=https://rpc.mainnet.chain.robinhood.com" >> "$GITHUB_OUTPUT" ;;
+            robinhood-testnet) echo "rpc=https://rpc.testnet.chain.robinhood.com" >> "$GITHUB_OUTPUT" ;;
+          esac
+      - name: deploy + activate
+        id: deploy
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+        run: |
+          set -o pipefail
+          cargo stylus deploy --endpoint "${{ steps.net.outputs.rpc }}" --private-key "$DEPLOYER_KEY" --no-verify 2>&1 | tee deploy.log
+          addr=$(grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' deploy.log | grep -oE '0x[0-9a-fA-F]{40}' | tail -1)
+          test -n "$addr" || { echo "no address in cargo stylus output"; exit 1; }
+          echo "address=$addr" >> "$GITHUB_OUTPUT"
+      - name: initialize
+        env:
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+        run: |
+          cast send --rpc-url "${{ steps.net.outputs.rpc }}" --private-key "$DEPLOYER_KEY" \
+            "${{ steps.deploy.outputs.address }}" \
+            "initialize(address,address,address,uint64,uint32,uint64,uint128)" \
+            "${{ inputs.feed }}" "${{ inputs.pool }}" "${{ inputs.stock }}" \
+            "${{ inputs.live_max_age }}" "${{ inputs.twap_window }}" \
+            "${{ inputs.max_deviation_bps }}" "${{ inputs.min_liquidity }}"
+      - name: read back
+        run: |
+          echo "AfterHours deployed at ${{ steps.deploy.outputs.address }} on ${{ inputs.network }}"
+          cast call --rpc-url "${{ steps.net.outputs.rpc }}" "${{ steps.deploy.outputs.address }}" \
+            "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128)"
+          cast call --rpc-url "${{ steps.net.outputs.rpc }}" "${{ steps.deploy.outputs.address }}" "decimals()(uint8)"
+          cast call --rpc-url "${{ steps.net.outputs.rpc }}" "${{ steps.deploy.outputs.address }}" "description()(string)"
+          cast call --rpc-url "${{ steps.net.outputs.rpc }}" "${{ steps.deploy.outputs.address }}" \
+            "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool)"

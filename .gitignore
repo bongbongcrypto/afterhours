@@ -1,0 +1,52 @@
+# Secrets
+.env*
+!.env.example
+.alert.env
+wallet.json
+*.key
+*.pem
+id_rsa*
+*.mnemonic
+*-session-cookie*
+deployer*.txt
+
+# Binaries
+*.exe
+*.bin
+*.dll
+*.so
+
+# Rust
+target/
+.cargo/
+Cargo.lock.bak
+
+# Python
+__pycache__/
+*.pyc
+venv/
+
+# Logs / cache / scratch
+*.log
+logs/
+.cache/
+*.out
+*.json.tmp
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Other-agent local state
+.codex/
+.gemini/
+.cursor/
+.aider*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project artifacts
+.last-sync

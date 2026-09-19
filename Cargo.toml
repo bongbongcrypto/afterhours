@@ -1,0 +1,35 @@
+[package]
+name = "afterhours-oracle"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91.0"
+license = "MIT"
+description = "A 24/7 price for tokenized stocks on Robinhood Chain: Chainlink while the market is open, the on-chain pool while it is closed. Arbitrum Stylus (Rust)."
+repository = "https://github.com/bongbongcrypto/afterhours-oracle"
+keywords = ["arbitrum", "stylus", "oracle", "robinhood", "rwa"]
+
+[dependencies]
+alloy-primitives = { version = "1.5.7", default-features = false }
+alloy-sol-types = { version = "1.5.7", default-features = false }
+stylus-sdk = "0.10.9"
+
+[dev-dependencies]
+stylus-sdk = { version = "0.10.9", features = ["stylus-test"] }
+alloy-sol-types = { version = "1.5.7", default-features = false, features = ["std"] }
+
+[features]
+export-abi = ["stylus-sdk/export-abi"]
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+opt-level = "z"
+debug = false
+debug-assertions = false
+incremental = false
+rpath = false

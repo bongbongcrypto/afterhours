@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_STYLUS_VERSION: 0.10.9
+  # Robinhood Chain testnet: Stylus v3, same ArbOS as mainnet. Used only to validate the wasm.
+  CHECK_ENDPOINT: https://rpc.testnet.chain.robinhood.com
+
+jobs:
+  test:
+    name: fmt / clippy / unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo test --all-targets
+      - run: cargo test --doc
+
+  stylus:
+    name: wasm build + on-chain validation + ABI
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: cache cargo-stylus
+        id: stylus-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-stylus
+          key: cargo-stylus-${{ env.CARGO_STYLUS_VERSION }}-${{ runner.os }}
+      - name: install cargo-stylus
+        if: steps.stylus-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: cargo stylus check (compiles to wasm, validates against the chain)
+        run: cargo stylus check --endpoint "$CHECK_ENDPOINT"
+      - name: export Solidity ABI
+        run: |
+          mkdir -p out
+          cargo stylus export-abi > out/AfterHours.abi.sol
+          cat out/AfterHours.abi.sol
+      - name: collect wasm
+        run: |
+          ls -la target/wasm32-unknown-unknown/release/*.wasm
+          cp target/wasm32-unknown-unknown/release/afterhours_oracle.wasm out/
+          sha256sum out/afterhours_oracle.wasm | tee out/afterhours_oracle.wasm.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: afterhours-${{ github.sha }}
+          path: out/

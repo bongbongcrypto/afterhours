@@ -1,4 +1,4 @@
-//! Unit tests on the Stylus TestVM. Every external read is mocked with the
+//! Unit tests on `MockVM` (a TestVM wrapper). Every external read is mocked with the
 //! exact calldata the contract sends, encoded from the same Solidity
 //! signatures, so a mismatch shows up as an unmocked call instead of a
 //! silently green test.
@@ -6,7 +6,7 @@
 use super::*;
 use alloy_primitives::{aliases::I56, aliases::U160, Address, I256, U256};
 use alloy_sol_types::{sol, sol_data, SolCall, SolType, SolValue};
-use stylus_sdk::testing::*;
+use crate::mockvm::MockVM;
 
 sol! {
     function decimals() external view returns (uint8);
@@ -38,12 +38,12 @@ const AAPL_TICK: i64 = 218_301;
 const AAPL_TWAP: u64 = 33_096_497_305;
 
 struct World {
-    vm: TestVM,
+    vm: MockVM,
 }
 
 impl World {
     fn new() -> Self {
-        let vm = TestVM::new();
+        let vm = MockVM::new();
         vm.set_block_timestamp(NOW);
         vm.set_tx_origin(DEPLOYER);
         let w = World { vm };
@@ -350,7 +350,7 @@ fn initialize_runs_only_once() {
         .expect_err("second initialize");
     assert!(matches!(err, AfterHoursError::AlreadyInitialized(_)));
     // and a failed initialize leaves the contract uninitialized
-    let mut fresh = AfterHours::from(&TestVM::new());
+    let mut fresh = AfterHours::from(&MockVM::new());
     let (initialized, ..) = fresh.config();
     assert!(!initialized);
     assert!(fresh

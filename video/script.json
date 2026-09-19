@@ -1,0 +1,64 @@
+{
+  "voice": "en-US-AndrewNeural",
+  "rate": "-4%",
+  "slides": [
+    {
+      "lines": [
+        ["Robinhood Chain trades tokenized US stocks around the clock.", "로빈후드 체인에서는 미국 주식 토큰이 24시간 거래됩니다."],
+        ["Their Chainlink price feeds don't.", "가격을 알려주는 체인링크 피드는 그렇지 않습니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["We measured it on mainnet.", "메인넷에서 직접 쟀습니다."],
+        ["Every weekend the Apple feed goes silent for fifty-two hours; seventy-six on a holiday weekend.", "주말마다 애플 피드가 52시간 멈춥니다. 연휴가 끼면 76시간."],
+        ["Weeknight gaps are not closures; the price just did not move half a percent.", "평일 밤의 공백은 멈춘 게 아니라, 가격이 0.5% 안 움직인 것뿐입니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["While it sleeps, the token keeps trading.", "피드가 자는 동안에도 토큰은 계속 거래됩니다."],
+        ["Four to five million dollars of Apple alone, every weekend, in tens of thousands of swaps, at prices that move.", "애플 하나만 주말마다 400~500만 달러, 수만 건의 스왑, 그리고 가격은 움직입니다."],
+        ["And no contract can read that price.", "그런데 그 가격을 읽을 수 있는 컨트랙트가 없습니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["The one live lending market copes by accepting a five-day-old price.", "유일한 대출 시장은 5일 묵은 가격을 받아들이는 걸로 버팁니다."],
+        ["Its own verified code says why.", "검증된 소스 코드에 그 이유가 그대로 적혀 있습니다."],
+        ["The pool's time-weighted price is already a trusted component there; nobody points it at the stock.", "풀의 시간가중 가격은 이미 거기서 신뢰받는 부품인데, 아무도 그걸 주식에 쓰지 않습니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["AfterHours sits in front of the feed.", "AfterHours는 피드 앞에 섭니다."],
+        ["Fresh feed: pass it through.", "피드가 신선하면 그대로 통과."],
+        ["Silent feed: the pool's thirty-minute average, refused if the pool is thin over the window, bounded to a circuit-breaker band around the last print.", "피드가 멈추면 풀의 30분 평균값. 풀이 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."],
+        ["Corporate action pause: refuse.", "배당·분할 처리 중이면 거부."],
+        ["A print older than five days: refuse; the feed is gone, not closed.", "마지막 프린트가 5일을 넘으면 거부. 피드가 닫힌 게 아니라 죽은 겁니다."],
+        ["Same interface as Chainlink, plus Morpho's.", "인터페이스는 체인링크와 같고, Morpho 형식도 지원합니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["This is Saturday.", "지금은 토요일입니다."],
+        ["Chainlink's last print is thirty-six hours old.", "체인링크의 마지막 프린트는 36시간 전."],
+        ["AfterHours is answering from live trades, inside the band, and says which mode it is in.", "AfterHours는 실제 거래로 답하고, 밴드 안이며, 지금 어떤 모드인지도 알려줍니다."]
+      ]
+    },
+    {
+      "lines": [
+        ["It is a Rust contract on Arbitrum Stylus, deployed on Robinhood Chain mainnet, no owner, no upgrade.", "아비트럼 Stylus 위의 러스트 컨트랙트, 로빈후드 체인 메인넷 배포, 소유자 없음, 업그레이드 없음."],
+        ["Forty-one unit tests, tick math checked against sixty-digit reference values, an adversarial review folded in, and every number in the docs backed by a script you can run.", "테스트 41개, 60자리 기준값으로 검증한 틱 수학, 적대적 검수 반영, 문서의 모든 숫자는 직접 돌려볼 수 있는 스크립트로 뒷받침."]
+      ]
+    },
+    {
+      "lines": [
+        ["Lending that can liquidate on Saturday.", "토요일에도 청산할 수 있는 대출."],
+        ["Automation that runs seven days.", "7일 내내 도는 자동화."],
+        ["One answer to what a stock is worth while the exchange is closed.", "거래소가 닫힌 동안 주식이 얼마인지에 대한 하나의 답."],
+        ["AfterHours.", "AfterHours."]
+      ]
+    }
+  ]
+}

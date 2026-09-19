@@ -34,7 +34,7 @@ html,body { width:1920px; height:1080px; background:var(--void); color:var(--pap
   font-family:"Inter Variable","Inter","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
   font-feature-settings:"cv01","ss03","zero"; overflow:hidden; }
 .mono { font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; letter-spacing:-0.013em; }
-.slide { position:relative; width:1920px; height:1080px; padding:96px 128px; display:flex; flex-direction:column; }
+.slide { position:relative; width:1920px; height:1080px; padding:80px 128px 250px;  /* bottom band reserved for burned subtitles */ display:flex; flex-direction:column; }
 .kicker { font-size:20px; line-height:1.33; letter-spacing:-0.012em; color:var(--fog); font-weight:400; }
 .kicker b { color:var(--lime); font-weight:510; }
 h1 { font-size:96px; line-height:1; letter-spacing:-0.022em; font-weight:510; margin-top:24px; }

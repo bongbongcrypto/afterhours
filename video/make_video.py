@@ -1,19 +1,22 @@
 # -*- coding: utf-8 -*-
-"""Assemble the demo video: slides (video/out/slide-N.png) + narration.
+"""Assemble the demo video: slides + neural narration + burned-in subtitles.
 
-Narration: Windows built-in TTS (System.Speech, en-US voice) as the draft
-track; replace video/narration/N.wav with recorded audio for the final cut.
-Video: ffmpeg, one still per slide held for the narration length + 0.8 s,
-1920x1080, H.264 + AAC. Run make_slides.py first.
+Inputs
+  video/out/slide-N.png        from make_slides.py
+  video/script.json            one source for narration lines and Korean gloss
+  video/narration/SS-LL.mp3    from make_narration.sh (edge-tts on a remote host)
 
-    python video/make_video.py            # tts (if missing) + assemble
-    python video/make_video.py --tts      # regenerate narration wavs
+Each slide is held for the sum of its line durations plus gaps plus a tail.
+Subtitles are one ASS event per line, English (44px, white) over Korean
+(34px, grey) in Malgun Gothic, timed to the synthesised audio's real length,
+not to a slot, so a caption never outlives its sentence. ffmpeg only.
+
+    python video/make_video.py
 """
 import io
-import os
+import json
 import subprocess
 import sys
-import wave
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -24,65 +27,114 @@ MASTER_LIB = Path(".")  # ffmpeg locator
 sys.path.insert(0, str(MASTER_LIB))
 from _lib.ffmpeg import find_ffmpeg  # noqa: E402
 
-VOICE = "Microsoft Zira Desktop"
+GAP = 0.35      # seconds between lines
+LEAD = 0.6      # silence before the first line of a slide
+TAIL = 1.0      # hold after the last line
+MAX_EN = 70     # characters per subtitle row before wrapping (44px on 1920)
+MAX_KO = 40
 
-# Narration per slide (VIDEO.md). Keep sentences short: TTS pacing.
-SCRIPT = [
-    "Robinhood Chain trades tokenized US stocks around the clock. Their Chainlink price feeds don't.",
-    "We measured it on mainnet. Every weekend the Apple feed goes silent for fifty-two hours; seventy-six on a holiday weekend. Weeknight gaps are not closures; the price just did not move half a percent.",
-    "While it sleeps, the token keeps trading. Four to five million dollars of Apple alone, every weekend, in tens of thousands of swaps, at prices that move. And no contract can read that price.",
-    "The one live lending market copes by accepting a five-day-old price. Its own verified code says why. The pool's time-weighted price is already a trusted component there; nobody points it at the stock.",
-    "AfterHours sits in front of the feed. Fresh feed: pass it through. Silent feed: the pool's thirty-minute average, refused if the pool is thin over the window, bounded to a circuit-breaker band around the last print. Corporate action pause: refuse. A print older than five days: refuse, the feed is gone, not closed. Same interface as Chainlink, plus Morpho's.",
-    "This is Saturday. Chainlink's last print is thirty-six hours old. AfterHours is answering from live trades, inside the band, and says which mode it is in.",
-    "It is a Rust contract on Arbitrum Stylus, deployed on Robinhood Chain mainnet, no owner, no upgrade. Thirty-six unit tests, tick math checked against sixty-digit reference values, an adversarial review folded in, and every number in the docs backed by a script you can run.",
-    "Lending that can liquidate on Saturday. Automation that runs seven days. One answer to what a stock is worth while the exchange is closed. AfterHours.",
-]
+ASS_HEADER = """[Script Info]
+ScriptType: v4.00+
+PlayResX: 1920
+PlayResY: 1080
+WrapStyle: 2
 
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: En,Malgun Gothic,44,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,120,120,48,1
+Style: Ko,Malgun Gothic,34,&H00A8ADB5,&H00A8ADB5,&H00000000,&H80000000,0,0,0,0,100,100,0,0,1,2,0,2,120,120,48,1
 
-def tts(text, wav):
-    ps = (
-        "Add-Type -AssemblyName System.Speech; "
-        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; "
-        f"$s.SelectVoice('{VOICE}'); $s.Rate = 0; "
-        f"$s.SetOutputToWaveFile('{wav}'); "
-        "$s.Speak([Console]::In.ReadToEnd()); $s.Dispose()"
-    )
-    subprocess.run(["powershell", "-NoProfile", "-Command", ps], input=text.encode("utf-8"),
-                   check=True, capture_output=True, timeout=120)
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+"""
 
 
-def wav_seconds(path):
-    with wave.open(str(path), "rb") as w:
-        return w.getnframes() / float(w.getframerate())
+def probe_seconds(ffprobe, path):
+    out = subprocess.run([ffprobe, "-v", "error", "-show_entries", "format=duration",
+                          "-of", "default=nw=1:nk=1", str(path)],
+                         capture_output=True, text=True, check=True).stdout.strip()
+    return float(out)
+
+
+def ass_time(t):
+    h = int(t // 3600)
+    m = int(t % 3600 // 60)
+    s = t % 60
+    return f"{h}:{m:02d}:{s:05.2f}"
+
+
+def wrap(text, width):
+    words = text.split(" ")
+    rows, cur = [], ""
+    for w in words:
+        if cur and len(cur) + 1 + len(w) > width:
+            rows.append(cur)
+            cur = w
+        else:
+            cur = (cur + " " + w).strip()
+    if cur:
+        rows.append(cur)
+    return "\\N".join(rows)
+
+
+def esc(text):
+    return text.replace("{", "(").replace("}", ")")
 
 
 def main():
     ffmpeg = find_ffmpeg()
-    NARR.mkdir(exist_ok=True)
-    regen = "--tts" in sys.argv
+    ffprobe = str(Path(ffmpeg).with_name("ffprobe.exe")) if ffmpeg.endswith(".exe") else "ffprobe"
+    script = json.load(io.open(HERE / "script.json", encoding="utf-8"))
     segments = []
-    for i, text in enumerate(SCRIPT, 1):
-        png = OUT / f"slide-{i}.png"
+    total = 0.0
+    for si, slide in enumerate(script["slides"], 1):
+        png = OUT / f"slide-{si}.png"
         if not png.exists():
             sys.exit(f"missing {png}; run make_slides.py")
-        wav = NARR / f"{i}.wav"
-        if regen or not wav.exists():
-            tts(text, wav)
-        dur = wav_seconds(wav) + 0.8
-        seg = OUT / f"seg-{i}.mp4"
-        subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30",
-                        "-i", str(png), "-i", str(wav), "-t", f"{dur:.2f}",
-                        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "18",
-                        "-c:a", "aac", "-b:a", "160k", "-ar", "48000", "-shortest", str(seg)],
-                       check=True)
+        # narration track for this slide: lead, lines separated by gaps, tail
+        clips, events = [], []
+        t = LEAD
+        for li, (en, ko) in enumerate(slide["lines"], 1):
+            mp3 = NARR / f"{si:02d}-{li:02d}.mp3"
+            if not mp3.exists():
+                sys.exit(f"missing {mp3}; run make_narration.sh")
+            dur = probe_seconds(ffprobe, mp3)
+            clips.append((mp3, t))
+            events.append((t, t + dur, en, ko))
+            t += dur + GAP
+        length = t - GAP + TAIL
+        # mix: each clip delayed to its start (adelay), summed with normalize=0
+        inputs, filters = [], []
+        for k, (mp3, start) in enumerate(clips):
+            inputs += ["-i", str(mp3)]
+            filters.append(f"[{k + 1}:a]adelay={int(start * 1000)}|{int(start * 1000)}[a{k}]")
+        mix = "".join(f"[a{k}]" for k in range(len(clips)))
+        filters.append(f"{mix}amix=inputs={len(clips)}:normalize=0:duration=longest,apad=whole_dur={length:.3f}[aout]")
+        ass = OUT / f"sub-{si}.ass"
+        with io.open(ass, "w", encoding="utf-8-sig", newline="\n") as f:
+            f.write(ASS_HEADER)
+            for start, end, en, ko in events:
+                # One event, two styles: two events at the same time collide and
+                # libass stacks the second above the first (Korean ended up on top).
+                text = esc(wrap(en, MAX_EN)) + "\\N{\\rKo}" + esc(wrap(ko, MAX_KO))
+                f.write(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},En,,0,0,0,,{text}\n")
+        ass_arg = str(ass).replace("\\", "/").replace(":", "\\:")
+        seg = OUT / f"seg-{si}.mp4"
+        cmd = [ffmpeg, "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30", "-i", str(png)] + inputs + [
+            "-filter_complex", ";".join(filters),
+            "-vf", f"ass='{ass_arg}'",
+            "-map", "0:v", "-map", "[aout]", "-t", f"{length:.3f}",
+            "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "18",
+            "-c:a", "aac", "-b:a", "160k", "-ar", "48000", str(seg)]
+        subprocess.run(cmd, check=True)
         segments.append(seg)
-        print(f"  slide {i}: {dur:5.1f}s")
+        total += length
+        print(f"  slide {si}: {len(clips)} lines, {length:5.1f}s")
     lst = OUT / "segments.txt"
     lst.write_text("".join(f"file '{s.name}'\n" for s in segments), encoding="utf-8")
     final = HERE / "afterhours-demo.mp4"
     subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
                     "-i", str(lst), "-c", "copy", str(final)], check=True, cwd=str(OUT))
-    total = sum(wav_seconds(NARR / f"{i}.wav") + 0.8 for i in range(1, len(SCRIPT) + 1))
     print(f"wrote {final} ({total:.0f} s, {final.stat().st_size // 1024} KB)")
 
 

@@ -63,12 +63,21 @@ impl World {
             .mock_static_call(POOL, token0Call {}.abi_encode(), Ok(t0.abi_encode()));
         self.vm
             .mock_static_call(POOL, token1Call {}.abi_encode(), Ok(t1.abi_encode()));
-        self.vm
-            .mock_static_call(FEED, decimalsCall {}.abi_encode(), Ok(U8::from(8u8).abi_encode()));
-        self.vm
-            .mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(U8::from(18u8).abi_encode()));
-        self.vm
-            .mock_static_call(USDG, decimalsCall {}.abi_encode(), Ok(U8::from(6u8).abi_encode()));
+        self.vm.mock_static_call(
+            FEED,
+            decimalsCall {}.abi_encode(),
+            Ok(U8::from(8u8).abi_encode()),
+        );
+        self.vm.mock_static_call(
+            STOCK,
+            decimalsCall {}.abi_encode(),
+            Ok(U8::from(18u8).abi_encode()),
+        );
+        self.vm.mock_static_call(
+            USDG,
+            decimalsCall {}.abi_encode(),
+            Ok(U8::from(6u8).abi_encode()),
+        );
         self.vm.mock_static_call(
             FEED,
             descriptionCall {}.abi_encode(),
@@ -288,7 +297,11 @@ fn initialize_rejects_a_pool_without_the_stock() {
 fn initialize_rejects_a_scale_that_would_underflow() {
     let w = World::new();
     // 36 + 6 < 30 + 8: Morpho's scale would need a negative exponent.
-    w.vm.mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(U8::from(30u8).abi_encode()));
+    w.vm.mock_static_call(
+        STOCK,
+        decimalsCall {}.abi_encode(),
+        Ok(U8::from(30u8).abi_encode()),
+    );
     let mut c = AfterHours::from(&w.vm);
     let err = c
         .initialize(

@@ -28,13 +28,16 @@ jobs:
         with:
           components: rustfmt
       - run: cargo fmt --all
-      - name: push formatting if anything changed
+      - name: lockfile (committed for reproducible cargo-stylus builds)
+        run: test -f Cargo.lock || cargo generate-lockfile
+      - name: push formatting / lockfile if anything changed
         run: |
-          if git diff --quiet; then echo "already formatted"; exit 0; fi
+          git add -u
+          git add Cargo.lock
+          if git diff --cached --quiet; then echo "nothing to push"; exit 0; fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -u
-          git commit -m "style: rustfmt"
+          git commit -m "style: rustfmt / lockfile"
           git push
 
   test:
@@ -69,6 +72,8 @@ jobs:
       - name: install cargo-stylus
         if: steps.stylus-cache.outputs.cache-hit != 'true'
         run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: lockfile
+        run: test -f Cargo.lock || cargo generate-lockfile
       - name: cargo stylus check (compiles to wasm, validates against the chain)
         run: cargo stylus check --endpoint "$CHECK_ENDPOINT"
       - name: export Solidity ABI

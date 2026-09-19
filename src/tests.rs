@@ -867,8 +867,7 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
 #[test]
 fn initialize_requires_a_readable_feed_round() {
     let w = World::new();
-    w.vm
-        .mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
+    w.vm.mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
     let err = w.try_deploy().expect_err("feed without latestRoundData()");
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == FEED));
 }
@@ -888,7 +887,10 @@ fn a_second_of_empty_liquidity_inside_the_window_refuses() {
     w.mock_observe_raw(vec![then, now], vec![U160::ZERO, U160::from(delta)]);
     let (session, reason, _, _, _, _, liq, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
-    assert!(liq < 2000, "harmonic mean collapses to about the window length: {liq}");
+    assert!(
+        liq < 2000,
+        "harmonic mean collapses to about the window length: {liq}"
+    );
 }
 
 #[test]
@@ -948,7 +950,8 @@ fn get_round_data_serves_history_while_refusing_to_price() {
     );
     assert_eq!(c.get_round_data(U80::from(ROUND - 1)).unwrap(), old);
     assert!(matches!(
-        c.get_round_data(U80::from(ROUND)).expect_err("current round is refused while paused"),
+        c.get_round_data(U80::from(ROUND))
+            .expect_err("current round is refused while paused"),
         AfterHoursError::IssuerPaused(_)
     ));
     // a round the feed itself rejects is a failed read

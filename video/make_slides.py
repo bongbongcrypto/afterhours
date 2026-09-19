@@ -64,7 +64,7 @@ pre.code .c { color:var(--fog); } pre.code .k { color:var(--lime); } pre.code .s
 .rules { margin-top:40px; font-size:26px; line-height:1.5; color:var(--mist); display:grid; grid-template-columns:1fr 1fr; gap:12px 64px; max-width:1660px; }
 .rules div b { color:var(--paper); font-weight:510; }
 .rules .m { font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; color:var(--lime); font-size:22px; }
-.term { margin-top:36px; background:#000; border:0.5px solid var(--smoke); border-radius:12px; padding:32px 40px;
+.term { margin-top:36px; margin-bottom:32px; background:#000; border:0.5px solid var(--smoke); border-radius:12px; padding:32px 40px;
   font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; font-size:25px; line-height:1.5; color:var(--mist); white-space:pre; overflow:hidden; flex:1; }
 .term .stale { color:var(--coral); } .term .live { color:var(--lime); } .term .dim { color:var(--ash); }
 .pill { display:inline-block; border:0.5px solid var(--smoke); border-radius:9999px; padding:8px 18px; font-size:22px; color:var(--mist); margin-right:12px; margin-top:20px; }

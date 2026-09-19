@@ -50,3 +50,8 @@ Thumbs.db
 
 # Project artifacts
 .last-sync
+
+# video build outputs (scripts are committed, renders are not)
+video/out/
+video/narration/
+video/*.mp4

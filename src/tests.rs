@@ -86,9 +86,13 @@ impl World {
     }
 
     fn mock_feed(&self, answer: i128, updated_at: u64) {
+        self.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
+    }
+
+    fn mock_feed_raw(&self, answer: I256, updated_at: u64) {
         let ret = (
             U80::from(645u64),
-            I256::try_from(answer).unwrap(),
+            answer,
             U256::from(updated_at),
             U256::from(updated_at),
             U80::from(645u64),
@@ -632,6 +636,30 @@ fn broken_feed_rounds_are_no_data() {
         let (session, reason, ..) = c.state().unwrap();
         assert_eq!((session, reason), (SESSION_NO_DATA, REASON_FEED_INVALID));
     }
+}
+
+#[test]
+fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_liquidity(MIN_LIQUIDITY);
+    w.mock_twap_tick(AAPL_TICK);
+    // Largest positive int256. LIVE: price() would overflow the 1e16 Morpho scale.
+    w.mock_feed_raw(I256::MAX, NOW - 60);
+    assert!(matches!(
+        c.price().expect_err("overflow"),
+        AfterHoursError::NoData(NoData { reason: REASON_FEED_INVALID })
+    ));
+    let (_, answer, ..) = c.latest_round_data().unwrap();
+    assert_eq!(answer, I256::MAX, "the feed itself still passes through");
+    // Stale: the band arithmetic would overflow, so the oracle refuses.
+    w.mock_feed_raw(I256::MAX, NOW - 40 * 3600);
+    let (session, reason, ..) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_FEED_INVALID));
+    assert!(matches!(
+        c.latest_round_data().expect_err("overflow"),
+        AfterHoursError::NoData(NoData { reason: REASON_FEED_INVALID })
+    ));
 }
 
 #[test]

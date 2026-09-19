@@ -296,7 +296,12 @@ impl AfterHours {
     pub fn price(&self) -> Result<U256, AfterHoursError> {
         let q = self.evaluate()?;
         let answer = require_price(&q)?;
-        Ok(answer * self.morpho_scale.get())
+        // An answer too large for Morpho's 1e36 scale is not a price we can stand behind.
+        answer
+            .checked_mul(self.morpho_scale.get())
+            .ok_or(AfterHoursError::NoData(NoData {
+                reason: REASON_FEED_INVALID,
+            }))
     }
 
     // ---- AfterHours -----------------------------------------------------------
@@ -447,8 +452,16 @@ impl AfterHours {
 
         let dev = U256::from(self.max_deviation_bps.get());
         let bps = U256::from(BPS);
-        let lower = feed_answer * (bps - dev) / bps;
-        let upper = feed_answer * (bps + dev) / bps;
+        // The band is anchored to the last feed print; a print so large that the
+        // arithmetic overflows is not a print to anchor to.
+        let (Some(lower), Some(upper)) = (
+            feed_answer.checked_mul(bps - dev).map(|v| v / bps),
+            feed_answer.checked_mul(bps + dev).map(|v| v / bps),
+        ) else {
+            q.session = SESSION_NO_DATA;
+            q.reason = REASON_FEED_INVALID;
+            return Ok(q);
+        };
         let (answer, clamped) = if twap < lower {
             (lower, true)
         } else if twap > upper {

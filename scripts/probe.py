@@ -11,9 +11,7 @@ while the AfterHours line keeps moving; that is the demo.
 Selectors computed with ethers, not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
   observe(uint32[]) 0x883bdbfd   liquidity() 0x1a686502  slot0() 0x3850c7bd
-  price() 0xa035b1fe             oraclePaused() <see below>
-AfterHours selectors are derived with the same keccak the chain uses; see
-`SELECTORS` for how they were obtained.
+  price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55
 """
 import argparse
 import io
@@ -28,9 +26,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 SESSIONS = {0: "LIVE_FEED", 1: "ONCHAIN_TWAP", 2: "PAUSED", 3: "NO_DATA"}
 REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable"}
 
-# Function selectors used below. Chainlink/Uniswap ones were computed with
-# ethers.id() on the server; AfterHours ones come from `cargo stylus export-abi`
-# output plus ethers.id() as well (see DEPLOYMENTS.md for the transcript).
+# Function selectors used below, all computed with ethers.id() from the
+# Solidity signatures (AfterHours ones from the `cargo stylus export-abi` output).
 SELECTORS = {
     "latestRoundData()": "0xfeaf968c",
     "decimals()": "0x313ce567",
@@ -38,8 +35,10 @@ SELECTORS = {
     "observe(uint32[])": "0x883bdbfd",
     "liquidity()": "0x1a686502",
     "price()": "0xa035b1fe",
-    "state()": None,   # filled from --state-selector or DEPLOYMENTS.md
-    "config()": None,
+    # AfterHours (ethers.id on the ABI exported by `cargo stylus export-abi`)
+    "state()": "0xc19d93fb",
+    "config()": "0x79502c55",
+    "initialize(address,address,address,uint64,uint32,uint64,uint128)": "0x74780f5c",
 }
 
 
@@ -90,16 +89,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--oracle", required=True)
     ap.add_argument("--rpc", default="https://rpc.mainnet.chain.robinhood.com")
-    ap.add_argument("--state-selector", default=None, help="4-byte selector of state()")
-    ap.add_argument("--config-selector", default=None, help="4-byte selector of config()")
     ap.add_argument("--watch", type=int, default=0, help="repeat every N seconds")
     args = ap.parse_args()
-    if args.state_selector:
-        SELECTORS["state()"] = args.state_selector
-    if args.config_selector:
-        SELECTORS["config()"] = args.config_selector
-    if not SELECTORS["state()"] or not SELECTORS["config()"]:
-        sys.exit("need --state-selector and --config-selector (from DEPLOYMENTS.md)")
 
     cfg, err = rpc_call(args.rpc, args.oracle, SELECTORS["config()"])
     if err:

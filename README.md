@@ -69,6 +69,51 @@ cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,u
 # up to three pools of the stock against one quote token; the deepest over the window answers
 ```
 
+## Integrating
+
+**Morpho Blue market** — AfterHours is the market's `oracle`; nothing else changes:
+
+```solidity
+MarketParams({
+    loanToken:       USDG,          // 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
+    collateralToken: AAPL,          // 0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9
+    oracle:          afterHoursAAPL,
+    irm:             AdaptiveCurveIrm, // 0x2BD3d5965B26B51814AC95127B2b80dD6CcC0fa1 on Robinhood Chain
+    lltv:            0.625e18
+});
+```
+
+`price()` returns USDG per raw AAPL unit scaled by 1e36, exactly what Morpho
+expects; on a weekend it keeps answering, so liquidations and borrows work.
+In PAUSED / NO_DATA it reverts, which freezes borrow, withdrawCollateral and
+liquidate (supply and repay keep working) — the same behaviour a stale-feed
+guard would give, but only when there is genuinely nothing to stand behind.
+
+**Any Chainlink consumer** — swap the feed address:
+
+```solidity
+(, int256 answer,, uint256 updatedAt,) = AggregatorV3Interface(afterHoursAAPL).latestRoundData();
+// answer > 0 and updatedAt fresh in both LIVE_FEED and ONCHAIN_TWAP; the call
+// reverts (IssuerPaused / NoData) instead of returning a price it cannot defend.
+```
+
+**Keepers and dashboards** — `state()` never reverts for market reasons:
+
+```solidity
+(uint8 session, uint8 reason,,,, uint256 twap, uint128 liquidity, bool clamped, address pool) =
+    IAfterHours(afterHoursAAPL).state();
+// session 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA (reason 1-4)
+// alert on: session 3 for more than a window; clamped == true; liquidity near the floor
+```
+
+`scripts/probe.py --oracle <address> --watch 300` prints the same next to the
+raw feed and pool; the hourly `status` workflow appends it to `status/log.md`.
+
+**Corporate actions** — the oracle prices raw token units, as the pool and the
+feed do (Robinhood's stock tokens scale their UI balance with a multiplier),
+so a split changes nothing here; while the issuer processes one, the token's
+`oraclePaused()` flag makes AfterHours refuse until the feed is back.
+
 ## Deployments
 
 See [DEPLOYMENTS.md](DEPLOYMENTS.md).

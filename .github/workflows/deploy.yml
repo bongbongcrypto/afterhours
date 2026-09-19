@@ -4,10 +4,10 @@ name: deploy
 # one-shot `initialize` in the same job (seconds between deployment and
 # configuration), then reads the configuration back and fails the job unless
 # every field matches the inputs and the feed describes the expected asset.
-# The wasm is built here on the runner (`--no-verify`, i.e. not in
-# cargo-stylus' reproducible Docker image); the raw wasm's sha256 is printed
-# so it can be compared with the CI artifact's (the on-chain bytes are the
-# brotli-compressed form and never hash-equal to it).
+# With `reproducible` on (default) the wasm is built in cargo-stylus' Docker
+# image so `cargo stylus verify` and the explorer can match the source; off,
+# it is built on the runner with `--no-verify`. Optionally creates a Morpho
+# Blue market priced by the new oracle.
 on:
   workflow_dispatch:
     inputs:
@@ -58,9 +58,23 @@ on:
         description: Oldest feed print the band may anchor to, seconds (5 days covers holiday weekends)
         required: true
         default: "432000"
+      reproducible:
+        description: Build in cargo-stylus' Docker image so the explorer can verify the source (falls back to --no-verify when off)
+        required: true
+        default: true
+        type: boolean
+      morpho_lltv:
+        description: If non-empty, also create a Morpho Blue market (loan = quote token, collateral = stock, oracle = AfterHours) at this LLTV in wei, e.g. 625000000000000000 for 62.5%. Leave empty to skip.
+        required: false
+        default: ""
 
 env:
   CARGO_STYLUS_VERSION: 0.10.9
+  # Morpho Blue + AdaptiveCurveIrm on Robinhood Chain (docs.morpho.org addresses page; IRM and
+  # the standard LLTVs verified enabled on-chain 2026-09-19).
+  MORPHO_BLUE: "0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010"
+  MORPHO_IRM: "0x2BD3d5965B26B51814AC95127B2b80dD6CcC0fa1"
+  MORPHO_LLTV: ${{ inputs.morpho_lltv }}
   NETWORK: ${{ inputs.network }}
   FEED: ${{ inputs.feed }}
   POOL: ${{ inputs.pool }}
@@ -127,12 +141,14 @@ jobs:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
         run: |
           set -o pipefail
-          cargo stylus deploy --endpoint "$RPC" --private-key "$DEPLOYER_KEY" --no-verify 2>&1 | tee deploy.log
+          # Reproducible (Docker) builds let `cargo stylus verify` / the explorer match the source.
+          if [ "${{ inputs.reproducible }}" = "true" ]; then flags=""; else flags="--no-verify"; fi
+          cargo stylus deploy --endpoint "$RPC" --private-key "$DEPLOYER_KEY" $flags 2>&1 | tee deploy.log
           # cargo-stylus colours the address (ANSI codes sit between "address:" and "0x").
           addr=$(sed -E 's/\x1b\[[0-9;]*m//g' deploy.log | grep -oiE 'deployed code at address:? *0x[0-9a-fA-F]{40}' | grep -oE '0x[0-9a-fA-F]{40}' | tail -1)
           test -n "$addr" || { echo "no address in cargo stylus output"; exit 1; }
           echo "address=$addr" >> "$GITHUB_OUTPUT"
-          sha256sum target/wasm32-unknown-unknown/release/afterhours_oracle.wasm
+          sha256sum target/wasm32-unknown-unknown/release/afterhours_oracle.wasm || true
       - name: initialize (fails on a reverted receipt)
         env:
           RPC: ${{ steps.net.outputs.rpc }}
@@ -177,3 +193,23 @@ jobs:
           cast call --rpc-url "$RPC" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)" \
             || echo "latestRoundData() reverted: the oracle is refusing to price right now (see state())"
           echo "all fields verified"
+      - name: create a Morpho Blue market priced by AfterHours (optional)
+        if: inputs.morpho_lltv != ''
+        env:
+          RPC: ${{ steps.net.outputs.rpc }}
+          DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
+          ADDR: ${{ steps.deploy.outputs.address }}
+        run: |
+          # Market creation on Morpho Blue is permissionless once the IRM and LLTV are enabled;
+          # loan token = the pool's quote (USDG), collateral = the stock, oracle = this deployment.
+          cast call --rpc-url "$RPC" "$MORPHO_BLUE" "isIrmEnabled(address)(bool)" "$MORPHO_IRM" | grep -q true || { echo "IRM not enabled"; exit 1; }
+          cast call --rpc-url "$RPC" "$MORPHO_BLUE" "isLltvEnabled(uint256)(bool)" "$MORPHO_LLTV" | grep -q true || { echo "LLTV not enabled"; exit 1; }
+          params="($EXPECTED_QUOTE,$STOCK,$ADDR,$MORPHO_IRM,$MORPHO_LLTV)"
+          id=$(cast keccak "$(cast abi-encode "f((address,address,address,address,uint256))" "$params")")
+          echo "market id $id"
+          receipt=$(cast send --json --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" "$MORPHO_BLUE" \
+            "createMarket((address,address,address,address,uint256))" "$params")
+          echo "$receipt" | jq -r '"createMarket tx \(.transactionHash) status \(.status)"'
+          echo "$receipt" | jq -e '.status == "0x1"' > /dev/null || { echo "createMarket reverted"; exit 1; }
+          cast call --rpc-url "$RPC" "$MORPHO_BLUE" "idToMarketParams(bytes32)(address,address,address,address,uint256)" "$id"
+          echo "MORPHO_MARKET_ID=$id" >> "$GITHUB_STEP_SUMMARY"

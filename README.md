@@ -37,6 +37,7 @@ src/lib.rs        the contract (Stylus SDK 0.10, no owner, no upgrade)
 src/tickmath.rs   1.0001^tick in Q96 with 512-bit intermediates, reference-vector tested
 src/tests.rs      unit tests; every external read is mocked with exact calldata
 src/mockvm.rs     TestVM wrapper that serves the matched mock (stylus-test 0.10.9 serves the last registered)
+e2e/              end-to-end on a local Nitro node: Solidity doubles + cast scenario, gas per read
 abi/              Solidity interface for integrators
 scripts/measure/  the evidence: feed cadence, weekend swaps, pool depth, PARE's oracle
 scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdlib only)
@@ -52,6 +53,11 @@ cargo test
 cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
+
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 39
+assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
+against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
+Robinhood Chain runs, and the one a 2-fragment (31 KB) program needs.
 
 Deploy (deploys, activates, then runs the one-shot `initialize`):
 

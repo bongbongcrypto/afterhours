@@ -202,7 +202,28 @@ is against a token other than the loan token. Operational: like every Stylus
 program, the contract needs re-activation after an ArbOS upgrade (anyone can
 do it; reads revert until then).
 
-## 6. Why Stylus, why Robinhood Chain, why USDG
+## 6. Verification layers and cost per read
+
+| layer | what it proves | where |
+|---|---|---|
+| 41 unit tests on a host that serves mocked calls exactly | decision logic, band, scaling, every refusal, exact numbers | `src/tests.rs`, `src/mockvm.rs` |
+| tick-math reference vectors | 1.0001^tick and the price conversion against 60-digit decimal arithmetic | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
+| `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session and revert asserted with exact values through `cast`; 39 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| two independent adversarial reviews | 20 findings, all folded in (anchor-age cap, harmonic-mean liquidity, deploy verification, real feed description, ...) | PROGRESS.md |
+
+Gas per read on the dev node (`cast estimate`, includes the 21k transaction
+base): `latestRoundData()` 104,347 in LIVE_FEED, 125,440 in ONCHAIN_TWAP;
+`price()` 106,441 / 127,532. Three external reads (pause flag, feed round,
+pool observe) account for most of it; at Robinhood Chain's gas prices that is
+a fraction of a cent, and a Morpho borrow or liquidation pays it once. Latency
+is not a network property here: in LIVE_FEED the answer is the feed's own
+round with no added delay; in ONCHAIN_TWAP the answer is by design a
+30-minute average of the pool, so a genuine move shows up gradually over
+that window rather than instantly, which is the manipulation trade-off the
+band and window encode.
+
+## 7. Why Stylus, why Robinhood Chain, why USDG
 
 The TWAP and band arithmetic is fixed-point integer math on 256-bit values
 with 512-bit intermediates; Rust with `alloy` primitives expresses it without

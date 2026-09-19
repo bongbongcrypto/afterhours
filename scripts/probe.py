@@ -89,6 +89,7 @@ def main():
     ap.add_argument("--oracle", required=True)
     ap.add_argument("--rpc", default="https://rpc.mainnet.chain.robinhood.com")
     ap.add_argument("--watch", type=int, default=0, help="repeat every N seconds")
+    ap.add_argument("--json", action="store_true", help="one JSON line (for the status log), then exit")
     args = ap.parse_args()
 
     cfg, err = rpc_call(args.rpc, args.oracle, SELECTORS["config()"])
@@ -142,6 +143,19 @@ def main():
             else:
                 scale = 36 + quote_dec - stock_dec - feed_dec
                 print("  Morpho price(): %d  (= answer x 1e%d)" % (word(p, 0), scale))
+        if args.json:
+            if serr or not s:
+                rec = {"session": "read failed", "answer": "", "feed_answer": "%.4f" % feed_answer,
+                       "feed_age_h": "%.1f" % age_h, "pool": "", "liquidity": ""}
+            else:
+                rec = {"session": SESSIONS.get(session, session)
+                       + (" (%s)" % REASONS.get(reason, reason) if session == 3 else "")
+                       + (" clamped" if session == 1 and clamped else ""),
+                       "answer": ("%.4f" % (answer / 10 ** feed_dec)) if session in (0, 1) else "",
+                       "feed_answer": "%.4f" % feed_answer, "feed_age_h": "%.1f" % age_h,
+                       "pool": used_pool[:10] if session == 1 else "", "liquidity": ("%.3g" % liq) if liq else ""}
+            print(json.dumps(rec))
+            break
         if not args.watch:
             break
         print()

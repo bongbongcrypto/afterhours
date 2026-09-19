@@ -1,0 +1,53 @@
+name: status
+
+# Hourly track record of every mainnet deployment: what Chainlink says, what
+# the pool says, what AfterHours answers and in which session. Appends one
+# line per deployment to status/log.md and commits it, so the history of the
+# oracle answering through weekends is in the repo, not in a screenshot.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: probe every deployment
+        run: |
+          python3 - <<'PY'
+          import json, subprocess, datetime, pathlib
+          deps = json.load(open("deployments.json"))["deployments"]
+          if not deps:
+              print("no deployments yet"); raise SystemExit(0)
+          out = pathlib.Path("status/log.md"); out.parent.mkdir(exist_ok=True)
+          if not out.exists():
+              out.write_text("# AfterHours status log (hourly, UTC)\n\n| time | asset | session | AfterHours | Chainlink | feed age | pool | liquidity |\n|---|---|---|---|---|---|---|---|\n")
+          rows = []
+          for d in deps:
+              r = subprocess.run(["python3", "scripts/probe.py", "--oracle", d["address"], "--rpc", d["rpc"], "--json"],
+                                 capture_output=True, text=True)
+              try:
+                  j = json.loads(r.stdout.strip().splitlines()[-1])
+              except Exception:
+                  rows.append(f"| {datetime.datetime.utcnow():%Y-%m-%d %H:%M} | {d['asset']} | probe failed | | | | | |")
+                  print(r.stdout, r.stderr); continue
+              rows.append("| {t} | {a} | {s} | {ans} | {cl} | {age} | {pool} | {liq} |".format(
+                  t=datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M"), a=d["asset"], s=j["session"],
+                  ans=j["answer"], cl=j["feed_answer"], age=j["feed_age_h"], pool=j["pool"], liq=j["liquidity"]))
+          with out.open("a") as f:
+              f.write("\n".join(rows) + "\n")
+          print("\n".join(rows))
+          PY
+      - name: commit the log
+        run: |
+          git add status/log.md 2>/dev/null || exit 0
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "status: hourly probe"
+          git push

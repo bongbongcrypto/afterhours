@@ -1,0 +1,2 @@
+# cargo-stylus 0.10 project manifest. Deployments are driven by .github/workflows/deploy.yml.
+[contract]

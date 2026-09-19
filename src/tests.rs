@@ -1130,3 +1130,116 @@ fn unreadable_feed_is_a_call_failure_not_a_price() {
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED
     ));
 }
+
+// ---- properties (proptest) ----------------------------------------------------------
+//
+// Random inputs through the same paths the chain will exercise: the math must
+// stay monotonic, the answer must stay inside the band, and nothing may panic
+// whatever the feed or the pool returns.
+
+mod props {
+    use super::*;
+    use crate::tickmath;
+    use proptest::prelude::*;
+
+    fn lower_upper(feed: u64) -> (U256, U256) {
+        (
+            U256::from(feed) * U256::from(9000u64) / U256::from(10_000u64),
+            U256::from(feed) * U256::from(11_000u64) / U256::from(10_000u64),
+        )
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn ratio_is_monotonic_in_the_tick(a in -400_000i32..400_000, b in -400_000i32..400_000) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            let ra = tickmath::ratio_q96(lo).unwrap();
+            let rb = tickmath::ratio_q96(hi).unwrap();
+            prop_assert!(ra <= rb, "1.0001^tick must not decrease: {lo} -> {ra}, {hi} -> {rb}");
+        }
+
+        #[test]
+        fn price_is_monotonic_in_the_tick(a in -300_000i32..300_000, b in -300_000i32..300_000) {
+            let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+            let p = |tick, is0| {
+                tickmath::stock_price(tickmath::ratio_q96(tick).unwrap(), is0, 18, 6, 8).unwrap()
+            };
+            // stock as token1: a higher tick means more stock per quote, a lower price
+            prop_assert!(p(lo, false) >= p(hi, false));
+            // stock as token0: a higher tick means more quote per stock, a higher price
+            prop_assert!(p(lo, true) <= p(hi, true));
+        }
+
+        #[test]
+        fn closed_market_answer_stays_inside_the_band(
+            tick_offset in -6_000i64..6_000,
+            feed in 20_000_000_000u64..50_000_000_000,
+            liq_mult in 1u128..50,
+            age in 21_601u64..431_999,
+        ) {
+            let w = World::new();
+            let c = w.deploy();
+            w.mock_feed(feed as i128, NOW - age);
+            w.mock_observe(AAPL_TICK + tick_offset, MIN_LIQUIDITY * liq_mult);
+            let (session, reason, ans, _, _, twap, liq, clamped, _) = c.state().unwrap();
+            prop_assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+            prop_assert_eq!(liq, MIN_LIQUIDITY * liq_mult);
+            let (lower, upper) = lower_upper(feed);
+            prop_assert!(ans >= lower && ans <= upper, "answer {ans} outside [{lower}, {upper}]");
+            prop_assert_eq!(clamped, twap < lower || twap > upper);
+            if !clamped {
+                prop_assert_eq!(ans, twap);
+            }
+            // every price surface agrees with state()
+            let (_, rd_answer, ..) = c.latest_round_data().unwrap();
+            prop_assert_eq!(rd_answer, I256::from_raw(ans));
+            prop_assert_eq!(c.price().unwrap(), ans * u(MORPHO_SCALE));
+        }
+
+        #[test]
+        fn garbage_from_the_feed_and_the_pool_never_panics(
+            answer in any::<i128>(),
+            updated_at in any::<u64>(),
+            cum_then in any::<i64>(),
+            cum_delta in any::<i64>(),
+            spl_then in any::<u128>(),
+            spl_delta in any::<u128>(),
+            paused in any::<bool>(),
+        ) {
+            let w = World::new();
+            let c = w.deploy();
+            w.mock_paused(paused);
+            w.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
+            let clamp56 = |v: i64| v.clamp(-(1i64 << 55) + 1, (1i64 << 55) - 1);
+            let then = I56::try_from(clamp56(cum_then)).unwrap();
+            let now = I56::try_from(clamp56(cum_then.wrapping_add(cum_delta))).unwrap();
+            let spl_a = U160::from(spl_then);
+            let spl_b = spl_a.wrapping_add(U160::from(spl_delta));
+            w.mock_observe_raw(vec![then, now], vec![spl_a, spl_b]);
+
+            let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+            prop_assert!(session <= SESSION_NO_DATA);
+            prop_assert!(reason <= REASON_ANCHOR_STALE);
+            match session {
+                SESSION_LIVE_FEED => {
+                    prop_assert!(answer > 0);
+                    prop_assert_eq!(ans, U256::from(answer as u128));
+                }
+                SESSION_ONCHAIN_TWAP => {
+                    let feed = U256::from(answer as u128);
+                    let lower = feed * U256::from(9000u64) / U256::from(10_000u64);
+                    let upper = feed * U256::from(11_000u64) / U256::from(10_000u64);
+                    prop_assert!(ans >= lower && ans <= upper);
+                    prop_assert_eq!(clamped, twap < lower || twap > upper);
+                }
+                _ => {
+                    prop_assert_eq!(ans, U256::ZERO);
+                    prop_assert!(c.latest_round_data().is_err());
+                    prop_assert!(c.price().is_err());
+                }
+            }
+        }
+    }
+}

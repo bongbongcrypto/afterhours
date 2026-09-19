@@ -16,6 +16,7 @@ stylus-sdk = "0.10.9"
 [dev-dependencies]
 stylus-sdk = { version = "0.10.9", features = ["stylus-test"] }
 alloy-sol-types = { version = "1.5.7", default-features = false, features = ["std"] }
+proptest = "1"
 
 [features]
 export-abi = ["stylus-sdk/export-abi"]

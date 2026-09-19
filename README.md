@@ -23,11 +23,11 @@ see [DESIGN.md](DESIGN.md).
 | session | when | `latestRoundData().answer` | `price()` |
 |---|---|---|---|
 | `LIVE_FEED` (0) | feed no older than `liveMaxAge` | the feed's round, verbatim | feed × Morpho scale |
-| `ONCHAIN_TWAP` (1) | feed older; pool deep enough | pool TWAP clamped to ±`maxDeviationBps` of the last print | same |
+| `ONCHAIN_TWAP` (1) | feed older; the deepest of up to 3 pools is deep enough | that pool's TWAP clamped to ±`maxDeviationBps` of the last print | same |
 | `PAUSED` (2) | issuer's `oraclePaused()` (corporate action) | reverts `IssuerPaused()` | reverts |
 | `NO_DATA` (3) | feed round invalid / pool too thin over the window / no TWAP / last print older than `maxAnchorAge` | reverts `NoData(reason)` | reverts |
 
-`state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped)`
+`state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped, pool)`
 and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`](abi/IAfterHours.sol).
 
 ## Layout
@@ -63,9 +63,10 @@ Deploy (deploys, activates, then runs the one-shot `initialize`):
 
 ```bash
 cargo stylus deploy --endpoint <rpc> --private-key <key> --no-verify
-cast send <address> "initialize(address,address,address,uint64,uint32,uint64,uint128,uint64)" \
-  <feed> <pool> <stock> 21600 1800 1000 200000000000000000 432000
+cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" \
+  <feed> "[<pool 0.05%>,<pool 0.30%>,<pool 1%>]" <stock> 21600 1800 1000 200000000000000000 432000
 # liveMaxAge twapWindow maxDeviationBps minLiquidity(window harmonic mean) maxAnchorAge
+# up to three pools of the stock against one quote token; the deepest over the window answers
 ```
 
 ## Deployments

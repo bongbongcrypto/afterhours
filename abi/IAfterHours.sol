@@ -41,8 +41,9 @@ interface IAfterHours {
     ///      4 last feed print older than maxAnchorAge
     ///      answer: the price the oracle stands behind (0 when it refuses)
     ///      twap: raw pool TWAP before the band (0 outside ONCHAIN_TWAP)
-    ///      liquidity: harmonic-mean in-range liquidity over the TWAP window
+    ///      liquidity: harmonic-mean in-range liquidity over the TWAP window of the pool used
     ///      clamped: the TWAP was pulled back to the edge of the band
+    ///      pool: the pool that answered (zero outside ONCHAIN_TWAP / pool refusals)
     function state()
         external
         view
@@ -54,8 +55,12 @@ interface IAfterHours {
             uint256 feedUpdatedAt,
             uint256 twap,
             uint128 liquidity,
-            bool clamped
+            bool clamped,
+            address pool
         );
+
+    /// @dev The configured pools (1-3), in the order given to initialize.
+    function pools() external view returns (address[] memory);
 
     function config()
         external
@@ -64,10 +69,10 @@ interface IAfterHours {
             bool initialized,
             address initializer,
             address feed,
-            address pool,
+            address firstPool,
             address stock,
             address quote,
-            bool stockIsToken0,
+            bool stockIsToken0OfFirstPool,
             uint8 feedDecimals,
             uint8 stockDecimals,
             uint8 quoteDecimals,
@@ -82,10 +87,11 @@ interface IAfterHours {
     ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow 0, 3 band not in
     ///      (0, 10000), 4 minLiquidity 0, 5 stock not in pool, 6 Morpho scale underflow,
     ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 1 day,
-    ///      10 pool does not answer observe([twapWindow, 0]).
+    ///      10 a pool does not answer observe([twapWindow, 0]), 11 not 1-3 pools,
+    ///      12 the pools do not share one quote token.
     function initialize(
         address feed,
-        address pool,
+        address[] calldata pools,
         address stock,
         uint64 liveMaxAge,
         uint32 twapWindow,

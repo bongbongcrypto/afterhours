@@ -126,12 +126,13 @@ def main():
             session, reason = word(s, 0), word(s, 1)
             answer, fa, fu, tw, liq, clamped = (word(s, 2), word(s, 3), word(s, 4), word(s, 5),
                                                 word(s, 6), bool(word(s, 7)))
+            used_pool = "0x" + s[2 + 64 * 8 + 24: 2 + 64 * 9]
             line = "  AfterHours: %s" % SESSIONS.get(session, session)
             if session in (0, 1):
                 line += "  answer $%.4f" % (answer / 10 ** feed_dec)
             if session == 1:
-                line += "  (twap $%.4f, %s, window liquidity %.3g)" % (
-                    tw / 10 ** feed_dec, "CLAMPED to band" if clamped else "inside band", liq)
+                line += "  (twap $%.4f, %s, window liquidity %.3g, pool %s)" % (
+                    tw / 10 ** feed_dec, "CLAMPED to band" if clamped else "inside band", liq, used_pool[:10])
             if session == 3:
                 line += "  (%s)" % REASONS.get(reason, reason)
             print(line)

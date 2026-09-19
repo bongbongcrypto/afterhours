@@ -78,8 +78,8 @@ lending market changes one address.
                      +-------------------------------+
    Chainlink feed -->|                               |--> latestRoundData()
    (24/5)            |   AfterHours (Stylus, Rust)   |--> price()        (Morpho)
-   Uniswap v3 pool ->|   immutable, no owner         |--> state()        (session, reason,
-   (24/7)            |                               |                    answer, twap, ...)
+   Uniswap v3 pools >|   immutable, no owner         |--> state()        (session, reason,
+   (24/7, up to 3)   |                               |                    answer, twap, pool, ...)
    Stock token ----->|  oraclePaused() flag          |
                      +-------------------------------+
 ```
@@ -96,11 +96,15 @@ Decision per read, in this order:
 4. Feed age > `maxAnchorAge` -> **NO_DATA(4)**. No market closure lasts this
    long (5 days covers a holiday weekend); the feed has been deprecated or the
    stock is halted, and a band anchored to that print would only look fresh.
-5. Otherwise the market is closed for this oracle's purposes. One
-   `observe([twapWindow, 0])` call gives both legs:
-   - it fails (not a v3 pool, no history) or returns the wrong shape ->
-     **NO_DATA(3)**;
-   - the harmonic-mean in-range liquidity over the window
+5. Otherwise the market is closed for this oracle's purposes. Every
+   configured pool (one to three fee tiers of the stock against the quote) is
+   asked `observe([twapWindow, 0])`, which gives both legs; the pool with the
+   most harmonic-mean liquidity over the window is used, so liquidity
+   migrating to another tier does not strand the oracle and a thinned pool
+   is never chosen over a deep one:
+   - no pool answers (not a v3 pool, no history) or every answer has the
+     wrong shape -> **NO_DATA(3)**;
+   - the deepest pool's harmonic-mean in-range liquidity over the window
      (`window * 2^128 / delta(secondsPerLiquidityCumulativeX128)`, Uniswap's
      own `OracleLibrary.consult`) is below `minLiquidity` -> **NO_DATA(2)**.
      A window average, not the spot value: liquidity added in the block
@@ -197,8 +201,9 @@ constant and comment say they dislike the 5-day rule, but no market has run on
 AfterHours yet).
 
 Not handled in v1: a Chainlink L2 sequencer-uptime check (PARE deploys with it
-disabled on this chain too); multiple pools per asset; assets whose only pool
-is against a token other than the loan token. Operational: like every Stylus
+disabled on this chain too); pools against a token other than the loan token
+(every pool of an asset must share one quote); combining several pools into
+one price (the deepest one is used, the others are fallbacks). Operational: like every Stylus
 program, the contract needs re-activation after an ArbOS upgrade (anyone can
 do it; reads revert until then).
 

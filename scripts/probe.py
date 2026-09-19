@@ -10,7 +10,7 @@ while the AfterHours line keeps moving; that is the demo.
 
 Selectors computed with ethers, not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
-  observe(uint32[]) 0x883bdbfd   liquidity() 0x1a686502  slot0() 0x3850c7bd
+  observe(uint32[]) 0x883bdbfd
   price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55
 """
 import argparse
@@ -34,12 +34,10 @@ SELECTORS = {
     "decimals()": "0x313ce567",
     "description()": "0x7284e416",
     "observe(uint32[])": "0x883bdbfd",
-    "liquidity()": "0x1a686502",
     "price()": "0xa035b1fe",
     # AfterHours (ethers.id on the ABI exported by `cargo stylus export-abi`)
     "state()": "0xc19d93fb",
     "config()": "0x79502c55",
-    "initialize(address,address,address,uint64,uint32,uint64,uint128)": "0x74780f5c",
 }
 
 

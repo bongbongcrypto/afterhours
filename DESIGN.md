@@ -104,7 +104,13 @@ Decision per read, in this order:
      (`window * 2^128 / delta(secondsPerLiquidityCumulativeX128)`, Uniswap's
      own `OracleLibrary.consult`) is below `minLiquidity` -> **NO_DATA(2)**.
      A window average, not the spot value: liquidity added in the block
-     before a read cannot make a pool that spent the window thin look deep;
+     before a read cannot make a pool that spent the window thin look deep.
+     The flip side: one second of the window with no in-range liquidity
+     (the price wandered outside every position, or a swap out and back)
+     drags the mean to roughly the window length and the oracle refuses
+     for the next 30 minutes. That is deliberate — a pool that just went
+     empty is not a pool to price from — and it is why NO_DATA reads leave
+     `state()` readable;
    - the mean tick converts to nothing usable -> **NO_DATA(3)**;
    - else **ONCHAIN_TWAP**: the time-weighted pool price, converted to the
      feed's decimals, then bounded to
@@ -161,7 +167,7 @@ does two things at once:
 | `liveMaxAge` | 21,600 s (6 h) | Regular-session prints arrive every few minutes; overnight (24/5 session) the feed is silent for up to 17 h because the price does not move 0.5%. Six hours means the pool takes over ~6 h after Friday's last print and during long overnight gaps, and the feed takes back over at the first print of a session. |
 | `twapWindow` | 1,800 s (30 min) | Same window PARE trusts for its pool leg. With ~1 swap every 7 s on the weekend, 30 minutes averages ~250 fills. |
 | `maxDeviationBps` | 1,000 (10%) | Single-stock LULD band for closed-session moves; AAPL's largest weekend gap in the measured windows was 0.25%. |
-| `minLiquidity` | 2e17 | The 0.05% pool's window-averaged liquidity was 1.3-1.6e18 on the days measured; refusing below roughly 1/8 of that means a pool most LPs have left is not trusted. This is a sanity floor, not the manipulation defence (that is the band). |
+| `minLiquidity` | 2e17 | The 0.05% pool's 30-minute harmonic-mean liquidity measured 1.45e18 against a spot 1.61e18 (`pool_harmonic.py`, 2026-09-19), a 7.3x margin over the floor; refusing below roughly 1/8 of today's depth means a pool most LPs have left is not trusted. This is a sanity floor, not the manipulation defence (that is the band). |
 | `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
 Manipulation cost, order of magnitude (`scripts/measure`, uniform-range model
@@ -180,7 +186,9 @@ Measured: feed silence and cadence; weekend swap counts, volume and fill
 quality on two weekends; the live lending oracle's 5-day tolerance and its use
 of a pool TWAP; Stylus availability on mainnet and testnet (stylusVersion 3);
 pool observation cardinality (1,500-1,801, so a 30-minute TWAP reads today);
-the absence of the StylusDeployer on mainnet.
+the window harmonic-mean liquidity against spot (`pool_harmonic.py`); the
+feed's `description()` (`Robinhood AAPL / USD`) and the stock's
+`oraclePaused()`; the absence of the StylusDeployer on mainnet.
 
 Assumed: that the pool keeps tracking fair value on a *news* weekend (both
 measured weekends were quiet; the band exists precisely because this is not

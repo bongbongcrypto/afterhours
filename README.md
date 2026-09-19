@@ -57,8 +57,9 @@ Deploy (deploys, activates, then runs the one-shot `initialize`):
 
 ```bash
 cargo stylus deploy --endpoint <rpc> --private-key <key> --no-verify
-cast send <address> "initialize(address,address,address,uint64,uint32,uint64,uint128)" \
-  <feed> <pool> <stock> 21600 1800 1000 200000000000000000
+cast send <address> "initialize(address,address,address,uint64,uint32,uint64,uint128,uint64)" \
+  <feed> <pool> <stock> 21600 1800 1000 200000000000000000 432000
+# liveMaxAge twapWindow maxDeviationBps minLiquidity(window harmonic mean) maxAnchorAge
 ```
 
 ## Deployments

@@ -18,8 +18,9 @@ interface IAfterHours {
         external
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
-    /// @dev Historical rounds are forwarded to the feed; the feed's current round
-    ///      is answered exactly like latestRoundData().
+    /// @dev Historical rounds are forwarded to the feed (also while the oracle is
+    ///      PAUSED / NO_DATA); the feed's current round is answered exactly like
+    ///      latestRoundData().
     function getRoundData(uint80 roundId)
         external
         view

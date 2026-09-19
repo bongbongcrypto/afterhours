@@ -53,6 +53,7 @@ impl World {
         w.mock_tokens(false);
         w.mock_paused(false);
         w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
+        w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
         w
     }
 
@@ -860,6 +861,108 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
         AfterHoursError::NoData(NoData {
             reason: REASON_FEED_INVALID
         })
+    ));
+}
+
+#[test]
+fn initialize_requires_a_readable_feed_round() {
+    let w = World::new();
+    w.vm
+        .mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
+    let err = w.try_deploy().expect_err("feed without latestRoundData()");
+    assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == FEED));
+}
+
+#[test]
+fn a_second_of_empty_liquidity_inside_the_window_refuses() {
+    // Uniswap accumulates seconds * 2^128 / max(L, 1). One second at zero
+    // in-range liquidity adds 2^128, which drags the harmonic mean to ~1800
+    // no matter how deep the other 1799 seconds were. Fail closed for the window.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    let deep = U256::from(1_600_000_000_000_000_000u128); // 1.6e18, today's pool
+    let delta = (U256::from(TWAP_WINDOW - 1) << 128usize) / deep + (U256::from(1u64) << 128usize);
+    let then = I56::try_from(1_000_000i64).unwrap();
+    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
+    w.mock_observe_raw(vec![then, now], vec![U160::ZERO, U160::from(delta)]);
+    let (session, reason, _, _, _, _, liq, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
+    assert!(liq < 2000, "harmonic mean collapses to about the window length: {liq}");
+}
+
+#[test]
+fn liquidity_accumulator_wraps_around_uint160() {
+    // The pool's secondsPerLiquidityCumulativeX128 is an unchecked uint160
+    // accumulator; a window that straddles the wrap must still read correctly.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    let delta = U160::from((U256::from(TWAP_WINDOW) << 128usize) / U256::from(MIN_LIQUIDITY));
+    let spl_then = U160::MAX - U160::from(5u64);
+    let spl_now = spl_then.wrapping_add(delta);
+    assert!(spl_now < spl_then, "the test straddles the wrap");
+    let then = I56::try_from(1_000_000i64).unwrap();
+    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
+    w.mock_observe_raw(vec![then, now], vec![spl_then, spl_now]);
+    let (session, _, ans, _, _, _, liq, _) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!(liq, MIN_LIQUIDITY);
+    assert_eq!(ans, U256::from(AAPL_TWAP));
+}
+
+#[test]
+fn absurdly_deep_liquidity_saturates_instead_of_overflowing() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    let then = I56::try_from(1_000_000i64).unwrap();
+    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
+    // delta of 1: window * 2^128 liquidity, far beyond u128
+    w.mock_observe_raw(vec![then, now], vec![U160::from(9u64), U160::from(10u64)]);
+    let (session, _, _, _, _, _, liq, _) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!(liq, u128::MAX);
+}
+
+#[test]
+fn get_round_data_serves_history_while_refusing_to_price() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_paused(true);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let old = (
+        U80::from(ROUND - 1),
+        I256::try_from(31_000_000_000u64).unwrap(),
+        U256::from(NOW - 9000),
+        U256::from(NOW - 9000),
+        U80::from(ROUND - 1),
+    );
+    w.vm.mock_static_call(
+        FEED,
+        getRoundDataCall {
+            roundId: U80::from(ROUND - 1),
+        }
+        .abi_encode(),
+        Ok(old.abi_encode_params()),
+    );
+    assert_eq!(c.get_round_data(U80::from(ROUND - 1)).unwrap(), old);
+    assert!(matches!(
+        c.get_round_data(U80::from(ROUND)).expect_err("current round is refused while paused"),
+        AfterHoursError::IssuerPaused(_)
+    ));
+    // a round the feed itself rejects is a failed read
+    w.vm.mock_static_call(
+        FEED,
+        getRoundDataCall {
+            roundId: U80::from(ROUND - 2),
+        }
+        .abi_encode(),
+        Err(b"No data present".to_vec()),
+    );
+    assert!(matches!(
+        c.get_round_data(U80::from(ROUND - 2)).expect_err("feed rejected the round"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == FEED
     ));
 }
 

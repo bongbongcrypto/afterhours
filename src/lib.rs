@@ -186,8 +186,9 @@ impl AfterHours {
     /// activation, from the same script (Robinhood Chain mainnet has no
     /// StylusDeployer factory, so a constructor cannot be used there). Token
     /// order and decimals are read from the contracts themselves, and every
-    /// read the oracle will ever make is exercised once, so a wrong pool or a
-    /// token without the pause flag fails here rather than at the first weekend.
+    /// read on the price path (feed round, pool observe, pause flag) is
+    /// exercised once, so a wrong pool or a token without the pause flag fails
+    /// here rather than at the first weekend.
     pub fn initialize(
         &mut self,
         feed: Address,
@@ -243,8 +244,14 @@ impl AfterHours {
             _ => return Err(invalid(CONFIG_POOL_NOT_OBSERVABLE)),
         }
 
-        let feed_decimals = IAggregatorV3::new(feed)
+        let feed_iface = IAggregatorV3::new(feed);
+        let feed_decimals = feed_iface
             .decimals(self.vm(), Call::new())
+            .map_err(|_| call_failed(feed))?;
+        // The round read is the one every evaluation starts with; a feed that
+        // answers decimals() but not latestRoundData() must fail here.
+        feed_iface
+            .latest_round_data(self.vm(), Call::new())
             .map_err(|_| call_failed(feed))?;
         let stock_decimals = IERC20Decimals::new(stock)
             .decimals(self.vm(), Call::new())
@@ -321,8 +328,9 @@ impl AfterHours {
         self.round_tuple(&q)
     }
 
-    /// Historical rounds are the feed's, verbatim. The feed's current round is
-    /// answered exactly like `latestRoundData()` so the two never disagree.
+    /// Historical rounds are the feed's, verbatim, and are served even while
+    /// the oracle refuses to price (PAUSED / NO_DATA). The feed's current round
+    /// is answered exactly like `latestRoundData()` so the two never disagree.
     pub fn get_round_data(
         &self,
         round_id: U80,
@@ -466,8 +474,9 @@ impl AfterHours {
             q.feed_answer = feed_answer.into_raw();
         }
 
-        // The issuer's flag wins over everything: a corporate action is being
-        // processed and neither the feed nor the pool price means what it says.
+        // The issuer's flag wins over every market condition (only a failed
+        // read ranks above it): a corporate action is being processed and
+        // neither the feed nor the pool price means what it says.
         if paused {
             q.session = SESSION_PAUSED;
             return Ok(q);

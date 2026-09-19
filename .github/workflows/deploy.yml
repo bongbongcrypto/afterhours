@@ -5,8 +5,9 @@ name: deploy
 # configuration), then reads the configuration back and fails the job unless
 # every field matches the inputs and the feed describes the expected asset.
 # The wasm is built here on the runner (`--no-verify`, i.e. not in
-# cargo-stylus' reproducible Docker image); the artifact's sha256 is printed
-# so the deployed code can be matched against the CI artifact.
+# cargo-stylus' reproducible Docker image); the raw wasm's sha256 is printed
+# so it can be compared with the CI artifact's (the on-chain bytes are the
+# brotli-compressed form and never hash-equal to it).
 on:
   workflow_dispatch:
     inputs:
@@ -26,9 +27,17 @@ on:
         description: Stock token address
         required: true
       expected_description:
-        description: What feed.description() must return (e.g. "AAPL / USD")
+        description: What feed.description() must return (measured on mainnet, see DEPLOYMENTS.md)
         required: true
-        default: "AAPL / USD"
+        default: "Robinhood AAPL / USD"
+      expected_quote:
+        description: The pool's other token, which initialize derives (USDG on Robinhood Chain)
+        required: true
+        default: "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
+      expected_decimals:
+        description: feed/stock/quote decimals initialize must read back
+        required: true
+        default: "8/18/6"
       live_max_age:
         description: Seconds a feed answer stays LIVE
         required: true
@@ -57,6 +66,8 @@ env:
   POOL: ${{ inputs.pool }}
   STOCK: ${{ inputs.stock }}
   EXPECTED_DESCRIPTION: ${{ inputs.expected_description }}
+  EXPECTED_QUOTE: ${{ inputs.expected_quote }}
+  EXPECTED_DECIMALS: ${{ inputs.expected_decimals }}
   LIVE_MAX_AGE: ${{ inputs.live_max_age }}
   TWAP_WINDOW: ${{ inputs.twap_window }}
   MAX_DEVIATION_BPS: ${{ inputs.max_deviation_bps }}
@@ -90,7 +101,8 @@ jobs:
             robinhood-testnet) echo "rpc=https://rpc.testnet.chain.robinhood.com" >> "$GITHUB_OUTPUT" ;;
             *) echo "unknown network $NETWORK"; exit 1 ;;
           esac
-      - name: preflight (the feed describes the expected asset; the deployer is funded)
+      - name: preflight (every read initialize will make, before any gas is spent)
+        id: pre
         env:
           RPC: ${{ steps.net.outputs.rpc }}
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
@@ -98,10 +110,16 @@ jobs:
           desc=$(cast call --rpc-url "$RPC" "$FEED" "description()(string)")
           echo "feed description: $desc"
           test "$desc" = "\"$EXPECTED_DESCRIPTION\"" || { echo "feed is not $EXPECTED_DESCRIPTION"; exit 1; }
+          cast call --rpc-url "$RPC" "$FEED" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+          cast call --rpc-url "$RPC" "$POOL" "token0()(address)"
+          cast call --rpc-url "$RPC" "$POOL" "token1()(address)"
+          cast call --rpc-url "$RPC" "$POOL" "observe(uint32[])(int56[],uint160[])" "[$TWAP_WINDOW,0]"
+          cast call --rpc-url "$RPC" "$STOCK" "oraclePaused()(bool)"
           addr=$(cast wallet address --private-key "$DEPLOYER_KEY")
           bal=$(cast balance --rpc-url "$RPC" "$addr")
           echo "deployer $addr balance $bal wei"
           test "$bal" != "0" || { echo "deployer has no gas"; exit 1; }
+          echo "deployer=$addr" >> "$GITHUB_OUTPUT"
       - name: deploy + activate
         id: deploy
         env:
@@ -130,6 +148,7 @@ jobs:
         env:
           RPC: ${{ steps.net.outputs.rpc }}
           ADDR: ${{ steps.deploy.outputs.address }}
+          DEPLOYER: ${{ steps.pre.outputs.deployer }}
         run: |
           echo "AfterHours deployed at $ADDR on $NETWORK"
           cast call --rpc-url "$RPC" "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)" > config.txt
@@ -141,6 +160,9 @@ jobs:
           test "$(echo "${c[2]}" | lower)" = "$(echo "$FEED" | lower)" || { echo "feed mismatch"; exit 1; }
           test "$(echo "${c[3]}" | lower)" = "$(echo "$POOL" | lower)" || { echo "pool mismatch"; exit 1; }
           test "$(echo "${c[4]}" | lower)" = "$(echo "$STOCK" | lower)" || { echo "stock mismatch"; exit 1; }
+          test "$(echo "${c[1]}" | lower)" = "$(echo "$DEPLOYER" | lower)" || { echo "initializer is not our deployer: ${c[1]}"; exit 1; }
+          test "$(echo "${c[5]}" | lower)" = "$(echo "$EXPECTED_QUOTE" | lower)" || { echo "quote token mismatch: ${c[5]}"; exit 1; }
+          test "${c[7]}/${c[8]}/${c[9]}" = "$EXPECTED_DECIMALS" || { echo "decimals mismatch: ${c[7]}/${c[8]}/${c[9]}"; exit 1; }
           num() { echo "$1" | sed 's/ .*//'; }   # cast appends "[2e17]" to large numbers
           test "$(num "${c[10]}")" = "$LIVE_MAX_AGE" || { echo "liveMaxAge mismatch"; exit 1; }
           test "$(num "${c[11]}")" = "$TWAP_WINDOW" || { echo "twapWindow mismatch"; exit 1; }
@@ -151,5 +173,7 @@ jobs:
           test "$desc" = "\"$EXPECTED_DESCRIPTION (AfterHours)\"" || { echo "description mismatch: $desc"; exit 1; }
           cast call --rpc-url "$RPC" "$ADDR" "decimals()(uint8)"
           cast call --rpc-url "$RPC" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool)"
-          cast call --rpc-url "$RPC" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+          # PAUSED / NO_DATA are legal at deploy time (weekend, thin pool); state() above says why.
+          cast call --rpc-url "$RPC" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)" \
+            || echo "latestRoundData() reverted: the oracle is refusing to price right now (see state())"
           echo "all fields verified"

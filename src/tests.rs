@@ -4,9 +4,9 @@
 //! silently green test.
 
 use super::*;
+use crate::mockvm::MockVM;
 use alloy_primitives::{aliases::I56, aliases::U160, Address, I256, U256};
 use alloy_sol_types::{sol, sol_data, SolCall, SolType, SolValue};
-use crate::mockvm::MockVM;
 
 sol! {
     function decimals() external view returns (uint8);

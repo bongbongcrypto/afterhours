@@ -118,7 +118,8 @@ impl World {
                 secondsAgos: vec![TWAP_WINDOW, 0],
             }
             .abi_encode(),
-            Ok(ret.abi_encode()),
+            // return values are encoded as a sequence (no leading offset), like a Solidity return
+            Ok(ret.abi_encode_params()),
         );
     }
 
@@ -292,8 +293,8 @@ fn initialize_rejects_a_pool_without_the_stock() {
 #[test]
 fn initialize_rejects_a_scale_that_would_underflow() {
     let w = World::new();
-    // 36 + 6 < 30 + 8: Morpho's scale would need a negative exponent.
-    w.vm.mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(enc_u8(30)));
+    // 36 + 6 < 40 + 8: Morpho's scale would need a negative exponent.
+    w.vm.mock_static_call(STOCK, decimalsCall {}.abi_encode(), Ok(enc_u8(40)));
     let mut c = AfterHours::from(&w.vm);
     let err = c
         .initialize(

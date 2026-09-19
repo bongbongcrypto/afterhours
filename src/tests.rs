@@ -33,9 +33,10 @@ const MIN_LIQUIDITY: u128 = 1_000_000_000_000_000; // 1e15
 const NOW: u64 = 1_800_000_000;
 /// $332.52 with 8 decimals: AAPL's last Friday print on 2026-09-11.
 const FRIDAY_ANSWER: u64 = 33_252_000_000;
-/// Mean tick of the AAPL/USDG 0.05% pool worth $330.96497305 (reference vector).
+/// Mean tick of the AAPL/USDG 0.05% pool. Exact value 330.96497304690...;
+/// the contract truncates (integer fixed point), so it must answer ...304.
 const AAPL_TICK: i64 = 218_301;
-const AAPL_TWAP: u64 = 33_096_497_305;
+const AAPL_TWAP: u64 = 33_096_497_304;
 
 struct World {
     vm: MockVM,

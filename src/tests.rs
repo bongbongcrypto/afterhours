@@ -1037,7 +1037,10 @@ fn the_deepest_pool_over_the_window_answers() {
     // POOL2 thins out below POOL: the answer moves back to POOL, same block, no config change.
     w.mock_pool2(-(AAPL_TICK + 500), MIN_LIQUIDITY / 2);
     let (session, _, ans, _, _, _, liq, _, pool) = c.state().unwrap();
-    assert_eq!((session, pool, liq), (SESSION_ONCHAIN_TWAP, POOL, MIN_LIQUIDITY));
+    assert_eq!(
+        (session, pool, liq),
+        (SESSION_ONCHAIN_TWAP, POOL, MIN_LIQUIDITY)
+    );
     assert_eq!(ans, U256::from(AAPL_TWAP));
 
     // POOL2 reverting (no history) is skipped, not fatal.

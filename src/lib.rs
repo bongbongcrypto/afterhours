@@ -480,4 +480,6 @@ fn invalid(reason: u8) -> AfterHoursError {
 }
 
 #[cfg(test)]
+mod mockvm;
+#[cfg(test)]
 mod tests;

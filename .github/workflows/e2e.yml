@@ -1,0 +1,62 @@
+name: e2e
+
+# The real wasm on a real (local) Arbitrum chain: OffchainLabs' nitro-devnode
+# in Docker, Solidity test doubles for the feed / pool / tokens, the contract
+# deployed and initialised with cargo-stylus, every session exercised through
+# cast with exact expected numbers, and gas per read recorded. This is the
+# check the unit tests cannot make: ABI dispatch, storage, external calls and
+# activation all run inside ArbOS.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_STYLUS_VERSION: 0.10.9
+  NITRO_NODE_VERSION: v3.11.4-7d5ac27
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - uses: foundry-rs/foundry-toolchain@v1
+      - name: cache cargo-stylus
+        id: stylus-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-stylus
+          key: cargo-stylus-${{ env.CARGO_STYLUS_VERSION }}-${{ runner.os }}
+      - name: install cargo-stylus
+        if: steps.stylus-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: start nitro dev node (Stylus enabled, pre-funded dev account)
+        run: |
+          git clone --depth 1 https://github.com/OffchainLabs/nitro-devnode.git /tmp/nitro-devnode
+          cd /tmp/nitro-devnode
+          # the public dev key lives in the script; read it rather than copy it
+          grep -oE '^PRIVATE_KEY=0x[0-9a-fA-F]{64}' run-dev-node.sh | cut -d= -f2 > /tmp/devkey
+          nohup ./run-dev-node.sh > /tmp/devnode.log 2>&1 &
+          for i in $(seq 1 120); do
+            grep -q "StylusDeployer deployed" /tmp/devnode.log && break
+            grep -q "Failed" /tmp/devnode.log && { cat /tmp/devnode.log; exit 1; }
+            sleep 5
+          done
+          grep -q "StylusDeployer deployed" /tmp/devnode.log || { echo "dev node did not come up"; tail -50 /tmp/devnode.log; exit 1; }
+          tail -5 /tmp/devnode.log
+          cast chain-id --rpc-url http://127.0.0.1:8547
+      - name: run the scenario
+        run: |
+          KEY=$(cat /tmp/devkey) bash e2e/run.sh 2>&1 | tee e2e/result.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-${{ github.sha }}
+          path: |
+            e2e/result.txt
+            e2e/deploy.log

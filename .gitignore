@@ -55,3 +55,9 @@ Thumbs.db
 video/out/
 video/narration/
 video/*.mp4
+
+# e2e run outputs
+e2e/out/
+e2e/cache/
+e2e/deploy.log
+e2e/result.txt

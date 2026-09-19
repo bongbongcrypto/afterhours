@@ -4,8 +4,8 @@
 //! silently green test.
 
 use super::*;
-use alloy_primitives::{aliases::I56, aliases::U160, aliases::U8, Address, I256, U256};
-use alloy_sol_types::{sol, SolCall, SolValue};
+use alloy_primitives::{aliases::I56, aliases::U160, Address, I256, U256};
+use alloy_sol_types::{sol, sol_data, SolCall, SolType, SolValue};
 use stylus_sdk::testing::*;
 
 sol! {
@@ -66,17 +66,17 @@ impl World {
         self.vm.mock_static_call(
             FEED,
             decimalsCall {}.abi_encode(),
-            Ok(U8::from(8u8).abi_encode()),
+            Ok(enc_u8(8)),
         );
         self.vm.mock_static_call(
             STOCK,
             decimalsCall {}.abi_encode(),
-            Ok(U8::from(18u8).abi_encode()),
+            Ok(enc_u8(18)),
         );
         self.vm.mock_static_call(
             USDG,
             decimalsCall {}.abi_encode(),
-            Ok(U8::from(6u8).abi_encode()),
+            Ok(enc_u8(6)),
         );
         self.vm.mock_static_call(
             FEED,
@@ -160,6 +160,11 @@ impl World {
 
 fn u(s: &str) -> U256 {
     U256::from_str_radix(s, 10).unwrap()
+}
+
+/// `uint8` return data. `u8` has no `SolValue` impl (it would clash with `bytes`).
+fn enc_u8(v: u8) -> Vec<u8> {
+    <sol_data::Uint<8> as SolType>::abi_encode(&v)
 }
 
 // ---- initialize ----------------------------------------------------------------
@@ -300,7 +305,7 @@ fn initialize_rejects_a_scale_that_would_underflow() {
     w.vm.mock_static_call(
         STOCK,
         decimalsCall {}.abi_encode(),
-        Ok(U8::from(30u8).abi_encode()),
+        Ok(enc_u8(30)),
     );
     let mut c = AfterHours::from(&w.vm);
     let err = c

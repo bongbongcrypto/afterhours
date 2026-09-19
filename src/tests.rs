@@ -648,7 +648,9 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
     w.mock_feed_raw(I256::MAX, NOW - 60);
     assert!(matches!(
         c.price().expect_err("overflow"),
-        AfterHoursError::NoData(NoData { reason: REASON_FEED_INVALID })
+        AfterHoursError::NoData(NoData {
+            reason: REASON_FEED_INVALID
+        })
     ));
     let (_, answer, ..) = c.latest_round_data().unwrap();
     assert_eq!(answer, I256::MAX, "the feed itself still passes through");
@@ -658,7 +660,9 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_FEED_INVALID));
     assert!(matches!(
         c.latest_round_data().expect_err("overflow"),
-        AfterHoursError::NoData(NoData { reason: REASON_FEED_INVALID })
+        AfterHoursError::NoData(NoData {
+            reason: REASON_FEED_INVALID
+        })
     ));
 }
 

@@ -687,6 +687,7 @@ fn thin_pool_refuses_to_price() {
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
     assert_eq!((ans, twap), (U256::ZERO, U256::ZERO));
     assert_eq!(liq, MIN_LIQUIDITY - 1);
+    assert_eq!(pool, POOL, "the refused pool is still named");
 }
 
 #[test]

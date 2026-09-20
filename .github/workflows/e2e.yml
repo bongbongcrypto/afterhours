@@ -10,6 +10,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      reproducible:
+        description: Deploy with cargo-stylus' reproducible Docker build (what the mainnet deploy does by default)
+        required: false
+        default: false
+        type: boolean
 
 env:
   CARGO_STYLUS_VERSION: 0.10.9
@@ -73,6 +79,8 @@ jobs:
           cargo stylus check --endpoint http://127.0.0.1:8547 2>&1 | tail -5 || true
       - name: run the scenario
         shell: bash
+        env:
+          REPRODUCIBLE: ${{ inputs.reproducible == true && 'true' || 'false' }}
         run: |
           set -o pipefail
           KEY=$(cat /tmp/devkey) bash e2e/run.sh 2>&1 | tee e2e/result.txt

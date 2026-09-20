@@ -66,7 +66,9 @@ send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$((CUM_
 echo "== deploy AfterHours (cargo stylus)"
 cd "$ROOT"
 strip() { sed -E 's/\x1b\[[0-9;]*m//g'; }
-if ! cargo stylus deploy --endpoint "$RPC" --private-key "$KEY" --no-verify > "$HERE/deploy.log" 2>&1; then
+# REPRODUCIBLE=true runs cargo-stylus' Docker build, the path the mainnet deploy takes by default.
+if [ "${REPRODUCIBLE:-false}" = "true" ]; then flags=""; else flags="--no-verify"; fi
+if ! cargo stylus deploy --endpoint "$RPC" --private-key "$KEY" $flags > "$HERE/deploy.log" 2>&1; then
   echo "  cargo stylus deploy failed:"; strip < "$HERE/deploy.log" | grep -v Compiling | tail -15; exit 1
 fi
 strip < "$HERE/deploy.log" | grep -iE "contract size|data fee|deployed code|activat" || true

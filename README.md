@@ -7,7 +7,7 @@ Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Mor
 ## Why
 
 Robinhood Chain trades tokenized US stocks 24/7. Their Chainlink feeds follow US
-market hours and go silent for **52 hours every weekend (76 on holiday weekends)**,
+market hours and go silent for **52-57 hours every weekend (76 on holiday weekends)**,
 while the tokens keep trading on-chain: **$4-5M of AAPL alone changes hands per
 weekend** in 26-44k swaps, at prices that move. The only live lending market on the
 chain copes by hard-coding a **five-day** feed tolerance — so for 30% of every week
@@ -30,6 +30,24 @@ see [DESIGN.md](DESIGN.md).
 `state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped, pool)`
 and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`](abi/IAfterHours.sol).
 
+## Live page
+
+`web/index.html` shows AAPL's Chainlink feed, its primary pool's 30-minute
+average and AfterHours' answer side by side, the feed's last seven days of
+prints, and the same rules applied to every recommended stock. It is static:
+every price, age and pool figure is read from Robinhood Chain by the
+visitor's browser, and before an instance is deployed the AfterHours column
+runs the contract's decision rules ported with the same integer math (the
+page checks its port against the exact prices of the e2e test on load).
+After deployment it reads the contract's `state()` and compares.
+
+```bash
+python web/build_data.py
+python -m http.server 8745 --directory web
+```
+
+Published by the manual `pages` workflow once GitHub Pages is enabled.
+
 ## Layout
 
 ```
@@ -41,7 +59,8 @@ e2e/              end-to-end on a local Nitro node: Solidity doubles + cast scen
 abi/              Solidity interface for integrators
 scripts/measure/  the evidence: feed cadence, weekend swaps, pool depth, PARE's oracle
 scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdlib only)
-.github/          ci (fmt, clippy, tests, cargo stylus check, ABI) and manual deploy
+web/              the live page (static HTML; reads the chain from the browser) and its data builder
+.github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, hourly status, pages
 ```
 
 ## Build and test

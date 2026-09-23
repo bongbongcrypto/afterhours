@@ -1,0 +1,954 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AfterHours · live on Robinhood Chain</title>
+<meta name="description" content="A 24/7 price for Robinhood Chain's stock tokens. Every price, age and pool figure on this page is read from Robinhood Chain by your browser.">
+<meta name="color-scheme" content="dark">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300..700&family=Martian+Mono:wdth,wght@75..112.5,200..500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --void: #08090a;
+  --carbon: #0f1011;
+  --obsidian: #161718;
+  --graphite: #23252a;
+  --smoke: #383b3f;
+  --fog: #8a8f98;
+  --mist: #d0d6e0;
+  --paper: #ffffff;
+  --lime: #e4f222;
+  --coral: #eb5757;
+  --row-hi: rgba(255, 255, 255, 0.02);
+  --ui: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --num: "Martian Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 40px);
+}
+* { box-sizing: border-box; }
+html { background: var(--void); color-scheme: dark; }
+body {
+  margin: 0;
+  background: var(--void);
+  color: var(--mist);
+  font: 400 16px/1.5 var(--ui);
+  font-feature-settings: "cv01", "ss03";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+a { color: var(--paper); text-decoration: underline; text-decoration-color: var(--smoke); text-underline-offset: 3px; }
+a:hover { text-decoration-color: var(--mist); }
+:focus-visible { outline: 2px solid var(--mist); outline-offset: 3px; border-radius: 2px; }
+::selection { background: var(--smoke); color: var(--paper); }
+html, .table-wrap, details.raw pre, .card pre { scrollbar-color: var(--smoke) transparent; scrollbar-width: thin; }
+
+/* drawing: every stroke and fill comes from the tokens */
+.g-axis { stroke: var(--smoke); stroke-width: 1; }
+.g-edge { stroke: var(--fog); stroke-width: 1; }
+.g-print { stroke: var(--mist); stroke-width: 1; }
+.g-anchor { stroke: var(--mist); stroke-width: 1.5; }
+.g-ring { stroke: var(--mist); stroke-width: 1.5; fill: none; }
+.g-answer { fill: var(--lime); }
+.g-grid { stroke: var(--graphite); stroke-width: 1; }
+.g-chain { stroke: var(--mist); stroke-width: 1; }
+.g-feed { stroke: var(--graphite); stroke-width: 1; }
+.g-now { stroke: var(--lime); stroke-width: 1; }
+.g-label { fill: var(--fog); font: 400 12px var(--ui); }
+.g-day { fill: var(--fog); font: 400 11px var(--ui); }
+.g-gap { fill: var(--fog); font: 400 11px var(--num); }
+.g-gap--now { fill: var(--lime); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.num { font-family: var(--num); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+.wrap { max-width: 1120px; margin: 0 auto; padding-left: var(--gutter); padding-right: var(--gutter); }
+
+/* bar */
+.bar { border-bottom: 1px solid var(--graphite); }
+.bar__in { display: flex; align-items: center; gap: 16px; min-height: 56px; flex-wrap: wrap; }
+.bar__mark { font-weight: 590; color: var(--paper); text-decoration: none; letter-spacing: -0.01em; padding: 12px 0; line-height: 20px; }
+.bar__chain { color: var(--fog); font-size: 13px; }
+.bar__nav { margin-left: auto; display: flex; gap: 20px; font-size: 14px; }
+.bar__nav a { text-decoration: none; color: var(--mist); padding: 12px 0; line-height: 20px; display: inline-block; min-width: 44px; text-align: center; }
+.bar__nav a:hover { color: var(--paper); }
+
+/* intro */
+.intro { padding-top: 56px; padding-bottom: 32px; }
+h1 {
+  margin: 0; max-width: 17ch;
+  font-size: clamp(34px, 5.4vw, 60px); line-height: 1.04; font-weight: 510;
+  letter-spacing: -0.024em; color: var(--paper);
+}
+.lede { margin: 20px 0 0; max-width: 64ch; font-size: 17px; line-height: 1.6; color: var(--mist); }
+.lede strong { color: var(--paper); font-weight: 510; }
+
+/* instrument panel */
+.panel { margin-top: 8px; }
+.panel__box { background: var(--carbon); box-shadow: inset 0 0 0 1px var(--graphite); border-radius: 12px; }
+.panel__grid { display: grid; grid-template-columns: 1fr 1fr; }
+.read { padding: 28px 28px 24px; min-width: 0; }
+.read + .read { box-shadow: inset 1px 0 0 var(--graphite); }
+.read__label { margin: 0; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; font-size: 13px; color: var(--fog); }
+.read__label b { font-weight: 510; color: var(--mist); }
+.tag { font-size: 12px; color: var(--fog); border: 1px solid var(--graphite); border-radius: 4px; padding: 1px 7px; }
+.read__value {
+  margin: 14px 0 10px;
+  font-size: clamp(44px, 7.4vw, 84px); line-height: 1; font-weight: 300; font-stretch: 100%;
+  color: var(--paper); letter-spacing: -0.02em; white-space: nowrap;
+}
+.read__value--refuse { color: var(--fog); }
+.read__meta { margin: 0; font-size: 15px; color: var(--mist); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.read__meta + .read__meta { margin-top: 4px; }
+.read__meta--dim { color: var(--fog); font-size: 14px; }
+.age { font-size: 15px; color: var(--paper); }
+.age .u { font-family: var(--ui); font-size: 13px; color: var(--fog); margin: 0 6px 0 2px; }
+.age .u:last-child { margin-right: 0; }
+.block__sub .num, .card p .num, .lede .num { font-size: 0.86em; }
+.dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: transparent; box-shadow: inset 0 0 0 1.5px var(--fog); }
+.dot--pool { background: var(--lime); box-shadow: none; }
+.dot--feed { background: var(--mist); box-shadow: none; }
+.dot--refuse { background: var(--coral); box-shadow: none; }
+.refuse { color: var(--coral); }
+
+.gauge { margin: 0; padding: 8px 28px 4px; box-shadow: inset 0 1px 0 var(--graphite); }
+.gauge svg { display: block; width: 100%; height: 72px; overflow: visible; }
+.gauge__cap { margin: 0; padding: 0 0 18px; font-size: 13px; color: var(--fog); }
+
+.facts { margin: 0; padding: 18px 28px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; box-shadow: inset 0 1px 0 var(--graphite); }
+.facts dt { font-size: 12px; color: var(--fog); margin: 0 0 4px; }
+.facts dd { margin: 0; font-size: 13px; color: var(--mist); overflow-wrap: anywhere; }
+.panel__foot { padding: 14px 28px 18px; box-shadow: inset 0 1px 0 var(--graphite); font-size: 13px; color: var(--fog); }
+.panel__foot p { margin: 0; max-width: 75ch; }
+.panel__foot p + p { margin-top: 8px; }
+.status { color: var(--fog); }
+.status--err { color: var(--coral); }
+.match { color: var(--mist); }
+
+details.raw { margin-top: 12px; }
+details.raw summary { cursor: pointer; color: var(--mist); width: fit-content; padding: 12px 0; line-height: 20px; }
+details.raw pre {
+  margin: 8px 0 0; max-height: 360px; overflow: auto; padding: 12px; border-radius: 6px;
+  background: var(--void); box-shadow: inset 0 0 0 1px var(--graphite);
+  font: 400 11.5px/1.6 var(--num); font-stretch: 87.5%; color: var(--fog); white-space: pre-wrap; word-break: break-all;
+}
+
+/* sections */
+.block { padding-top: 72px; }
+h2 { margin: 0; font-size: 22px; font-weight: 510; letter-spacing: -0.012em; color: var(--paper); }
+.block__sub { margin: 8px 0 0; max-width: 72ch; color: var(--fog); font-size: 15px; }
+
+/* print tape */
+.tape { margin: 24px 0 0; }
+.tape svg { display: block; width: 100%; height: 124px; overflow: visible; }
+.tape__legend { margin: 12px 0 0; font-size: 13px; color: var(--fog); max-width: 75ch; }
+.tape__legend .num { color: var(--mist); font-size: 12px; }
+
+/* table */
+.table-wrap { margin-top: 20px; overflow-x: auto; border-radius: 12px; box-shadow: inset 0 0 0 1px var(--graphite); background: var(--carbon); }
+table.stocks { width: 100%; border-collapse: collapse; min-width: 760px; }
+.stocks th { text-align: left; font-size: 12px; font-weight: 400; color: var(--fog); padding: 12px 16px; border-bottom: 1px solid var(--graphite); white-space: nowrap; }
+.stocks td { padding: 11px 16px; border-bottom: 1px solid var(--graphite); font-size: 14px; white-space: nowrap; }
+.stocks tr:last-child td { border-bottom: 0; }
+.stocks td.num { font-size: 13px; font-stretch: 87.5%; color: var(--paper); }
+.stocks th.r, .stocks td.r { text-align: right; }
+.stocks .sym { font-family: var(--num); font-stretch: 87.5%; font-size: 13px; color: var(--paper); }
+.stocks .hero-row td { background: var(--row-hi); }
+.cell-state { display: inline-flex; align-items: center; gap: 8px; color: var(--mist); }
+.muted { color: var(--fog); }
+
+/* evidence */
+.evidence { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 0; border-top: 1px solid var(--graphite); }
+.evidence li { display: grid; grid-template-columns: 9.5rem 1fr; gap: 20px; padding: 18px 0; border-bottom: 1px solid var(--graphite); align-items: baseline; }
+.evidence .fig { font-family: var(--num); font-weight: 300; font-size: 26px; color: var(--paper); letter-spacing: -0.02em; }
+.evidence p { margin: 0; max-width: 70ch; }
+.evidence code { font-family: var(--num); font-size: 12px; color: var(--fog); }
+
+/* integrate */
+.cols { margin-top: 20px; display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.card { background: var(--carbon); box-shadow: inset 0 0 0 1px var(--graphite); border-radius: 12px; padding: 22px; min-width: 0; }
+.card h3 { margin: 0; font-size: 16px; font-weight: 510; color: var(--paper); }
+.card p { margin: 6px 0 14px; color: var(--fog); font-size: 14px; }
+.card pre { margin: 0; overflow-x: auto; font: 400 12.5px/1.7 var(--num); color: var(--mist); }
+.card .c { color: var(--fog); }
+.cta { margin-top: 28px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.pill { display: inline-block; background: var(--paper); color: var(--void); text-decoration: none; border-radius: 9999px; padding: 12px 20px; line-height: 20px; font-size: 14px; font-weight: 510; }
+.pill:hover { background: var(--mist); }
+.ghost { display: inline-block; color: var(--mist); text-decoration: none; border-radius: 6px; padding: 12px 16px; line-height: 20px; font-size: 14px; box-shadow: inset 0 0 0 1px var(--graphite); }
+.ghost:hover { color: var(--paper); box-shadow: inset 0 0 0 1px var(--smoke); }
+
+footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
+.foot { padding-top: 24px; padding-bottom: 48px; display: flex; gap: 12px 24px; flex-wrap: wrap; font-size: 13px; color: var(--fog); }
+
+.breathe { animation: breathe 2.4s ease-in-out infinite; }
+@keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) {
+  .breathe { animation: none; }
+}
+
+@media (max-width: 760px) {
+  .panel__grid { grid-template-columns: 1fr; }
+  .read + .read { box-shadow: inset 0 1px 0 var(--graphite); }
+  .read { padding: 22px 20px 20px; }
+  .gauge, .facts, .panel__foot { padding-left: 20px; padding-right: 20px; }
+  .facts { grid-template-columns: 1fr 1fr; }
+  .cols { grid-template-columns: 1fr; }
+  .evidence li { grid-template-columns: 1fr; gap: 6px; }
+  .bar__nav { margin-left: 0; width: 100%; gap: 18px; }
+}
+</style>
+</head>
+<body>
+<header class="bar">
+  <div class="wrap bar__in">
+    <a class="bar__mark" href="#top">AfterHours</a>
+    <span class="bar__chain">Robinhood Chain mainnet · chain 4663</span>
+    <nav class="bar__nav" aria-label="Project">
+      <a id="link-code" href="https://github.com/bongbongcrypto/afterhours-oracle">Code</a>
+      <a id="link-design" href="https://github.com/bongbongcrypto/afterhours-oracle/blob/main/DESIGN.md">Design notes</a>
+      <a href="#integrate">Integrate</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+  <section class="wrap intro" aria-labelledby="h1">
+    <h1 id="h1">A stock price that keeps answering when the exchange is closed.</h1>
+    <p class="lede">AfterHours passes Chainlink's price through while the market is open. When the feed goes quiet, it answers with the Robinhood Chain pool's 30-minute average, held within 10% of the last print, and refuses when the pool is too thin to trust. <strong>Every price, age and pool figure on this page is read from Robinhood Chain by your browser.</strong></p>
+  </section>
+
+  <section class="wrap panel" aria-labelledby="panel-h">
+    <h2 id="panel-h" class="sr-only">AAPL at the latest block</h2>
+    <div class="panel__box">
+      <div class="panel__grid">
+        <div class="read">
+          <p class="read__label"><b>Chainlink</b> AAPL / USD feed</p>
+          <p class="read__value num" id="feed-price">&nbsp;</p>
+          <p class="read__meta">last print <span class="num age" id="feed-age">…</span> ago</p>
+          <p class="read__meta read__meta--dim" id="feed-at">&nbsp;</p>
+        </div>
+        <div class="read">
+          <p class="read__label"><b>AfterHours</b> <span class="tag" id="ah-source">rules run in your browser</span></p>
+          <p class="read__value num" id="ah-price">&nbsp;</p>
+          <p class="read__meta"><span class="dot" id="ah-dot"></span><span id="ah-session">Reading Robinhood Chain…</span></p>
+          <p class="read__meta read__meta--dim" id="ah-detail">&nbsp;</p>
+        </div>
+      </div>
+      <figure class="gauge">
+        <svg id="gauge" role="img" aria-labelledby="gauge-cap"></svg>
+        <figcaption class="gauge__cap" id="gauge-cap">The band: AfterHours never answers more than 10% away from the last Chainlink print.</figcaption>
+      </figure>
+      <dl class="facts">
+        <div><dt>Pool read</dt><dd id="pool-name">…</dd></div>
+        <div><dt>Pool 30-minute average</dt><dd class="num" id="pool-twap">…</dd></div>
+        <div><dt>Pool liquidity over the window</dt><dd class="num" id="pool-liq">…</dd></div>
+        <div><dt>Read at block</dt><dd class="num" id="read-at">…</dd></div>
+      </dl>
+      <div class="panel__foot">
+        <p id="deploy-note"></p>
+        <p id="selftest" class="muted"></p>
+        <p id="status" class="status" role="status"></p>
+        <details class="raw">
+          <summary>Show the raw calls behind these numbers</summary>
+          <pre id="raw">No calls yet.</pre>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="tape-h">
+    <h2 id="tape-h">Seven days of Chainlink prints</h2>
+    <p class="block__sub">Each tick is one AAPL/USD price update, read from the feed with <span class="num">getRoundData</span>. The chain above it never closes. The empty stretches below are the hours when nothing on-chain says what the stock is worth.</p>
+    <figure class="tape">
+      <svg id="tape" role="img" aria-labelledby="tape-legend"></svg>
+    </figure>
+    <p class="tape__legend" id="tape-legend">Reading the feed's history…</p>
+  </section>
+
+  <section class="wrap block" aria-labelledby="stocks-h">
+    <h2 id="stocks-h">Every stock AfterHours can price today</h2>
+    <p class="block__sub" id="stocks-sub">The stocks whose main pool meets the bar for depth and observation history. Each row is read at the same block as the panel above and run through the same rules.</p>
+    <div class="table-wrap" tabindex="0" role="region" aria-labelledby="stocks-h">
+      <table class="stocks">
+        <thead>
+          <tr>
+            <th scope="col">Stock</th>
+            <th scope="col" class="r">Chainlink</th>
+            <th scope="col" class="r">Last print</th>
+            <th scope="col" class="r">Pool 30-min average</th>
+            <th scope="col" class="r">Pool vs print</th>
+            <th scope="col">AfterHours now</th>
+          </tr>
+        </thead>
+        <tbody id="stocks-body"><tr><td colspan="6" class="muted">Reading the feeds and pools from Robinhood Chain…</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="wrap block" aria-labelledby="why-h">
+    <h2 id="why-h">Why it exists</h2>
+    <p class="block__sub">Measured on Robinhood Chain mainnet with the read-only scripts in the repository.</p>
+    <ul class="evidence">
+      <li><span class="fig">52.2 h</span><p>The AAPL/USD feed went without a print over an ordinary weekend, and 76.2 h over Labor Day. <code>scripts/measure/feed_cadence.py</code></p></li>
+      <li><span class="fig">$4.2M</span><p>AAPL changed hands in the chain's Uniswap pools during that one weekend, in 26,331 swaps, at prices that moved. <code>scripts/measure/weekend_swaps.py</code></p></li>
+      <li><span class="fig">5 days</span><p>The stale-price tolerance hard-coded into the chain's only live lending market, because nothing prices the stock while the exchange is closed. <code>scripts/measure/pare_oracle.py</code></p></li>
+    </ul>
+  </section>
+
+  <section class="wrap block" id="integrate" aria-labelledby="int-h">
+    <h2 id="int-h">Use it</h2>
+    <p class="block__sub">One contract per stock, with the Chainlink feed's interface and Morpho Blue's. Integrating means changing one address.</p>
+    <div class="cols">
+      <div class="card">
+        <h3>A Morpho Blue market</h3>
+        <p>AfterHours is the market's oracle. <span class="num">price()</span> is Morpho's own interface; USDG stays the loan token.</p>
+<pre><code>MarketParams({
+  loanToken:       USDG,
+  collateralToken: AAPL,
+  oracle:          afterHoursAAPL,
+  irm:             AdaptiveCurveIrm,
+  lltv:            0.625e18
+});</code></pre>
+      </div>
+      <div class="card">
+        <h3>Any Chainlink consumer</h3>
+        <p>Swap the feed address. Round ids, decimals and description are the feed's; a refusal reverts instead of returning a stale price.</p>
+<pre><code>(, int256 answer,, uint256 updatedAt,) =
+  AggregatorV3Interface(afterHoursAAPL)
+    .latestRoundData();
+<span class="c">// fresh in LIVE_FEED and ONCHAIN_TWAP;
+// reverts IssuerPaused / NoData(reason)</span></code></pre>
+      </div>
+    </div>
+    <div class="cta">
+      <a class="pill" id="cta-code" href="https://github.com/bongbongcrypto/afterhours-oracle">Read the code</a>
+      <a class="ghost" id="cta-design" href="https://github.com/bongbongcrypto/afterhours-oracle/blob/main/DESIGN.md">Design and threat model</a>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <span>AfterHours · Rust on Arbitrum Stylus · no owner, no upgrade</span>
+    <span>Unaudited · MIT</span>
+    <span>Built for Arbitrum Open House Singapore, 2026</span>
+  </div>
+</footer>
+
+<script>
+"use strict";
+(function () {
+  // ---- selectors: copied from scripts/probe.py and scripts/measure (computed with ethers) ----
+  var SEL = {
+    latestRoundData: "0xfeaf968c",
+    getRoundData: "0x9a6fc8f5",
+    decimals: "0x313ce567",
+    oraclePaused: "0x7706ba52",
+    observe: "0x883bdbfd",
+    state: "0xc19d93fb"
+  };
+  var DATA = null;
+  var $ = function (id) { return document.getElementById(id); };
+  var SVGNS = "http://www.w3.org/2000/svg";
+
+  // ---- exact integer math, ported from src/tickmath.rs and src/lib.rs ----
+  var ONE_Q96 = 1n << 96n;
+  var BASE_Q96 = ONE_Q96 + ONE_Q96 / 10000n;
+  var MAX_TICK = 887272;
+  var U160 = 1n << 160n;
+  var U128_MAX = (1n << 128n) - 1n;
+  var U256 = 1n << 256n;
+
+  function mulQ96(a, b) { return (a * b) >> 96n; }
+  function ratioQ96(tick) {
+    if (tick < -MAX_TICK || tick > MAX_TICK) return null;
+    var result = ONE_Q96, base = BASE_Q96, exp = Math.abs(tick);
+    while (exp > 0) {
+      if (exp & 1) result = mulQ96(result, base);
+      exp = Math.floor(exp / 2);
+      if (exp > 0) base = mulQ96(base, base);
+    }
+    if (tick < 0) {
+      var inv = (ONE_Q96 << 96n) / result;
+      return inv === 0n ? null : inv;
+    }
+    return result;
+  }
+  function meanTick(then, now, window) {
+    if (window === 0) return null;
+    var w = BigInt(window), delta = now - then;
+    var mean = delta / w;
+    if (delta < 0n && delta % w !== 0n) mean -= 1n;
+    if (mean < -(1n << 31n) || mean >= (1n << 31n)) return null;
+    return Number(mean);
+  }
+  function stockPrice(ratio, stockIsToken0, sd, qd, fd) {
+    if (ratio === 0n) return null;
+    var numPow = 10n ** BigInt(sd + fd), qPow = 10n ** BigInt(qd);
+    var p = stockIsToken0 ? (ratio * numPow) / (qPow << 96n) : (numPow << 96n) / (ratio * qPow);
+    if (p === 0n || p >= U256) return null;
+    return p;
+  }
+  function harmonicLiquidity(window, splThen, splNow) {
+    var delta = (((splNow - splThen) % U160) + U160) % U160;
+    if (window === 0 || delta === 0n) return null;
+    var liq = (BigInt(window) << 128n) / delta;
+    return liq > U128_MAX ? U128_MAX : liq;
+  }
+
+  // The contract's decision, in its order (src/lib.rs, evaluate).
+  function evaluate(a, r, feedDecimals, nowTs) {
+    var P = DATA.params;
+    var q = { session: "", reason: 0, answer: 0n, twap: null, liquidity: null, clamped: false, poolIndex: -1 };
+    var round = r.round;
+    var valid = !!round && round.answer > 0n && round.updatedAt !== 0n && round.updatedAt <= nowTs;
+    if (r.paused) { q.session = "PAUSED"; return q; }
+    if (!valid) { q.session = "NO_DATA"; q.reason = 1; return q; }
+    var feedAnswer = round.answer, age = nowTs - round.updatedAt;
+    if (age <= BigInt(P.liveMaxAge)) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
+    if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
+    var dev = BigInt(P.maxDeviationBps), bps = 10000n;
+    var lower = feedAnswer * (bps - dev) / bps, upper = feedAnswer * (bps + dev) / bps;
+    var chosen = null;
+    for (var i = 0; i < r.obs.length; i++) {
+      var o = r.obs[i];
+      if (!o) continue;
+      var liq = harmonicLiquidity(P.twapWindow, o.spl[0], o.spl[1]);
+      if (liq === null) continue;
+      chosen = { i: i, o: o, liq: liq };
+      break;
+    }
+    if (!chosen) { q.session = "NO_DATA"; q.reason = 3; return q; }
+    q.poolIndex = chosen.i;
+    q.liquidity = chosen.liq;
+    if (chosen.liq < BigInt(a.minLiquidity)) { q.session = "NO_DATA"; q.reason = 2; return q; }
+    var twap = twapOf(chosen.o, a, feedDecimals);
+    if (twap === null) { q.session = "NO_DATA"; q.reason = 3; return q; }
+    q.twap = twap;
+    if (twap < lower) { q.answer = lower; q.clamped = true; }
+    else if (twap > upper) { q.answer = upper; q.clamped = true; }
+    else { q.answer = twap; }
+    q.session = "ONCHAIN_TWAP";
+    return q;
+  }
+  function twapOf(o, a, feedDecimals) {
+    var mt = meanTick(o.ticks[0], o.ticks[1], DATA.params.twapWindow);
+    var ratio = mt === null ? null : ratioQ96(mt);
+    return ratio === null ? null : stockPrice(ratio, a.stockIsToken0, a.stockDecimals, DATA.quote.decimals, feedDecimals);
+  }
+
+  // Values the contract produces in its end-to-end test (e2e/run.sh): if the
+  // port drifts from the contract, the page says so instead of showing numbers.
+  function selfTest() {
+    var a = stockPrice(ratioQ96(218301), false, 18, 6, 8);
+    var b = stockPrice(ratioQ96(-(218301 + 500)), true, 18, 6, 8);
+    return a === 33096497304n && b === 31482440784n;
+  }
+
+  // ---- ABI helpers ----
+  function pad(x) { return BigInt(x).toString(16).padStart(64, "0"); }
+  function words(hex) {
+    var h = (hex || "0x").slice(2), out = [];
+    for (var i = 0; i + 64 <= h.length; i += 64) out.push(BigInt("0x" + h.slice(i, i + 64)));
+    return out;
+  }
+  function signed(w) { return w >= (1n << 255n) ? w - U256 : w; }
+  function decodeRound(hex) {
+    var w = words(hex);
+    if (w.length < 5) return null;
+    return { roundId: w[0], answer: signed(w[1]), startedAt: w[2], updatedAt: w[3] };
+  }
+  function decodeObserve(hex) {
+    var w = words(hex);
+    if (w.length < 2) return null;
+    var a = Number(w[0] / 32n), b = Number(w[1] / 32n);
+    if (!(a + 2 < w.length) || !(b + 2 < w.length)) return null;
+    if (w[a] !== 2n || w[b] !== 2n) return null;
+    return { ticks: [signed(w[a + 1]), signed(w[a + 2])], spl: [w[b + 1], w[b + 2]] };
+  }
+  function decodeState(hex) {
+    var w = words(hex);
+    if (w.length < 9) return null;
+    var names = ["LIVE_FEED", "ONCHAIN_TWAP", "PAUSED", "NO_DATA"];
+    return {
+      session: names[Number(w[0])] || String(w[0]), reason: Number(w[1]), answer: w[2],
+      twap: w[5], liquidity: w[6], clamped: w[7] !== 0n, pool: "0x" + w[8].toString(16).padStart(40, "0")
+    };
+  }
+  function observeData(window) { return SEL.observe + pad(32) + pad(2) + pad(window) + pad(0); }
+
+  // ---- JSON-RPC, batched, every call logged for the "raw calls" view ----
+  var nextId = 1;
+  var rawLog = [];
+  function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  async function postJson(body) {
+    var delay = 1500;
+    for (var attempt = 0; attempt < 4; attempt++) {
+      var resp;
+      try {
+        resp = await fetch(DATA.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+      } catch (e) {
+        if (attempt === 3) throw new Error("the RPC could not be reached (" + e.message + ")");
+        await sleep(delay); delay *= 2; continue;
+      }
+      if (resp.status === 429 || resp.status >= 500) {
+        if (attempt === 3) throw new Error("the RPC answered HTTP " + resp.status + (resp.status === 429 ? " (rate limited)" : ""));
+        await sleep(delay); delay *= 2; continue;
+      }
+      if (!resp.ok) throw new Error("the RPC answered HTTP " + resp.status);
+      return resp.json();
+    }
+  }
+  async function batch(calls) {
+    var results = [];
+    for (var s = 0; s < calls.length; s += 40) {
+      var chunk = calls.slice(s, s + 40);
+      var body = chunk.map(function (c) { return { jsonrpc: "2.0", id: nextId++, method: c.method, params: c.params }; });
+      var res = await postJson(body);
+      var byId = new Map((Array.isArray(res) ? res : [res]).map(function (r) { return [r.id, r]; }));
+      body.forEach(function (b, i) {
+        var r = byId.get(b.id) || { error: { message: "no response for this call" } };
+        rawLog.push({ call: chunk[i], r: r });
+        results.push(r);
+      });
+    }
+    return results;
+  }
+  function ethCall(to, data, blockHex, label) { return { method: "eth_call", params: [{ to: to, data: data }, blockHex], label: label }; }
+
+  // ---- formatting ----
+  var DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  var MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  function two(n) { return String(n).padStart(2, "0"); }
+  function toNum(big, dec) { return Number(big) / Math.pow(10, dec); }
+  function money(big, dec) {
+    return "$" + toNum(big, dec).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function pct(x) { var s = (x * 100).toFixed(2); return (x >= 0 ? "+" : "−") + s.replace("-", "") + "%"; }
+  function utc(ts) {
+    var d = new Date(Number(ts) * 1000);
+    return DAYS[d.getUTCDay()] + " " + d.getUTCDate() + " " + MONTHS[d.getUTCMonth()] + " " + two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + " UTC";
+  }
+  function dur(sec, withSeconds) {
+    sec = Math.max(0, Math.floor(sec));
+    var h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+    if (h > 0) return h + " h " + two(m) + " m" + (withSeconds ? " " + two(s) + " s" : "");
+    if (m > 0) return m + " m" + (withSeconds ? " " + two(s) + " s" : "");
+    return s + " s";
+  }
+  function sci(big) {
+    if (big === null || big === undefined) return "—";
+    var s = big.toString();
+    if (s.length <= 6) return s;
+    return s[0] + "." + s.slice(1, 3) + "e" + (s.length - 1);
+  }
+  function shortAddr(a) { return a.slice(0, 6) + "…" + a.slice(-4); }
+
+  function sessionText(q) {
+    if (q.session === "LIVE_FEED") return { text: "Market open: passing Chainlink's print through", dot: "feed", short: "Chainlink print" };
+    if (q.session === "ONCHAIN_TWAP") return { text: q.clamped ? "Feed silent: pool average, held at the band edge" : "Feed silent: answering from the pool", dot: "pool", short: q.clamped ? "pool average, clamped" : "pool average" };
+    if (q.session === "PAUSED") return { text: "Refusing: the issuer paused the token's oracle", dot: "refuse", short: "refuses: issuer pause" };
+    var why = { 1: "the feed's round is invalid", 2: "the pool is too thin over the last 30 minutes", 3: "no pool history to average", 4: "the last print is more than 5 days old" }[q.reason] || "no data";
+    var shortWhy = { 1: "refuses: feed invalid", 2: "refuses: pool too thin", 3: "refuses: no pool history", 4: "refuses: print too old" }[q.reason] || "refuses";
+    return { text: "Refusing: " + why, dot: "refuse", short: shortWhy };
+  }
+
+  // ---- state ----
+  var S = { feedDecimals: {}, hero: null, head: null, fetchedAt: 0, rounds: null, busy: false };
+
+  async function readHead() {
+    var r = await batch([{ method: "eth_getBlockByNumber", params: ["latest", false] }]);
+    if (!r[0].result) throw new Error("no latest block (" + ((r[0].error && r[0].error.message) || "empty") + ")");
+    return { number: BigInt(r[0].result.number), timestamp: BigInt(r[0].result.timestamp) };
+  }
+
+  async function refresh() {
+    if (S.busy) return;
+    S.busy = true;
+    rawLog = [];
+    try {
+      var head = await readHead();
+      var blockHex = "0x" + head.number.toString(16);
+      var assets = DATA.assets;
+      var calls = [];
+      assets.forEach(function (a) {
+        if (S.feedDecimals[a.symbol] === undefined) calls.push(ethCall(a.feed, SEL.decimals, blockHex, a.symbol + " feed decimals()"));
+        calls.push(ethCall(a.stock, SEL.oraclePaused, blockHex, a.symbol + " oraclePaused()"));
+        calls.push(ethCall(a.feed, SEL.latestRoundData, blockHex, a.symbol + " feed latestRoundData()"));
+        calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,0])"));
+        if (a.oracle) calls.push(ethCall(a.oracle, SEL.state, blockHex, a.symbol + " AfterHours state()"));
+      });
+      // A load-balanced RPC node can lag a block behind the one that served the head: retry once.
+      var res = await batch(calls);
+      var lagging = res.filter(function (x) { return x.error && /header not found|unknown block|missing trie/i.test(x.error.message || ""); }).length;
+      if (lagging > 0) { await sleep(1500); rawLog = []; res = await batch(calls); }
+      var k = 0, reads = {};
+      assets.forEach(function (a) {
+        if (S.feedDecimals[a.symbol] === undefined) {
+          var d = res[k++];
+          if (d.result) S.feedDecimals[a.symbol] = Number(words(d.result)[0]);
+        }
+        var paused = res[k++], round = res[k++], obs = res[k++];
+        var st = a.oracle ? res[k++] : null;
+        reads[a.symbol] = {
+          pausedOk: !!paused.result,
+          paused: paused.result ? words(paused.result)[0] !== 0n : false,
+          round: round.result ? decodeRound(round.result) : null,
+          obs: [obs.result ? decodeObserve(obs.result) : null],
+          state: st && st.result ? decodeState(st.result) : null,
+          stateErr: st && st.error ? st.error.message : null
+        };
+      });
+      // Standbys are read only while every earlier pool cannot be observed, as in the contract.
+      for (var tier = 1; tier < 3; tier++) {
+        var more = [], who = [];
+        assets.forEach(function (a) {
+          var r = reads[a.symbol];
+          if (a.pools.length > tier && r.obs.length === tier && r.obs.every(function (o) { return !o; })) {
+            more.push(ethCall(a.pools[tier], observeData(DATA.params.twapWindow), blockHex, a.symbol + " standby pool " + tier + " observe([1800,0])"));
+            who.push(a.symbol);
+          }
+        });
+        if (!more.length) break;
+        var mres = await batch(more);
+        mres.forEach(function (m, i) { reads[who[i]].obs.push(m.result ? decodeObserve(m.result) : null); });
+      }
+      S.head = head;
+      S.fetchedAt = Date.now();
+      S.reads = reads;
+      render();
+      setStatus("", false);
+      if (!S.rounds || S.roundsAt < Date.now() - 10 * 60 * 1000) readTape().catch(function (e) { $("tape-legend").textContent = "Could not read the feed's history: " + e.message + "."; });
+    } catch (e) {
+      setStatus("Could not read Robinhood Chain: " + e.message + ". Trying again in 30 s.", true);
+    } finally {
+      S.busy = false;
+      renderRaw();
+    }
+  }
+
+  function setStatus(text, err) {
+    var el = $("status");
+    el.textContent = text;
+    el.className = "status" + (err ? " status--err" : "");
+  }
+
+  function render() {
+    var nowTs = S.head.timestamp;
+    var hero = DATA.assets[0];
+    var r = S.reads[hero.symbol];
+    var fd = S.feedDecimals[hero.symbol];
+    if (fd === undefined) {
+      setStatus("Could not read the AAPL feed's decimals; trying again in 30 s.", true);
+      return;
+    }
+    var q = evaluate(hero, r, fd, nowTs);
+
+    // Chainlink readout
+    if (r.round && r.round.answer > 0n && fd !== undefined) {
+      $("feed-price").textContent = money(r.round.answer, fd);
+      $("feed-at").textContent = "printed " + utc(r.round.updatedAt) + " · round " + (r.round.roundId & ((1n << 64n) - 1n)).toString();
+    } else {
+      $("feed-price").textContent = "—";
+      $("feed-at").textContent = "the feed returned no usable round";
+    }
+
+    // AfterHours readout: the contract's own state() when deployed, else the rules run here
+    var shown = q, fromContract = false;
+    if (hero.oracle && r.state) { shown = { session: r.state.session, reason: r.state.reason, answer: r.state.answer, clamped: r.state.clamped, twap: r.state.twap }; fromContract = true; }
+    var sst = sessionText(shown);
+    var refusing = shown.session === "PAUSED" || shown.session === "NO_DATA";
+    $("ah-price").textContent = refusing ? "no price" : money(shown.answer, fd);
+    $("ah-price").className = "read__value num" + (refusing ? " read__value--refuse" : "");
+    $("ah-session").textContent = sst.text;
+    $("ah-session").className = refusing ? "refuse" : "";
+    $("ah-dot").className = "dot dot--" + sst.dot + (sst.dot === "pool" ? " breathe" : "");
+    var detail = "";
+    if (!refusing && r.round) {
+      var off = toNum(shown.answer, fd) / toNum(r.round.answer, fd) - 1;
+      detail = shown.session === "LIVE_FEED" ? "identical to the feed's round, no delay added" :
+        pct(off) + " vs the last print" + (shown.clamped ? ", clamped to the band" : ", inside the ±10% band");
+    } else if (refusing) {
+      detail = "latestRoundData() and price() revert; state() keeps explaining why";
+    }
+    $("ah-detail").textContent = detail;
+    $("ah-source").textContent = fromContract ? "state() of " + shortAddr(hero.oracle) : "rules run in your browser";
+
+    // gauge and facts: the pool the rules read (the primary unless it cannot be observed)
+    var usedIdx = 0;
+    while (usedIdx < r.obs.length - 1 && !r.obs[usedIdx]) usedIdx++;
+    var usedObs = r.obs[usedIdx] || null;
+    var poolTwap = usedObs ? twapOf(usedObs, hero, fd) : null;
+    drawGauge(r.round ? r.round.answer : null, poolTwap, refusing ? null : shown.answer, fd);
+
+    $("pool-name").textContent = (usedIdx === 0 ? "primary, " : "standby, ") + (hero.poolFees[usedIdx] || "") + " AAPL/USDG " + shortAddr(hero.pools[usedIdx]) +
+      (usedObs ? "" : " (cannot be observed)");
+    $("pool-twap").textContent = poolTwap === null ? "unavailable" : money(poolTwap, fd) + (r.round && r.round.answer > 0n ? "  (" + pct(toNum(poolTwap, fd) / toNum(r.round.answer, fd) - 1) + " vs print)" : "");
+    var liq = usedObs ? harmonicLiquidity(DATA.params.twapWindow, usedObs.spl[0], usedObs.spl[1]) : null;
+    $("pool-liq").textContent = liq === null ? "unavailable" : sci(liq) + ", floor " + sci(BigInt(hero.minLiquidity));
+    $("read-at").textContent = Number(S.head.number).toLocaleString("en-US") + " · " + utc(S.head.timestamp).slice(-9);
+
+    // deployment note and cross-check
+    if (hero.oracle) {
+      var same = r.state && r.state.session === q.session && r.state.answer === q.answer;
+      $("deploy-note").replaceChildren();
+      var a = document.createElement("a");
+      a.href = DATA.explorer + "/address/" + hero.oracle;
+      a.textContent = hero.oracle;
+      $("deploy-note").append("AfterHours AAPL is deployed at ", a, ". ");
+      var m = document.createElement("span");
+      m.className = same ? "match" : "refuse";
+      m.textContent = r.state ? (same ? "Your browser recomputed its answer from the same block's feed and pool data: identical." :
+        "Your browser's recomputation differs: contract " + r.state.session + " " + r.state.answer + ", browser " + q.session + " " + q.answer + ".") :
+        "state() could not be read: " + (r.stateErr || "no answer") + ".";
+      $("deploy-note").append(m);
+    } else {
+      $("deploy-note").textContent = "The AAPL instance is not deployed yet. The AfterHours readout is the contract's decision rules, ported to this page with the same integer math, run on the feed and pool data your browser read at this block. Once the instance is live, this panel reads the contract's own state() and checks it against this computation.";
+    }
+
+    renderTable(nowTs);
+    tickAges();
+  }
+
+  function renderTable(nowTs) {
+    var body = $("stocks-body");
+    var rows = [];
+    DATA.assets.forEach(function (a, idx) {
+      var r = S.reads[a.symbol], fd = S.feedDecimals[a.symbol];
+      var tr = document.createElement("tr");
+      if (idx === 0) tr.className = "hero-row";
+      function td(text, cls) { var c = document.createElement("td"); c.textContent = text; if (cls) c.className = cls; tr.appendChild(c); return c; }
+      var th = document.createElement("th");
+      th.scope = "row";
+      th.className = "sym";
+      th.textContent = a.symbol;
+      tr.appendChild(th);
+      if (!r || fd === undefined || !r.round) {
+        td("—", "num r"); td("—", "num r"); td("—", "num r"); td("—", "num r"); td("feed unreadable", "muted");
+        rows.push(tr); return;
+      }
+      var q = evaluate(a, r, fd, nowTs);
+      var twap = r.obs[0] ? twapOf(r.obs[0], a, fd) : null;
+      td(money(r.round.answer, fd), "num r");
+      var ageCell = td(dur(Number(nowTs - r.round.updatedAt), false), "num r");
+      ageCell.dataset.updated = r.round.updatedAt.toString();
+      td(twap === null ? "—" : money(twap, fd), "num r");
+      td(twap === null ? "—" : pct(toNum(twap, fd) / toNum(r.round.answer, fd) - 1), "num r");
+      var st = sessionText(q);
+      var c = document.createElement("td");
+      var span = document.createElement("span");
+      span.className = "cell-state";
+      var dot = document.createElement("span");
+      dot.className = "dot dot--" + st.dot;
+      var label = document.createElement("span");
+      label.textContent = st.short + (q.session === "ONCHAIN_TWAP" ? " " + money(q.answer, fd) : "");
+      if (st.dot === "refuse") label.className = "refuse";
+      span.append(dot, label);
+      c.appendChild(span);
+      tr.appendChild(c);
+      rows.push(tr);
+    });
+    body.replaceChildren.apply(body, rows);
+    var open = DATA.assets.filter(function (a) { var r = S.reads[a.symbol]; return r && r.round && Number(nowTs - r.round.updatedAt) <= DATA.params.liveMaxAge; }).length;
+    $("stocks-sub").textContent = DATA.assets.length + " of the " + DATA.counts.passInitialize + " stocks that pass the contract's checks today meet the bar for pool depth and observation history. " +
+      "Right now " + open + " of these feeds printed in the last 6 hours. Every row is read at the same block as the panel above and run through the same rules" +
+      (DATA.assets.some(function (a) { return a.oracle; }) ? "." : "; no instance is deployed yet.");
+  }
+
+  // "9 h 27 m 58 s" with the numbers in the numeric face and the units in the text face
+  function setAge(node, sec) {
+    var parts = dur(sec, true).split(" "), kids = [];
+    for (var i = 0; i < parts.length; i += 2) {
+      kids.push(document.createTextNode(parts[i]));
+      var u = document.createElement("span");
+      u.className = "u";
+      u.textContent = parts[i + 1];
+      kids.push(u);
+    }
+    node.replaceChildren.apply(node, kids);
+  }
+
+  function tickAges() {
+    if (!S.head) return;
+    var hero = DATA.assets[0], r = S.reads[hero.symbol];
+    var nowSec = Number(S.head.timestamp) + (Date.now() - S.fetchedAt) / 1000;
+    if (r && r.round) setAge($("feed-age"), nowSec - Number(r.round.updatedAt));
+    document.querySelectorAll("#stocks-body td[data-updated]").forEach(function (c) {
+      c.textContent = dur(nowSec - Number(c.dataset.updated), false);
+    });
+  }
+
+  // ---- gauge ----
+  function el(name, attrs, text) {
+    var n = document.createElementNS(SVGNS, name);
+    for (var k in attrs) n.setAttribute(k, attrs[k]);
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function drawGauge(feed, twap, answer, fd) {
+    var svg = $("gauge");
+    var W = Math.max(280, svg.clientWidth || 600), H = 72, pad = 14;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    var kids = [];
+    if (!feed || feed <= 0n) { svg.replaceChildren(); return; }
+    var band = DATA.params.maxDeviationBps / 10000;
+    var f = toNum(feed, fd);
+    function x(v) { var rel = (v / f - 1) / band; rel = Math.max(-1, Math.min(1, rel)); return pad + (W - 2 * pad) * (rel + 1) / 2; }
+    var y = 26;
+    kids.push(el("line", { x1: pad, x2: W - pad, y1: y, y2: y, class: "g-axis" }));
+    [-1, 1].forEach(function (s) {
+      var xx = s < 0 ? pad : W - pad;
+      kids.push(el("line", { x1: xx, x2: xx, y1: y - 7, y2: y + 7, class: "g-edge" }));
+      kids.push(el("text", { x: xx, y: y + 30, "text-anchor": s < 0 ? "start" : "end", class: "g-label" }, (s < 0 ? "−10%" : "+10%") + " band edge"));
+    });
+    var cx = x(f);
+    kids.push(el("line", { x1: cx, x2: cx, y1: y - 10, y2: y + 10, class: "g-anchor" }));
+    kids.push(el("text", { x: cx, y: y + 30, "text-anchor": "middle", class: "g-label" }, "last print"));
+    if (twap !== null) {
+      var tv = toNum(twap, fd);
+      kids.push(el("circle", { cx: x(tv), cy: y, r: 6, class: "g-ring" }));
+    }
+    if (answer !== null && answer !== undefined) {
+      kids.push(el("circle", { cx: x(toNum(answer, fd)), cy: y, r: 4, class: "g-answer" }));
+    }
+    svg.replaceChildren.apply(svg, kids);
+    var cap = "The band: AfterHours never answers more than 10% away from the last Chainlink print.";
+    if (twap !== null) cap += " Ring: the pool's 30-minute average (" + pct(toNum(twap, fd) / f - 1) + "). Dot: AfterHours' answer.";
+    $("gauge-cap").textContent = cap;
+  }
+
+  // ---- the print tape ----
+  async function readTape() {
+    var hero = DATA.assets[0], r = S.reads[hero.symbol];
+    if (!r || !r.round) return;
+    var blockHex = "0x" + S.head.number.toString(16);
+    var nowTs = S.head.timestamp, from = nowTs - 7n * 86400n;
+    var phase = r.round.roundId >> 64n, agg = r.round.roundId & ((1n << 64n) - 1n);
+    var rounds = [r.round];
+    var step = 60n;
+    for (var pass = 0; pass < 3 && agg > 1n; pass++) {
+      var calls = [];
+      for (var i = 1n; i <= step && agg - i >= 1n; i++) {
+        var id = (phase << 64n) | (agg - i);
+        calls.push(ethCall(hero.feed, SEL.getRoundData + pad(id), blockHex, "AAPL feed getRoundData(" + id + ")"));
+      }
+      var res = await batch(calls);
+      var oldest = null;
+      res.forEach(function (x) { var d = x.result ? decodeRound(x.result) : null; if (d && d.updatedAt > 0n) { rounds.push(d); oldest = d.updatedAt; } });
+      agg -= step;
+      if (oldest === null || oldest < from) break;
+    }
+    rounds.sort(function (a, b) { return a.updatedAt < b.updatedAt ? -1 : 1; });
+    // keep the last print before the window: the first gap is measured from it, not from the window edge
+    var firstIn = rounds.findIndex(function (d) { return d.updatedAt >= from; });
+    S.rounds = firstIn < 0 ? rounds.slice(-1) : rounds.slice(Math.max(0, firstIn - 1));
+    S.roundsAt = Date.now();
+    drawTape();
+    renderRaw();
+  }
+
+  function drawTape() {
+    if (!S.rounds || !S.head) return;
+    var svg = $("tape");
+    var W = Math.max(300, svg.clientWidth || 900), narrow = W < 560;
+    var H = 124, padL = 0, padR = 10;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+    var nowTs = Number(S.head.timestamp), from = nowTs - 7 * 86400;
+    function x(t) { return padL + (W - padL - padR) * (t - from) / (nowTs - from); }
+    var yChain = 30, yFeed = 78, kids = [];
+    // day grid (UTC midnights)
+    var d0 = Math.ceil(from / 86400) * 86400;
+    for (var t = d0; t <= nowTs; t += 86400) {
+      var dx = x(t);
+      kids.push(el("line", { x1: dx, x2: dx, y1: 12, y2: yFeed + 14, class: "g-grid" }));
+      var dd = new Date(t * 1000);
+      kids.push(el("text", { x: dx + 4, y: H - 4, class: "g-day" }, narrow ? DAYS[dd.getUTCDay()].slice(0, 2) : DAYS[dd.getUTCDay()] + " " + dd.getUTCDate()));
+    }
+    // rails
+    kids.push(el("text", { x: 0, y: yChain - 10, class: "g-label" }, "Robinhood Chain · a block every 0.1 s, every day"));
+    kids.push(el("line", { x1: 0, x2: x(nowTs), y1: yChain, y2: yChain, class: "g-chain" }));
+    kids.push(el("text", { x: 0, y: yFeed - 18, class: "g-label" }, "Chainlink AAPL/USD prints"));
+    kids.push(el("line", { x1: 0, x2: x(nowTs), y1: yFeed, y2: yFeed, class: "g-feed" }));
+    // prints inside the window (the one before it only anchors the first gap)
+    var all = S.rounds.map(function (d) { return Number(d.updatedAt); });
+    var times = all.filter(function (t) { return t >= from; });
+    times.forEach(function (t) { var tx = x(t); kids.push(el("line", { x1: tx, x2: tx, y1: yFeed - 9, y2: yFeed + 9, class: "g-print" })); });
+    // gaps between consecutive prints, the last one open until now
+    var gaps = [];
+    for (var gi = 0; gi < all.length; gi++) gaps.push([all[gi], gi + 1 < all.length ? all[gi + 1] : nowTs, gi + 1 >= all.length]);
+    var longest = null, staleSec = 0, weekendSec = 0, live = DATA.params.liveMaxAge;
+    gaps.forEach(function (g) {
+      var len = g[1] - g[0];
+      if (!longest || len > longest[1] - longest[0]) longest = g;
+      // seconds inside the window during which the feed was older than liveMaxAge
+      var stale = Math.max(0, Math.min(g[1], nowTs) - Math.max(g[0] + live, from));
+      staleSec += stale;
+      if (len >= 36 * 3600) weekendSec += stale;
+      var vx0 = x(Math.max(g[0], from)), vx1 = x(g[1]);
+      if (len >= 12 * 3600 && vx1 - vx0 > (narrow ? 44 : 64)) {
+        kids.push(el("text", { x: (vx0 + vx1) / 2, y: yFeed + 26, "text-anchor": "middle", class: g[2] ? "g-gap g-gap--now" : "g-gap" }, dur(len, false)));
+      }
+    });
+    var prev = all.length ? all[all.length - 1] : from;
+    // now
+    var nx = x(nowTs);
+    kids.push(el("line", { x1: nx, x2: nx, y1: yChain - 4, y2: yFeed + 12, class: "g-now" }));
+    var dotNow = el("circle", { cx: nx, cy: yChain, r: 3.5, class: "g-answer breathe" });
+    kids.push(dotNow);
+    svg.replaceChildren.apply(svg, kids);
+
+    var sinceLast = nowTs - prev;
+    var covered = Math.round(100 * staleSec / (7 * 86400));
+    var legend = "Chainlink printed " + times.length + " times in the last 7 days. Longest silence: " +
+      (longest ? dur(longest[1] - longest[0], false) + " (" + utc(longest[0]) + " to " + (longest[2] ? "now" : utc(longest[1])) + ")" : "none") +
+      ". AfterHours hands over to the pool when the last print is more than 6 hours old: that was " + covered + "% of the week, " +
+      dur(weekendSec, false) + " of it over the weekend and " + dur(staleSec - weekendSec, false) +
+      " on weekdays, when the feed is running but the price did not move its 0.5% update trigger." +
+      (sinceLast > DATA.params.liveMaxAge ? " The feed is quiet now: last print " + dur(sinceLast, false) + " ago." : "");
+    $("tape-legend").textContent = legend;
+  }
+
+  function renderRaw() {
+    var lines = rawLog.map(function (x, i) {
+      var c = x.call, r = x.r;
+      var head = "#" + (i + 1) + "  " + (c.label || c.method) + "\n    " + c.method + " " + JSON.stringify(c.params);
+      var body = r.result !== undefined ? (typeof r.result === "string" ? r.result : JSON.stringify({ number: r.result.number, timestamp: r.result.timestamp })) : "error: " + ((r.error && r.error.message) || "unknown");
+      return head + "\n    → " + body;
+    });
+    $("raw").textContent = lines.length ? "RPC " + DATA.rpc + ", " + lines.length + " calls in the last refresh\n\n" + lines.join("\n\n") : "No calls yet.";
+  }
+
+  // ---- boot ----
+  async function boot() {
+    try {
+      var resp = await fetch("data.json", { cache: "no-store" });
+      DATA = await resp.json();
+    } catch (e) {
+      setStatus("Could not load data.json next to this page: " + e.message + ".", true);
+      return;
+    }
+    ["link-code", "cta-code"].forEach(function (id) { $(id).href = DATA.repo; });
+    ["link-design", "cta-design"].forEach(function (id) { $(id).href = DATA.repo + "/blob/main/DESIGN.md"; });
+    var ok = selfTest();
+    $("selftest").textContent = ok ?
+      "Self-check passed: this page's port of the contract's tick math reproduces the two exact prices of the contract's end-to-end test (33096497304 and 31482440784)." :
+      "Self-check FAILED: this page's math does not reproduce the contract's end-to-end prices. Do not trust the AfterHours readout.";
+    if (!ok) $("selftest").className = "refuse";
+    await refresh();
+    setInterval(function () { if (!document.hidden) refresh(); }, 30000);
+    setInterval(function () { if (!document.hidden) tickAges(); }, 1000);
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
+    var ro = new ResizeObserver(function () {
+      if (!S.head) return;
+      var hero = DATA.assets[0], r = S.reads[hero.symbol], fd = S.feedDecimals[hero.symbol];
+      var q = evaluate(hero, r, fd, S.head.timestamp);
+      var shown = hero.oracle && r.state ? r.state : q;
+      var refusing = shown.session === "PAUSED" || shown.session === "NO_DATA";
+      drawGauge(r.round ? r.round.answer : null, r.obs[0] ? twapOf(r.obs[0], hero, fd) : null, refusing ? null : shown.answer, fd);
+      drawTape();
+    });
+    ro.observe($("tape"));
+  }
+  boot();
+})();
+</script>
+</body>
+</html>

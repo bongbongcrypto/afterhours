@@ -1,0 +1,42 @@
+name: pages
+
+# Publishes web/ (the live page) to GitHub Pages. The page is static: every
+# price, age and pool figure is read from Robinhood Chain by the visitor's
+# browser; this job only regenerates web/data.json from assets.json and
+# deployments.json and uploads the folder.
+#
+# Manual until the owner turns Pages on (Settings -> Pages -> Source: GitHub
+# Actions) and the repository is public.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: regenerate web/data.json
+        run: python3 web/build_data.py
+      - name: the page and its data are all that ship
+        run: |
+          mkdir -p _site
+          cp web/index.html web/data.json _site/
+          ls -la _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

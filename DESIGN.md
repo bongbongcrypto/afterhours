@@ -21,6 +21,7 @@ contracts rely on comes from Chainlink feeds that follow US market hours.
 |---|---|---|
 | Fri 09-04 19:51 -> Tue 09-08 00:00 UTC | **76.2 h** | Labor Day weekend |
 | Fri 09-11 19:51 -> Mon 09-14 00:00 UTC | **52.2 h** | ordinary weekend |
+| Fri 09-18 15:11 -> Mon 09-21 00:00 UTC | **56.8 h** | ordinary weekend; Friday's last print came mid-session, the price then moved less than 0.5% before the close (re-measured 2026-09-23) |
 | weeknights | 13-17 h between prints, but prints exist at 02:24, 03:55, 08:05, 10:32 UTC | not closed — the price just did not move the 0.5% deviation threshold |
 
 The feed's 24 h heartbeat is not honoured during the closure: the silence is

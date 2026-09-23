@@ -72,7 +72,7 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | The feed goes silent for 52-57 hours every weekend | the live page's print tape, or `python scripts/measure/feed_cadence.py` (stdlib, about 60 reads, a minute) |
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 250 reads and 30 minutes, as the public RPC narrows each log query) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
-| 67 unit and property tests, 73 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read |
+| 70 unit and property tests, 74 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read |
 | The price math is exact | the live page's self-check line, and the 80-digit reference vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
 | It keeps answering while the market is closed | the live page on a weekend: the Chainlink print is hours old and AfterHours answers from the pool; after deployment, `python scripts/probe.py --oracle <address>` and the hourly `status/log.md` |
 | Moving AAPL's pool 10% takes $234k up or $314k down; the pool clears the depth floor from -4.6% to +3.2%; the cheapest refusal parks $235k at +17% for a second, once every ten minutes | `python scripts/measure/pool_depth.py` (walks every initialized tick over the pool's whole range; about 900 reads in batches, a minute) |
@@ -117,7 +117,7 @@ cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
 
-End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 73
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 74
 assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
 against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
 Robinhood Chain runs, and the one a 2-fragment program (about 38 KB) needs.

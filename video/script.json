@@ -81,8 +81,8 @@
           "피드가 조용하면, 고정된 주 거래 풀 하나의 가격. 10분 평균 세 개 중 가운데 값을 씁니다."
         ],
         [
-          "Refused if that pool is thin, and held near the last print: within one percent for a day, ten after.",
-          "그 풀이 얕으면 거부하고, 마지막 프린트 근처로 묶습니다. 하루 동안은 1% 안, 그 뒤엔 10% 안."
+          "Refused if the pool is thin; held within one percent of the last print while the feed may just be quiet, ten when closed.",
+          "풀이 얕으면 거부하고, 피드가 잠잠할 뿐일 수 있는 동안은 마지막 프린트의 1% 안, 시장이 닫히면 10% 안으로 묶습니다."
         ],
         [
           "Corporate actions: refuse while paused, and value raw tokens with the share multiplier.",
@@ -121,12 +121,12 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Sixty-seven unit and property tests, and seventy-three assertions against the real wasm on a local Arbitrum node.",
-          "단위·속성 테스트 67개, 실제 아비트럼 노드 위 wasm 검증 73항목."
+          "Seventy unit and property tests, and seventy-four assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 70개, 실제 아비트럼 노드 위 wasm 검증 74항목."
         ],
         [
-          "Tick math is checked against eighty-digit reference values, and five review rounds are folded in.",
-          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 5회를 반영했습니다."
+          "Tick math is checked against eighty-digit reference values, and six review rounds are folded in.",
+          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 6회를 반영했습니다."
         ],
         [
           "Fourteen stocks meet our bar for depth today, and twenty-eight can be deployed with the same contract.",

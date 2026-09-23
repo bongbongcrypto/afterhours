@@ -13,10 +13,9 @@
 //!   pool is too thin (`ONCHAIN_TWAP`). The band is narrow while the print is
 //!   younger than the feed's heartbeat on a weekday (a feed that is only
 //!   quiet looks exactly like one that has just closed) and wide after it
-//!   and all weekend. The
-//!   primary is fixed at deployment; standby pools are read only while the
-//!   primary cannot be observed, so nobody can move the price source to a
-//!   pool they control,
+//!   and all weekend. The primary is fixed at deployment; standby pools are
+//!   read only while the primary cannot be observed, so nobody can move the
+//!   price source to a pool they control,
 //! * refuses to price while the issuer has paused the token's oracle for a
 //!   corporate action (`PAUSED`), when neither source is usable, or when the
 //!   last exchange print is older than any market closure can explain

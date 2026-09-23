@@ -215,11 +215,11 @@ def slides():
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">67 tests + 73 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">70 tests + 74 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Five review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band while the feed may only be quiet, the share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
+  <div class="col"><div class="t">Six review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while a weekday feed may be quiet, the share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ 37.9 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">cargo stylus check ✓ about 38 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>

@@ -87,21 +87,21 @@ open with the reason.
 
 | finding | resolution | commit |
 |---|---|---|
-| Slide 6 showed an invented terminal capture under a mainnet-weekend heading | slide 6 shows only real reads: `probe.py` output after deployment, a dated capture of the live page before it; the placeholder and its numbers are gone | this commit |
-| A token upgrade removing one of the three functions the oracle reads would freeze a Morpho market for good; the docs said a new instance fixes it | README and DESIGN state the permanent freeze and what still works (repay, debt-free collateral withdrawals, supply withdrawals, the feed's history); the three reads stay mandatory, with the reason | this commit |
-| The 1% band's premise (the exchange traded within 0.5% of the print) does not hold after Friday's close; NVDA moved 1.12% across a measured weekend | Saturdays and Sundays (UTC) always get the wide band, a fixed property of the block timestamp with no calendar to maintain; the remaining delay (Friday evening, weekday holidays) is documented with the measured gaps | this commit |
-| The answer's unit is USD in LIVE_FEED and USDG in ONCHAIN_TWAP, so a USDG depeg shows as a step at each change of session | documented | this commit |
-| `feed_gap.py` crashed on the public RPC's rate limit | backs off like its siblings | this commit |
-| The contract size, quoted to 0.1 KB, drifted with the lockfile | "about 38 KB" | this commit |
-| PROGRESS and `assets.json` disagreed with DEPLOYMENTS about AAPL's pools and floor | the manifest records a deployed instance's own inputs (`discover_assets.py`), and the live page reads them from it | this commit |
-| ArbOS 61, Stylus 3, the 365-day expiry and the block time were listed as measured with no script | `scripts/measure/stylus_params.py` reads them from the chain's precompiles on mainnet and testnet | this commit |
-| `Quote.band_bps` was written and never read | removed | this commit |
-| `price()` reported "feed invalid" on an overflow while `state()` answered | its own reason, `NoData(6)`, raised by `price()` only | this commit |
-| `decimals()` answered 0 before `initialize` | reverts `NotInitialized` | this commit |
-| `getRoundData` ran the full evaluation for historical rounds and would stop with the token | history is read from the feed alone; the current round still mirrors `latestRoundData` | this commit |
-| A per-share price could round to zero at absurd feed values | refused (NO_DATA 3); the property run asserts every answer is positive | this commit |
-| "Verify it in five minutes" hid a 30-minute script | each row states its cost | this commit |
-| The tick reference vectors differed by 1 ulp from their generator | the generator's 80-digit output, pasted verbatim | this commit |
-| Found while re-checking the page: the public RPC rate-limits bursts (about 280 calls in two seconds) and its limit response carries a doubled CORS header, so the first load logged network errors and waited on retries | one RPC batch every 750 ms across the whole page, measured to stay under the limit | this commit |
+| Slide 6 showed an invented terminal capture under a mainnet-weekend heading | slide 6 shows only real reads: `probe.py` output after deployment, a dated capture of the live page before it; the placeholder and its numbers are gone | f6c31b5 |
+| A token upgrade removing one of the three functions the oracle reads would freeze a Morpho market for good; the docs said a new instance fixes it | README and DESIGN state the permanent freeze and what still works (repay, debt-free collateral withdrawals, supply withdrawals, the feed's history); the three reads stay mandatory, with the reason | f6c31b5 |
+| The 1% band's premise (the exchange traded within 0.5% of the print) does not hold after Friday's close; NVDA moved 1.12% across a measured weekend | Saturdays and Sundays (UTC) always get the wide band, a fixed property of the block timestamp with no calendar to maintain; the remaining delay (Friday evening, weekday holidays) is documented with the measured gaps | f6c31b5 |
+| The answer's unit is USD in LIVE_FEED and USDG in ONCHAIN_TWAP, so a USDG depeg shows as a step at each change of session | documented | f6c31b5 |
+| `feed_gap.py` crashed on the public RPC's rate limit | backs off like its siblings | f6c31b5 |
+| The contract size, quoted to 0.1 KB, drifted with the lockfile | "about 38 KB" | f6c31b5 |
+| PROGRESS and `assets.json` disagreed with DEPLOYMENTS about AAPL's pools and floor | the manifest records a deployed instance's own inputs (`discover_assets.py`), and the live page reads them from it | f6c31b5 |
+| ArbOS 61, Stylus 3, the 365-day expiry and the block time were listed as measured with no script | `scripts/measure/stylus_params.py` reads them from the chain's precompiles on mainnet and testnet | f6c31b5 |
+| `Quote.band_bps` was written and never read | removed | f6c31b5 |
+| `price()` reported "feed invalid" on an overflow while `state()` answered | its own reason, `NoData(6)`, raised by `price()` only | f6c31b5 |
+| `decimals()` answered 0 before `initialize` | reverts `NotInitialized` | f6c31b5 |
+| `getRoundData` ran the full evaluation for historical rounds and would stop with the token | history is read from the feed alone; the current round still mirrors `latestRoundData` | f6c31b5 |
+| A per-share price could round to zero at absurd feed values | refused (NO_DATA 3); the property run asserts every answer is positive | f6c31b5 |
+| "Verify it in five minutes" hid a 30-minute script | each row states its cost | f6c31b5 |
+| The tick reference vectors differed by 1 ulp from their generator | the generator's 80-digit output, pasted verbatim | f6c31b5 |
+| Found while re-checking the page: the public RPC rate-limits bursts (about 280 calls in two seconds) and its limit response carries a doubled CORS header, so the first load logged network errors and waited on retries | one RPC batch every 750 ms across the whole page, measured to stay under the limit | f6c31b5 |
 | `initialize` can be front-run between deployment and configuration | kept: the deploy workflow fails on a reverted `initialize` and reads every field back, so a front-run costs a redeploy | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

@@ -58,7 +58,12 @@ fn points() -> Vec<u32> {
 }
 
 /// Cumulatives for a constant mean tick and per-sub-window liquidity.
-fn observation(start: i64, mean_tick: i64, spl_start: u64, liq: [u128; 3]) -> (Vec<I56>, Vec<U160>) {
+fn observation(
+    start: i64,
+    mean_tick: i64,
+    spl_start: u64,
+    liq: [u128; 3],
+) -> (Vec<I56>, Vec<U160>) {
     let pts = points();
     let ticks = pts
         .iter()
@@ -1051,14 +1056,17 @@ fn empty_liquidity_in_two_of_three_sub_windows_refuses() {
         U160::ZERO,
         first,
         first.wrapping_add(dipped(deep)),
-        first
-            .wrapping_add(dipped(deep))
-            .wrapping_add(U160::from((U256::from(600u64) << 128usize) / U256::from(deep))),
+        first.wrapping_add(dipped(deep)).wrapping_add(U160::from(
+            (U256::from(600u64) << 128usize) / U256::from(deep),
+        )),
     ];
     w.mock_observe_raw(ticks, spl);
     let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
-    assert!(liq < 1000, "median collapses to about a sub-window's length: {liq}");
+    assert!(
+        liq < 1000,
+        "median collapses to about a sub-window's length: {liq}"
+    );
     assert_eq!(pool, POOL);
 }
 
@@ -1076,7 +1084,9 @@ fn liquidity_accumulator_wraps_around_uint160() {
         s0,
         s0.wrapping_add(third),
         s0.wrapping_add(third).wrapping_add(third),
-        s0.wrapping_add(third).wrapping_add(third).wrapping_add(third),
+        s0.wrapping_add(third)
+            .wrapping_add(third)
+            .wrapping_add(third),
     ];
     assert!(spl[1] < spl[0], "the test straddles the wrap");
     w.mock_observe_raw(ticks, spl);
@@ -1095,7 +1105,12 @@ fn absurdly_deep_liquidity_saturates_instead_of_overflowing() {
     // deltas of 1: 600 * 2^128 liquidity per sub-window, far beyond u128
     w.mock_observe_raw(
         ticks,
-        vec![U160::from(9u64), U160::from(10u64), U160::from(11u64), U160::from(12u64)],
+        vec![
+            U160::from(9u64),
+            U160::from(10u64),
+            U160::from(11u64),
+            U160::from(12u64),
+        ],
     );
     let (session, _, _, _, _, _, liq, _, _) = c.state().unwrap();
     assert_eq!(session, SESSION_ONCHAIN_TWAP);
@@ -1155,7 +1170,11 @@ fn price_values_raw_units_with_the_share_multiplier() {
     w.mock_multiplier(AAPL_MULT, NOW - 40 * 86_400);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
     let (_, answer, ..) = c.latest_round_data().unwrap();
-    assert_eq!(answer, I256::try_from(FRIDAY_ANSWER).unwrap(), "Chainlink-shaped answers stay per share");
+    assert_eq!(
+        answer,
+        I256::try_from(FRIDAY_ANSWER).unwrap(),
+        "Chainlink-shaped answers stay per share"
+    );
     assert_eq!(
         c.price().unwrap(),
         U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE) * U256::from(AAPL_MULT) / U256::from(ONE_X)
@@ -1223,7 +1242,10 @@ fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
     w.mock_feed(half as i128, NOW - 30);
     let (session, ..) = c.state().unwrap();
     assert_eq!(session, SESSION_LIVE_FEED);
-    assert_eq!(c.price().unwrap(), U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE));
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE)
+    );
 }
 
 #[test]
@@ -1489,22 +1511,46 @@ mod props {
         runner
             .run(
                 &strategy,
-                |(answer, updated_at, paused, cum_then, cum_delta, spl_then, spl_delta, mult, rebase)| {
+                |(
+                    answer,
+                    updated_at,
+                    paused,
+                    cum_then,
+                    cum_delta,
+                    spl_then,
+                    spl_delta,
+                    mult,
+                    rebase,
+                )| {
                     let w = World::new();
                     let c = w.deploy();
                     w.mock_paused(paused);
                     // rebase: a new multiplier took effect a second after the print
-                    let effective_at = if rebase { updated_at.saturating_add(1) } else { 0 };
+                    let effective_at = if rebase {
+                        updated_at.saturating_add(1)
+                    } else {
+                        0
+                    };
                     w.mock_multiplier(mult, effective_at);
                     w.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
                     let clamp56 = |v: i64| v.clamp(-(1i64 << 55) + 1, (1i64 << 55) - 1);
                     let at = |k: i64| {
                         I56::try_from(clamp56(cum_then.saturating_add(cum_delta / 3 * k))).unwrap()
                     };
-                    let ticks = vec![at(0), at(1), at(2), I56::try_from(clamp56(cum_then.saturating_add(cum_delta))).unwrap()];
+                    let ticks = vec![
+                        at(0),
+                        at(1),
+                        at(2),
+                        I56::try_from(clamp56(cum_then.saturating_add(cum_delta))).unwrap(),
+                    ];
                     let s0 = U160::from(spl_then);
                     let d = U160::from(spl_delta);
-                    let spl = vec![s0, s0.wrapping_add(d), s0.wrapping_add(d).wrapping_add(d), s0.wrapping_add(d).wrapping_add(d).wrapping_add(d)];
+                    let spl = vec![
+                        s0,
+                        s0.wrapping_add(d),
+                        s0.wrapping_add(d).wrapping_add(d),
+                        s0.wrapping_add(d).wrapping_add(d).wrapping_add(d),
+                    ];
                     w.mock_observe_raw(ticks, spl);
 
                     let (session, reason, ans, feed_answer, _, twap, _, clamped, pool) =
@@ -1513,7 +1559,10 @@ mod props {
                     if session == SESSION_LIVE_FEED || session == SESSION_ONCHAIN_TWAP {
                         // Morpho values raw units: per-share answer times the multiplier
                         if let Ok(p) = c.price() {
-                            prop_assert_eq!(p, ans * u(MORPHO_SCALE) * U256::from(mult) / U256::from(ONE_X));
+                            prop_assert_eq!(
+                                p,
+                                ans * u(MORPHO_SCALE) * U256::from(mult) / U256::from(ONE_X)
+                            );
                         }
                     }
                     match session {

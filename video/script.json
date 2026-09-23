@@ -49,8 +49,12 @@
     {
       "lines": [
         [
-          "Lending against these tokens has started: eighty-three Morpho markets, but six thousand dollars borrowed against eight hundred and eighty thousand supplied.",
-          "이 토큰을 담보로 한 대출은 이미 있습니다. Morpho 시장 83개, 그런데 공급 88만 달러에 대출은 6천 달러뿐입니다."
+          "Lending against these tokens has started: eighty-three Morpho markets take them as collateral.",
+          "이 토큰을 담보로 한 대출은 이미 있습니다. Morpho 시장 83개."
+        ],
+        [
+          "But only six thousand dollars is borrowed, against eight hundred and eighty thousand supplied.",
+          "그런데 공급 88만 달러에 대출은 6천 달러뿐입니다."
         ],
         [
           "Their oracles keep Friday's price all weekend, read a raw pool price, or accept a five-day-old print.",
@@ -73,12 +77,16 @@
           "피드가 신선하면 그대로 통과."
         ],
         [
-          "Silent feed: the thirty-minute average of one fixed pool, the stock's main venue, refused if it is thin over the window, bounded to a circuit-breaker band around the last print.",
-          "피드가 멈추면 고정된 주 거래 풀 하나의 30분 평균값. 그 풀이 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."
+          "Silent feed: the thirty-minute average of one fixed pool, the stock's main venue.",
+          "피드가 멈추면 고정된 주 거래 풀 하나의 30분 평균값."
         ],
         [
-          "Corporate action pause: refuse.",
-          "배당·분할 처리 중이면 거부."
+          "Refused if that pool is thin, and held inside a circuit-breaker band around the last print.",
+          "그 풀이 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."
+        ],
+        [
+          "Corporate actions: refuse while paused, and value raw tokens with the share multiplier.",
+          "배당·분할 처리 중이면 거부하고, 토큰의 주식 배수로 원시 단위 가치를 맞춥니다."
         ],
         [
           "A print older than five days: refuse; the feed is gone, not closed.",
@@ -113,12 +121,20 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 로빈후드 체인 메인넷 배포, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Sixty unit and property tests, sixty-two assertions against the real wasm on a local Arbitrum node, tick math checked against sixty-digit reference values, four review rounds folded in.",
-          "단위·속성 테스트 60개, 실제 아비트럼 노드 위 wasm 검증 62항목, 60자리 기준값으로 검증한 틱 수학, 독립 검수 4회 반영."
+          "Sixty unit and property tests, and sixty-two assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 60개, 실제 아비트럼 노드 위 wasm 검증 62항목."
         ],
         [
-          "Fourteen stocks meet our bar for depth today and twenty-eight can be deployed with the same contract; every number in the docs comes from a script you can run.",
-          "오늘 기준 깊이 조건을 채운 종목 14개, 같은 컨트랙트로 배포 가능한 종목 28개. 문서의 모든 숫자는 직접 돌려볼 수 있는 스크립트에서 나옵니다."
+          "Tick math is checked against sixty-digit reference values, and four review rounds are folded in.",
+          "틱 수학은 60자리 기준값으로 검증했고, 독립 검수 4회를 반영했습니다."
+        ],
+        [
+          "Fourteen stocks meet our bar for depth today, and twenty-eight can be deployed with the same contract.",
+          "오늘 기준 깊이 조건을 채운 종목 14개, 같은 컨트랙트로 배포 가능한 종목 28개."
+        ],
+        [
+          "Every number in the docs comes from a script you can run.",
+          "문서의 모든 숫자는 직접 돌려볼 수 있는 스크립트에서 나옵니다."
         ]
       ]
     },

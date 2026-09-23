@@ -149,8 +149,9 @@ def slides():
 <h2>AfterHours sits in front of the feed.</h2>
 <div class="boxes">
   <div class="stack">
-    <div class="box"><div class="t">Chainlink feed</div>24/5 · last print · pause flag</div>
-    <div class="box"><div class="t">Uniswap v3 pool (fixed primary)</div>24/7 · observe() → TWAP + window liquidity · standbys only if it cannot answer</div>
+    <div class="box"><div class="t">Chainlink feed</div>24/5 · last print per share</div>
+    <div class="box"><div class="t">Uniswap v3 pool</div>fixed venue · 24/7 TWAP</div>
+    <div class="box"><div class="t">Stock token</div>pause flag · multiplier</div>
   </div>
   <div class="arrow">→</div>
   <div class="box core"><div class="t">AfterHours</div>Stylus, Rust · immutable · no owner<br><span class="mono" style="color:var(--fog)">LIVE_FEED · ONCHAIN_TWAP · PAUSED · NO_DATA</span></div>
@@ -162,9 +163,9 @@ def slides():
 </div>
 <div class="rules">
   <div><b>Fresh feed</b> → pass it through, verbatim.</div>
-  <div><b>Silent feed</b> → 30-min pool TWAP, <span class="m">clamped ±10%</span> around the last print.</div>
-  <div><b>Primary pool thin</b> (window average) → refuse, never switch venue. <b>Corporate action</b> → refuse.</div>
-  <div><b>Print older than 5 days</b> → refuse: the feed is gone, not closed.</div>
+  <div><b>Silent feed</b> → 30-min pool TWAP per share, <span class="m">clamped ±10%</span>.</div>
+  <div><b>Thin pool</b> (3-window median) → refuse, never switch venue.</div>
+  <div><b>Paused, split since print, or print &gt;5 days</b> → refuse.</div>
 </div>
 <div class="grow"></div>""")
 

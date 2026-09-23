@@ -3,7 +3,7 @@
 Each round was an independent reviewer (a separate agent, given the repository
 and, from round 4, a fixed scoring rubric, but no self-assessment) reading
 the code, running the read-only measurement scripts and reporting defects.
-Rounds 6 to 10 ran from an empty folder with a clean copy of the repository
+Rounds 6 to 11 ran from an empty folder with a clean copy of the repository
 as it will be published, the rubric and the form text; they saw the findings
 below, not any score.
 Every finding below was either fixed in the commit shown or is listed as
@@ -175,4 +175,16 @@ open with the reason.
 | `NoData(1)` also covers a band overflow; `state()` zeroed the pool price on `NoData(5)`; the progress stamp was stale | the README row says so; the price is kept; restamped | 9c2e4fe, 835a039 |
 | Suspected: a pool whose cardinality has just grown holds less history than its count | `initialize` calls `observe` at the four points, so such a pool is refused until the history is there; DESIGN says so | 835a039 |
 | Other entries are described, not named or measured; no live market | kept unnamed; a live market needs the deployment | |
+| Not deployed, no public repo, no live URL, no final video | carried to round 11 | |
+
+## Round 11 (2026-09-23): sixth review from a clean copy of the repository as published
+
+| finding | resolution | commit |
+|---|---|---|
+| The submission text said "measured gas" without saying it is measured against test doubles | it says so, and that mainnet will cost more (submission text, outside this repository) | |
+| A storage comment still said `tx.origin`; a units comment still said "one raw token unit" | both corrected | aeb0e7b |
+| "The same place a stale-feed market is in today" overstated it: a refusal blocks liquidation, while a market with no guard keeps liquidating at Friday's price | DESIGN and the submission use README's wording | aeb0e7b |
+| `contract-client-gen` looked like a dead feature | kept: stylus-sdk's `#[public]` expansion gates code on it; Cargo.toml says so | aeb0e7b |
+| Suspected: a future `effectiveAt()` with no scheduled multiplier would read as a pending split | cannot happen with the token's verified implementation: one call sets both, and `newUIMultiplier()` answers 1e18 when none is set; DESIGN cites it | aeb0e7b |
+| `initialize` can be front-run; other entries are described, not named | kept, as documented | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

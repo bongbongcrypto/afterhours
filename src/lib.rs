@@ -726,17 +726,15 @@ impl AfterHours {
             return Ok(q);
         }
 
-        let twap = tick
-            .and_then(tickmath::ratio_q96)
-            .and_then(|ratio| {
-                tickmath::stock_price(
-                    ratio,
-                    stock_is_token0,
-                    self.stock_decimals.get().to::<u8>(),
-                    self.quote_decimals.get().to::<u8>(),
-                    self.feed_decimals.get().to::<u8>(),
-                )
-            });
+        let twap = tick.and_then(tickmath::ratio_q96).and_then(|ratio| {
+            tickmath::stock_price(
+                ratio,
+                stock_is_token0,
+                self.stock_decimals.get().to::<u8>(),
+                self.quote_decimals.get().to::<u8>(),
+                self.feed_decimals.get().to::<u8>(),
+            )
+        });
         // The pool prices one raw unit; the band and every Chainlink-shaped
         // answer are per share.
         let Some(twap) = twap

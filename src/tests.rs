@@ -891,7 +891,10 @@ fn a_spike_inside_one_sub_window_moves_nothing() {
     w.mock_observe_ticks([AAPL_TICK, AAPL_TICK - 20_000, AAPL_TICK], MIN_LIQUIDITY);
     let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
-    assert_eq!((ans, twap, clamped), (U256::from(AAPL_TWAP), U256::from(AAPL_TWAP), false));
+    assert_eq!(
+        (ans, twap, clamped),
+        (U256::from(AAPL_TWAP), U256::from(AAPL_TWAP), false)
+    );
     // the last sub-window, the first, either way
     w.mock_observe_ticks([AAPL_TICK - 20_000, AAPL_TICK, AAPL_TICK], MIN_LIQUIDITY);
     let (_, _, ans, ..) = c.state().unwrap();
@@ -910,13 +913,19 @@ fn a_move_held_through_two_sub_windows_is_priced() {
     w.mock_observe_ticks([AAPL_TICK, AAPL_TICK + 300, AAPL_TICK + 300], MIN_LIQUIDITY);
     let (session, _, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
     assert_eq!(session, SESSION_ONCHAIN_TWAP);
-    assert_eq!((ans, twap, clamped), (U256::from(HELD_TWAP), U256::from(HELD_TWAP), false));
+    assert_eq!(
+        (ans, twap, clamped),
+        (U256::from(HELD_TWAP), U256::from(HELD_TWAP), false)
+    );
     // ten minutes in, only one sub-window has it: not priced yet
     w.mock_observe_ticks([AAPL_TICK, AAPL_TICK, AAPL_TICK + 300], MIN_LIQUIDITY);
     let (_, _, ans, ..) = c.state().unwrap();
     assert_eq!(ans, U256::from(AAPL_TWAP));
     // three different sub-windows: the middle one, whatever the order
-    w.mock_observe_ticks([AAPL_TICK + 600, AAPL_TICK - 300, AAPL_TICK + 300], MIN_LIQUIDITY);
+    w.mock_observe_ticks(
+        [AAPL_TICK + 600, AAPL_TICK - 300, AAPL_TICK + 300],
+        MIN_LIQUIDITY,
+    );
     let (_, _, ans, ..) = c.state().unwrap();
     assert_eq!(ans, U256::from(HELD_TWAP));
 }
@@ -932,12 +941,16 @@ fn a_quiet_feed_holds_the_pool_to_the_narrow_band() {
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 7 * 3600);
     w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
-    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
-        / U256::from(10_000u64);
+    let narrow =
+        U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64);
     let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
     assert_eq!((ans, clamped), (narrow, true));
-    assert_eq!(twap, U256::from(DOWN_TWAP), "the unclamped pool price is reported");
+    assert_eq!(
+        twap,
+        U256::from(DOWN_TWAP),
+        "the unclamped pool price is reported"
+    );
     assert_eq!(c.price().unwrap(), narrow * u(MORPHO_SCALE));
     // a pool inside the narrow band passes through
     w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
@@ -950,8 +963,8 @@ fn the_band_widens_only_once_the_heartbeat_has_passed() {
     let w = World::new();
     let c = w.deploy();
     w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
-    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
-        / U256::from(10_000u64);
+    let narrow =
+        U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - HEARTBEAT);
     let (_, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
     assert_eq!((ans, clamped), (narrow, true), "at the heartbeat: narrow");

@@ -116,14 +116,13 @@ def slides():
 <div class="sub">A 24/7 price for tokenized stocks.<br>Chainlink while the market is open — the on-chain pool, bounded, while it is closed.</div>
 <div class="grow"></div>""")
 
-    S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed, last 60 rounds · <b>scripts/measure/feed_cadence.py</b></div>
+    S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed rounds · <b>scripts/measure/feed_cadence.py</b></div>
 <h2>The feed stops every weekend.</h2>
 <div class="big">52–57<small>hours silent, every weekend</small></div>
 <table><tr><th>window</th><th>last print → first print</th><th>silence</th></tr>
 <tr><td class="k">Ordinary weekend</td><td>Fri 09-11 19:51 → Mon 09-14 00:00 UTC</td><td class="num">52.2 h</td></tr>
 <tr><td class="k">Ordinary weekend</td><td>Fri 09-18 15:11 → Mon 09-21 00:00 UTC</td><td class="num">56.8 h</td></tr>
-<tr><td class="k">Labor Day weekend</td><td>Fri 09-04 19:51 → Tue 09-08 00:00 UTC</td><td class="num">76.2 h</td></tr>
-<tr><td class="k">Weeknights</td><td>prints at 02:24, 03:55, 08:05, 10:32 UTC — not closed, just no 0.5% move</td><td class="num">—</td></tr></table>
+<tr><td class="k">Labor Day weekend</td><td>Fri 09-04 19:51 → Tue 09-08 00:00 UTC</td><td class="num">76.2 h</td></tr></table>
 <div class="note">The 24 h heartbeat is not honoured during the closure. That is by design: <b>us_equities_24/5</b>.</div>
 <div class="grow"></div>""")
 
@@ -136,9 +135,9 @@ def slides():
 <div class="note">The pool price moved through the weekend (+0.56% → −0.23% against the open). <b>Nobody can read it from a contract.</b></div>
 <div class="grow"></div>""")
 
-    S.append("""<div class="kicker">Every Morpho market on the chain · <b>scripts/measure/morpho_markets.py</b> · 2026-09-23</div>
-<h2>Lending against stocks exists, and lives with the stale price.</h2>
-<div class="big">$6.4k<small>borrowed against $0.88M supplied, 83 markets</small></div>
+    S.append("""<div class="kicker">83 funded Morpho markets on stock collateral · <b>scripts/measure/morpho_markets.py</b> · 2026-09-23</div>
+<h2>Lending against stocks lives with the stale price.</h2>
+<div class="big">$6.4k<small>borrowed of $0.88M supplied</small></div>
 <table><tr><th>oracle behind the market</th><th>markets</th><th>supplied</th><th>on a weekend it answers</th></tr>
 <tr><td class="k">custom, reads the Chainlink feed</td><td class="num">16</td><td class="num">$852k</td><td>Friday's print</td></tr>
 <tr><td class="k">Morpho ChainlinkOracleV2</td><td class="num">52</td><td class="num">$27.1k</td><td>Friday's print, no staleness check</td></tr>
@@ -210,10 +209,16 @@ def render(html_only):
         # fresh profile per capture: a reused profile serves the cached old page
         profile = tempfile.mkdtemp(prefix="afterhours-edge-")
         url = html.resolve().as_uri() + "?v=%d" % int(time.time() * 1000)
-        cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run",
+        # --no-default-browser-check: without it, a current Edge exits before capturing
+        cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
                "--user-data-dir=" + profile, "--window-size=1920,1080",
                "--screenshot=" + str(png), url]
         subprocess.run(cmd, capture_output=True, timeout=120)
+        # the launcher can return before its child has written the file
+        for _ in range(40):
+            if png.exists() and png.stat().st_size >= 10_000:
+                break
+            time.sleep(0.25)
         shutil.rmtree(profile, ignore_errors=True)
         if not png.exists() or png.stat().st_size < 10_000:
             sys.exit("capture failed for slide %d (%s)" % (i, png))

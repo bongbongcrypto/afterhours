@@ -54,8 +54,8 @@ open with the reason.
 | finding | resolution | commit |
 |---|---|---|
 | The docs called PARE the chain's single lending market; Morpho has 83 funded stock-collateral markets | census script `morpho_markets.py`; claim rewritten everywhere | this round |
-| One second out of range refuses for 30 minutes, a cheap and repeatable way to stop liquidations | liquidity is the median of three 10-minute sub-windows | 01d8366 |
-| Manipulation-cost paragraph used reserves as a lower bound | rewritten: reserves bound one push, the band caps the damage | this round |
+| One second out of range refuses for 30 minutes, a cheap and repeatable way to stop liquidations | liquidity is the median of three 10-minute sub-windows; measured cost of a refusal now: a 9-second stay 9% above the price ($233k in) in two of every three windows (`pool_depth.py`) | 01d8366 |
+| Manipulation-cost paragraph used reserves as a lower bound | replaced by a tick-by-tick depth map (`pool_depth.py`: 10% costs $234k-$317k of input); the band caps the damage | this round |
 | Raw token units vs per-share feed (found while checking the census oracles): one raw unit is `uiMultiplier` shares | `price()` multiplies by `uiMultiplier`; TWAP per share; NoData(5) when a multiplier change after the print moves the pool past the band | 01d8366 |
 | USD feed vs USDG pool and loan token | documented (USDG/USD feed updates only on 0.5% moves) | this round |
 | AAPL standby pools can never clear the floor | AAPL deploys with the primary only | this round |

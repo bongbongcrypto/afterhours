@@ -188,6 +188,21 @@ on mainnet; `initialize` is called by the same script that deploys and
 activates the contract. A front-run `initialize` would only produce a
 contract nobody integrates, and the deployer would redeploy.
 
+### Prior art, and what is new here
+
+Checking a reported price against a Uniswap TWAP is not new: Compound's
+`UniswapAnchoredView` accepted a reporter's price only within bounds of a
+Uniswap TWAP anchor. AfterHours inverts the roles for a market that closes:
+the exchange feed is the anchor, and the on-chain TWAP is the price while the
+anchor cannot print. The parts that are specific to this chain are the closed
+session as an explicit state instead of a staleness error, the issuer's
+corporate-action surface (the pause flag and the share multiplier, with a
+split after the last print refusing rather than clamping), liquidity judged
+per sub-window so one excursion cannot switch pricing off, and a venue fixed
+at deployment so depth elsewhere cannot redirect it. The risk layers other
+teams build for the same weekend (haircuts until the next open, stale-feed
+flags) can sit on top of this price rather than replace it.
+
 ### The band is a circuit breaker, not a price model
 
 US exchanges halt single stocks that move more than 5-10% inside five minutes
@@ -225,28 +240,31 @@ refuses a primary whose observation cardinality is below `twapWindow + 1`
 today. A standby may sit below the bound: it only covers a primary that
 cannot answer.
 
-What manipulation can buy, and what it costs. The AAPL 0.05% pool held
-323,888 USDG and 678.4 AAPL on 2026-09-23 (`balanceOf`). Those reserves are
-an upper bound on one push, not a floor: selling AAPL can take out at most
-the pool's USDG, buying at most its AAPL. The hard cap is the band. Holding
-the pool 10% away for a whole 30-minute window moves this oracle at most to
-the band edge, and at a 62.5% LLTV that could make positions between 56.25%
-and 62.5% LTV liquidatable at Morpho's bonus. The band has to be sized to the
-market's LLTV, and a curator who wants no such window uses a tighter band or
-a lower LLTV. A tick-by-tick depth map of the pool, which would price the push
-exactly, is not in this repo yet.
+What manipulation can buy, and what it costs. `pool_depth.py` walks the AAPL
+0.05% pool tick by tick (2026-09-23; 184 initialized ticks within 60% of the
+price). Moving the AAPL price 10% down takes about $317k of AAPL sold into the
+pool, 10% up about $234k of USDG, 5% about $263k / $217k. The fee on that is
+only $120-160; the real cost is holding the move for the whole 30-minute
+window while every trader who can reach another venue sells the attacker's
+premium back. The hard cap is the band: the oracle moves at most 10% from the
+last print, and at a 62.5% LLTV that could make positions between 56.25% and
+62.5% LTV liquidatable at Morpho's bonus. The band has to be sized to the
+market's LLTV; a curator who wants no such window uses a tighter band or a
+lower LLTV.
 
 Denial instead of manipulation. An attacker who cannot move the price can
 still try to make the oracle refuse, which freezes borrowing, collateral
-withdrawal and liquidation in a Morpho market until the feed prints again.
-With the median-of-three rule that means pushing the price out of every
-position in two of every three 10-minute sub-windows: a round trip through
-the whole in-range liquidity (about $0.3M on each side today, at 0.05% per
-leg) at least every 10 minutes, each one a free arbitrage for whoever trades
-against it, for as long as the refusal must last. Before this rule one such
-round trip per 30 minutes was enough. A refusal never moves the price; it
-delays liquidation to the feed's next print, which is where a stale-feed
-market already is today.
+withdrawal and liquidation in a Morpho market until the feed prints again. In
+this pool in-range liquidity never reaches zero within 60% of the price (a
+wide position underlies it), so "one second out of range" is not available.
+The cheapest refusal `pool_depth.py` finds is to buy about $233k of AAPL,
+pushing the price 9% up into a thin band (3.5e15), and to hold it there for 9
+seconds, which drags one 10-minute window's harmonic mean under the 2e17
+floor. The median rule makes that necessary in two of every three windows,
+for as long as the refusal must last, each time with $233k exposed at a 9%
+premium to anyone who sells into it. Before the rule one such stay per 30
+minutes was enough. A refusal never moves the price; it delays liquidation to
+the feed's next print, which is where a stale-feed market already is today.
 
 ## 5. What is measured, what is assumed
 

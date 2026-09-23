@@ -58,7 +58,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "1487232628046388617",
+   "minLiquidity": "371808157011597154",
    "depth2pctUsd": 1791325,
    "oracle": null
   },
@@ -79,7 +79,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "636791544199838473",
+   "minLiquidity": "159197886049959618",
    "depth2pctUsd": 629837,
    "oracle": null
   },
@@ -98,7 +98,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "239123398726548319",
+   "minLiquidity": "59780849681637079",
    "depth2pctUsd": 357586,
    "oracle": null
   },
@@ -117,7 +117,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "348680499127010456",
+   "minLiquidity": "87170124781752614",
    "depth2pctUsd": 332264,
    "oracle": null
   },
@@ -136,7 +136,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "125449273108387487",
+   "minLiquidity": "31362318277096871",
    "depth2pctUsd": 278046,
    "oracle": null
   },
@@ -153,7 +153,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "217624593400937680",
+   "minLiquidity": "54406148350234420",
    "depth2pctUsd": 277066,
    "oracle": null
   },
@@ -172,7 +172,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "122159820825653088",
+   "minLiquidity": "30539955206413272",
    "depth2pctUsd": 217562,
    "oracle": null
   },
@@ -191,7 +191,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "54280672313976221",
+   "minLiquidity": "13570168078494055",
    "depth2pctUsd": 118198,
    "oracle": null
   },
@@ -208,7 +208,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "150399595694351790",
+   "minLiquidity": "37599898923587947",
    "depth2pctUsd": 117093,
    "oracle": null
   },
@@ -229,7 +229,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "256634609626120589",
+   "minLiquidity": "64158652406530147",
    "depth2pctUsd": 100298,
    "oracle": null
   },
@@ -250,7 +250,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "145930056620057647",
+   "minLiquidity": "36482514155014411",
    "depth2pctUsd": 90124,
    "oracle": null
   },
@@ -271,7 +271,7 @@
    ],
    "stockIsToken0": true,
    "stockDecimals": 18,
-   "minLiquidity": "48911475467320528",
+   "minLiquidity": "12227868866830132",
    "depth2pctUsd": 75801,
    "oracle": null
   },
@@ -288,7 +288,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "25286129148909457",
+   "minLiquidity": "6321532287227364",
    "depth2pctUsd": 66598,
    "oracle": null
   }

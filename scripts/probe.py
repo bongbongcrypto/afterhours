@@ -6,9 +6,9 @@
 Prints, side by side: the Chainlink feed's last print and age, the primary
 pool's price per share (the median of three 10-minute averages, computed here
 from observe() and the token's uiMultiplier), the band that applies at the
-print's age, and what AfterHours returns (session, answer, band clamping).
-During a weekend the feed line goes stale while the AfterHours line keeps
-moving; that is the demo.
+print's age and the hour, and what AfterHours returns (session, answer, band
+clamping). During a weekend the feed line goes stale while the AfterHours line
+keeps moving; that is the demo.
 
 Selectors computed with keccak (scripts/measure/keccak.py checks itself), not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
@@ -128,7 +128,7 @@ def main():
     print("AfterHours %s  initialized=%s  feed=%s  primary pool=%s" % (args.oracle, initialized, feed, pool))
     print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% (%s) minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
           % (live_max_age, twap_window, dev_bps / 100,
-             ("%.1f%% while the print is under %ds old" % (quiet_bps / 100, heartbeat)) if heartbeat is not None else "no quiet tier",
+             ("%.1f%% in the regular session while the print is under %ds old" % (quiet_bps / 100, heartbeat)) if heartbeat is not None else "no quiet tier",
              min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
 
     while True:
@@ -144,9 +144,11 @@ def main():
         twap = pooled[0] if pooled else None
         s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"])
         print("[%s]" % ts(now))
-        weekend = (now // 86400 + 3) % 7 >= 5    # Saturday or Sunday UTC: the market is closed
-        band = quiet_bps if heartbeat is not None and now - feed_at <= heartbeat and not weekend else dev_bps
-        print("  Chainlink : $%.4f  printed %s  (%.1f h ago; the band at this age is %.1f%%)"
+        # Monday to Friday 14:30-20:00 UTC: the US regular session is open in both
+        # daylight-saving regimes (src/lib.rs, in_regular_session)
+        in_session = (now // 86400 + 3) % 7 < 5 and 52_200 <= now % 86400 < 72_000
+        band = quiet_bps if heartbeat is not None and now - feed_at <= heartbeat and in_session else dev_bps
+        print("  Chainlink : $%.4f  printed %s  (%.1f h ago; the band at this age and hour is %.1f%%)"
               % (feed_answer, ts(feed_at), age_h, band / 100))
         if twap is not None:
             print("  primary pool: $%.4f per share  (median of three %d s averages, median liquidity %.3g, share multiplier %.8f; computed off-chain)"

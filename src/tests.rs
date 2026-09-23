@@ -39,7 +39,8 @@ const HEARTBEAT: u64 = 86_400;
 /// The narrow band while the print is younger than the heartbeat.
 const QUIET_BAND_BPS: u64 = 100;
 
-const NOW: u64 = 1_800_000_000;
+/// Friday 2027-01-15 16:00 UTC, inside the US regular session.
+const NOW: u64 = 1_800_028_800;
 /// $332.52 with 8 decimals: AAPL's last Friday print on 2026-09-11.
 const FRIDAY_ANSWER: u64 = 33_252_000_000;
 const ROUND: u64 = 645;
@@ -417,7 +418,7 @@ fn initialize_reads_layout_and_decimals_from_the_contracts() {
             MAX_ANCHOR_AGE
         )
     );
-    assert_eq!(c.quiet_tier(), (HEARTBEAT, QUIET_BAND_BPS));
+    assert_eq!(c.quiet_tier().unwrap(), (HEARTBEAT, QUIET_BAND_BPS));
     assert_eq!(c.decimals().unwrap(), 8);
     assert_eq!(c.version(), U256::from(1u64));
     assert_eq!(c.description().unwrap(), "AAPL / USD (AfterHours)");
@@ -464,7 +465,7 @@ fn initialize_rejects_bad_parameters() {
         ),
         (
             LIVE_MAX_AGE,
-            86_401,
+            65_535,
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
@@ -580,7 +581,7 @@ fn initialize_bounds_the_quiet_tier() {
     }
     // The edges are accepted: an empty quiet tier, and one as wide as the band.
     deploy(&mut c, LIVE_MAX_AGE, MAX_DEV_BPS).expect("empty tier, full band");
-    assert_eq!(c.quiet_tier(), (LIVE_MAX_AGE, MAX_DEV_BPS));
+    assert_eq!(c.quiet_tier().unwrap(), (LIVE_MAX_AGE, MAX_DEV_BPS));
 }
 
 #[test]
@@ -619,6 +620,43 @@ fn initialize_rejects_a_primary_that_keeps_too_little_history() {
     w.mock_cardinality(POOL2, 10);
     w.try_deploy_with(vec![POOL, POOL2])
         .expect("primary at window + 1, standby short");
+}
+
+#[test]
+fn the_longest_window_needs_a_full_observation_buffer() {
+    // slot0's cardinality is a uint16 and the primary keeps window + 1
+    // observations, so 65,534 s is the longest window a pool can serve.
+    let w = World::new();
+    let window: u32 = 65_534;
+    let sub = window / 3;
+    w.vm.mock_static_call(
+        POOL,
+        observeCall {
+            secondsAgos: vec![window, 2 * sub, sub, 0],
+        }
+        .abi_encode(),
+        Ok((vec![I56::ZERO; 4], vec![U160::ZERO; 4]).abi_encode_params()),
+    );
+    let init = |w: &World| {
+        AfterHours::from(&w.vm).initialize(
+            FEED,
+            vec![POOL],
+            STOCK,
+            LIVE_MAX_AGE,
+            window,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            HEARTBEAT,
+            QUIET_BAND_BPS,
+        )
+    };
+    assert_eq!(
+        config_reason(init(&w).expect_err("cardinality 1801")),
+        CONFIG_PRIMARY_HISTORY_TOO_SHORT
+    );
+    w.mock_cardinality(POOL, u16::MAX);
+    init(&w).expect("a full buffer serves the longest window");
 }
 
 #[test]
@@ -735,6 +773,14 @@ fn reads_refuse_before_initialize() {
     assert!(matches!(
         c.get_round_data(U80::from(ROUND - 1))
             .expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.description().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.quiet_tier().expect_err("uninitialized"),
         AfterHoursError::NotInitialized(_)
     ));
 }
@@ -995,9 +1041,9 @@ fn a_move_held_through_two_sub_windows_is_priced() {
 
 #[test]
 fn a_quiet_feed_holds_the_pool_to_the_narrow_band() {
-    // A weekday: the feed last printed seven hours ago because the price has
-    // not moved its 0.5% threshold since. The pool says -5.3%; within the
-    // heartbeat it is held to -1%.
+    // Friday afternoon, in the regular session: the feed last printed seven
+    // hours ago because the price has not moved its 0.5% threshold since. The
+    // pool says -5.3%; within the heartbeat it is held to -1%.
     let w = World::new();
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 7 * 3600);
@@ -1049,26 +1095,36 @@ fn an_empty_quiet_tier_goes_straight_to_the_wide_band() {
 }
 
 #[test]
-fn a_weekend_read_uses_the_wide_band_from_the_first_hour() {
-    // NOW is Friday 2027-01-15 08:00 UTC. The same seven-hour-old print and the
-    // same -5.3% pool: held to -1% on the Friday, passed through on the
-    // Saturday and the Sunday, when the market is closed whatever the feed's age.
+fn the_narrow_band_applies_only_during_the_regular_session() {
+    // The same seven-hour-old print and the same -5.3% pool at different hours.
+    // The session is open on a weekday from 14:30 to 20:00 UTC in both
+    // daylight-saving regimes; at every other hour the feed may sit out a move
+    // until the next open, so the pool may move as far as the wide band.
     let w = World::new();
     let c = w.deploy();
     w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
     let narrow =
         U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64);
-    for (day, now, want, clamped_want) in [
-        ("Friday", NOW, narrow, true),
-        ("Saturday", NOW + 86_400, U256::from(DOWN_TWAP), false),
-        ("Sunday", NOW + 2 * 86_400, U256::from(DOWN_TWAP), false),
-        ("Monday", NOW + 3 * 86_400, narrow, true),
+    let wide = U256::from(DOWN_TWAP);
+    let (hour, day) = (3600, 86_400);
+    // NOW is Friday 16:00 UTC.
+    for (when, now, want, clamped_want) in [
+        ("Fri 16:00", NOW, narrow, true),
+        ("Fri 14:30:00", NOW - 90 * 60, narrow, true),
+        ("Fri 14:29:59", NOW - 90 * 60 - 1, wide, false),
+        ("Fri 19:59:59", NOW + 4 * hour - 1, narrow, true),
+        ("Fri 20:00:00", NOW + 4 * hour, wide, false),
+        ("Fri 22:00", NOW + 6 * hour, wide, false),
+        ("Sat 16:00", NOW + day, wide, false),
+        ("Sun 16:00", NOW + 2 * day, wide, false),
+        ("Mon 03:00", NOW + 3 * day - 13 * hour, wide, false),
+        ("Mon 16:00", NOW + 3 * day, narrow, true),
     ] {
         w.vm.set_block_timestamp(now);
-        w.mock_feed(FRIDAY_ANSWER as i128, now - 7 * 3600);
+        w.mock_feed(FRIDAY_ANSWER as i128, now - 7 * hour);
         let (session, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
-        assert_eq!(session, SESSION_ONCHAIN_TWAP, "{day}");
-        assert_eq!((ans, clamped), (want, clamped_want), "{day}");
+        assert_eq!(session, SESSION_ONCHAIN_TWAP, "{when}");
+        assert_eq!((ans, clamped), (want, clamped_want), "{when}");
     }
 }
 
@@ -1567,7 +1623,7 @@ fn a_dividend_after_the_last_print_moves_pricing_to_the_pool() {
 
 #[test]
 fn a_distribution_beyond_the_narrow_band_is_held_to_it_not_refused() {
-    // A 3% special distribution on a weekday: the pool per share sits 3.4% under
+    // A 3% special distribution in the regular session: the pool per share sits 3.4% under
     // the pre-distribution print. Outside the 1% band, so the answer is held at
     // -1%; only a move past the wide band (a split) means the print knows nothing.
     let w = World::new();
@@ -1829,8 +1885,9 @@ mod props {
     use proptest::prelude::*;
 
     /// The band a read with a print `age` seconds old is held to. Property
-    /// runs read at NOW, a Friday, so the weekend rule never applies here
-    /// (`a_weekend_read_uses_the_wide_band_from_the_first_hour` covers it).
+    /// runs read at NOW, inside the regular session, so only the age decides
+    /// here (`the_narrow_band_applies_only_during_the_regular_session` covers
+    /// the hours).
     fn band_for(age: u64) -> u64 {
         if age <= HEARTBEAT {
             QUIET_BAND_BPS

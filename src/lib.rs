@@ -10,10 +10,11 @@
 //! * otherwise prices the token from where it actually trades: the median of
 //!   three 10-minute time-weighted averages of its primary Uniswap v3 pool,
 //!   bounded to a band around the last exchange print and refused when that
-//!   pool is too thin (`ONCHAIN_TWAP`). The band is narrow while the print is
-//!   younger than the feed's heartbeat on a weekday (a feed that is only
-//!   quiet looks exactly like one that has just closed) and wide after it
-//!   and all weekend. The primary is fixed at deployment; standby pools are
+//!   pool is too thin (`ONCHAIN_TWAP`). The band is narrow during the US
+//!   regular session while the print is younger than the feed's heartbeat
+//!   (the feed prints any 0.5% move then, so a quiet feed is a quiet market)
+//!   and wide at every other hour, when the feed may sit out a move until the
+//!   next open. The primary is fixed at deployment; standby pools are
 //!   read only while the primary cannot be observed, so nobody can move the
 //!   price source to a pool they control,
 //! * refuses to price while the issuer has paused the token's oracle for a
@@ -82,6 +83,7 @@ pub const CONFIG_SCALE_UNDERFLOW: u8 = 6;
 pub const CONFIG_DECIMALS_TOO_LARGE: u8 = 7;
 /// `maxAnchorAge` must exceed `liveMaxAge`, otherwise the TWAP path can never run.
 pub const CONFIG_ANCHOR_AGE: u8 = 8;
+/// `twapWindow` above 65,534 s: no pool can keep `twapWindow + 1` observations.
 pub const CONFIG_WINDOW_TOO_LONG: u8 = 9;
 /// `observe()` at the four sub-window boundaries failed at deployment: not a v3
 /// pool, or not enough history yet.
@@ -103,8 +105,9 @@ pub const CONFIG_QUIET_TIER: u8 = 15;
 pub const CONFIG_PRIMARY_HISTORY_TOO_SHORT: u8 = 16;
 
 const BPS: u64 = 10_000;
-/// Longest TWAP window accepted (one day); longer windows are always unavailable.
-const MAX_TWAP_WINDOW: u32 = 86_400;
+/// Longest TWAP window accepted: a pool's observation cardinality is a uint16
+/// (at most 65,535) and the primary must keep `twapWindow + 1` observations.
+const MAX_TWAP_WINDOW: u32 = 65_534;
 /// Token/feed decimals above this would overflow the fixed-point scales.
 const MAX_DECIMALS: u8 = 36;
 /// Primary plus standby pools. Standbys are read only while the primary
@@ -212,12 +215,13 @@ sol_storage! {
         uint64 max_anchor_age;
         /// 10^(36 + quote_decimals - stock_decimals - feed_decimals): Morpho's price scale.
         uint256 morpho_scale;
-        /// The feed's heartbeat (seconds). On a weekday a print younger than
-        /// this may come from a feed that is running but quiet, so the pool is
-        /// held to `quiet_band_bps` around it; past it, and at weekends, the
-        /// market is closed and the band is `max_deviation_bps`.
+        /// The feed's heartbeat (seconds). During the US regular session a
+        /// print younger than this is near the market (the feed prints any
+        /// 0.5% move then), so the pool is held to `quiet_band_bps` around it;
+        /// past it, and at every other hour, the band is `max_deviation_bps`.
         uint64 heartbeat;
-        /// Band (basis points) while the last print is at most `heartbeat` old.
+        /// Band (basis points) during the regular session while the last print
+        /// is at most `heartbeat` old.
         uint64 quiet_band_bps;
     }
 }
@@ -441,6 +445,9 @@ impl AfterHours {
     }
 
     pub fn description(&self) -> Result<String, AfterHoursError> {
+        if !self.initialized.get() {
+            return Err(AfterHoursError::NotInitialized(NotInitialized {}));
+        }
         let feed = self.feed.get();
         let mut out = IAggregatorV3::new(feed)
             .description(self.vm(), Call::new())
@@ -554,15 +561,18 @@ impl AfterHours {
             .collect()
     }
 
-    /// The quiet tier: (heartbeat, quietBandBps). While the last print is at
-    /// most `heartbeat` seconds old on a weekday the pool is held to
-    /// `quietBandBps` around it; after that, and on Saturdays and Sundays
-    /// (UTC), to `maxDeviationBps`.
-    pub fn quiet_tier(&self) -> (u64, u64) {
-        (
+    /// The quiet tier: (heartbeat, quietBandBps). During the US regular
+    /// session, while the last print is at most `heartbeat` seconds old, the
+    /// pool is held to `quietBandBps` around it; at every other hour, and past
+    /// the heartbeat, to `maxDeviationBps`. Refuses before `initialize`.
+    pub fn quiet_tier(&self) -> Result<(u64, u64), AfterHoursError> {
+        if !self.initialized.get() {
+            return Err(AfterHoursError::NotInitialized(NotInitialized {}));
+        }
+        Ok((
             self.heartbeat.get().to::<u64>(),
             self.quiet_band_bps.get().to::<u64>(),
-        )
+        ))
     }
 
     /// Deployment parameters:
@@ -689,14 +699,15 @@ impl AfterHours {
             return Ok(q);
         }
 
-        // Within the heartbeat, on a weekday, the feed may be running and merely
-        // quiet (the price has not moved its deviation threshold) or the market
-        // may have closed within the last day; on-chain the two look the same.
-        // The pool is held close to the print. Past the heartbeat, or on a
-        // Saturday or Sunday, the market is closed and the pool may move up to
-        // `max_deviation_bps`.
-        let quiet =
-            age <= U256::from(self.heartbeat.get()) && !is_weekend(self.vm().block_timestamp());
+        // During the regular session the feed prints any move past its 0.5%
+        // threshold within minutes, so a print younger than the heartbeat is
+        // near the market and the pool is held close to it. At every other
+        // hour the feed may sit out a move until the next open (AAPL waited
+        // for the open on 0.53% and 0.78% overnight moves in September), the
+        // pool is the only current price, and it may move up to
+        // `max_deviation_bps`, as it may once the heartbeat has passed.
+        let quiet = age <= U256::from(self.heartbeat.get())
+            && in_regular_session(self.vm().block_timestamp());
         let band_bps = if quiet {
             self.quiet_band_bps.get().to::<u64>()
         } else {
@@ -832,14 +843,17 @@ impl AfterHours {
     }
 }
 
-/// Saturday or Sunday in UTC. Both days always fall inside the US equity
-/// closure, which runs from Friday 20:00 or 21:00 UTC to Monday 00:00 or
-/// 01:00 UTC depending on daylight saving. Weekdays that are exchange
-/// holidays are left to the heartbeat: a holiday table in an immutable
-/// contract would go stale, the weekend never does. 1970-01-01 was a
-/// Thursday, so with Monday = 0 the weekday is (days + 3) mod 7.
-fn is_weekend(timestamp: u64) -> bool {
-    (timestamp / 86_400 + 3) % 7 >= 5
+/// Whether the US regular session is certainly open at `timestamp`: Monday
+/// to Friday in UTC, 14:30 to 20:00 UTC. The session runs 13:30-20:00 UTC in
+/// summer and 14:30-21:00 UTC in winter, so these hours are inside it in both
+/// daylight-saving regimes. Exchange holidays are left to the heartbeat: a
+/// holiday table in an immutable contract would go stale, the weekly clock
+/// never does. 1970-01-01 was a Thursday, so with Monday = 0 the weekday is
+/// (days + 3) mod 7.
+fn in_regular_session(timestamp: u64) -> bool {
+    let weekday = (timestamp / 86_400 + 3) % 7;
+    let second = timestamp % 86_400;
+    weekday < 5 && (52_200..72_000).contains(&second)
 }
 
 /// `observe()` points: the window split into three sub-windows, oldest first.

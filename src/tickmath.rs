@@ -136,16 +136,19 @@ mod tests {
         ),
     ];
 
-    fn assert_close(actual: U256, expected: U256, tolerance_ppb: u64) {
+    /// The module's bound: 1e-23 relative for tick >= 0, one unit for tick < 0
+    /// (both references are truncated to an integer).
+    fn assert_within_bound(actual: U256, expected: U256) {
         let diff = if actual > expected {
             actual - expected
         } else {
             expected - actual
         };
-        // diff / expected <= tolerance / 1e9
+        let e23 = U256::from(10u64).pow(U256::from(23u64));
+        // diff <= 1 + expected / 1e23
         assert!(
-            diff * U256::from(1_000_000_000u64) <= expected * U256::from(tolerance_ppb),
-            "actual {actual} expected {expected}"
+            diff * e23 <= e23 + expected,
+            "actual {actual} expected {expected} diff {diff}"
         );
     }
 
@@ -153,8 +156,7 @@ mod tests {
     fn ratio_matches_reference_values() {
         for (tick, expected) in VECTORS {
             let actual = ratio_q96(*tick).expect("in range");
-            // 10 parts per billion; the reference itself is truncated to an integer
-            assert_close(actual, u(expected), 10);
+            assert_within_bound(actual, u(expected));
         }
     }
 
@@ -185,18 +187,17 @@ mod tests {
     #[test]
     fn stock_price_for_the_aapl_pool_layout() {
         // AAPL/USDG 0.05% pool: token0 = USDG (6 dec), token1 = AAPL (18 dec), feed 8 dec.
+        // Exact: the floors of the 80-digit references ($330.964973046...).
         let ratio = ratio_q96(218301).unwrap();
-        let price = stock_price(ratio, false, 18, 6, 8).unwrap();
-        assert_close(price, u("33096497304"), 10); // floor of $330.964973046...
-        let price = stock_price(ratio_q96(218302).unwrap(), false, 18, 6, 8).unwrap();
-        assert_close(price, u("33093187985"), 10);
+        assert_eq!(stock_price(ratio, false, 18, 6, 8), Some(u("33096497304")));
+        let price = stock_price(ratio_q96(218302).unwrap(), false, 18, 6, 8);
+        assert_eq!(price, Some(u("33093187985")));
     }
 
     #[test]
     fn stock_price_when_stock_is_token0() {
         let ratio = ratio_q96(-218301).unwrap();
-        let price = stock_price(ratio, true, 18, 6, 8).unwrap();
-        assert_close(price, u("33096497304"), 10);
+        assert_eq!(stock_price(ratio, true, 18, 6, 8), Some(u("33096497304")));
         assert_eq!(
             stock_price(ONE_Q96, true, 18, 6, 8),
             Some(u("100000000000000000000"))

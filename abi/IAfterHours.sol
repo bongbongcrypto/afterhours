@@ -13,7 +13,9 @@ interface IAfterHours {
     // ---- Chainlink AggregatorV3Interface ----------------------------------
     /// @dev Reverts NotInitialized before initialize (never a plausible 0).
     function decimals() external view returns (uint8);
+    /// @dev The feed's description plus " (AfterHours)". Reverts NotInitialized before initialize.
     function description() external view returns (string memory);
+    /// @dev Always 1.
     function version() external view returns (uint256);
     /// @dev LIVE_FEED: the feed's round verbatim.
     ///      ONCHAIN_TWAP: answer = the pool's price (median of three sub-window
@@ -54,9 +56,9 @@ interface IAfterHours {
     ///            time-weighted averages, before the band (0 outside ONCHAIN_TWAP)
     ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
     ///      clamped: the price was pulled back to the edge of the band: quietBandBps
-    ///               while the last print is at most heartbeat seconds old on a
-    ///               weekday, maxDeviationBps after that and on Saturdays and
-    ///               Sundays (UTC)
+    ///               during the US regular session (Monday to Friday, 14:30-20:00
+    ///               UTC) while the last print is at most heartbeat seconds old,
+    ///               maxDeviationBps at every other hour and past the heartbeat
     ///      pool: the pool that was read: the primary, or a standby while the primary
     ///            cannot be observed (zero when the oracle did not reach the pools, or
     ///            when no configured pool could be observed)
@@ -79,14 +81,17 @@ interface IAfterHours {
     ///      the primary and prices the asset; a standby is read only while every pool
     ///      before it cannot be observed (observe() reverts or answers nothing usable).
     ///      A primary that is merely thin refuses (NO_DATA 2) instead of moving venue.
+    ///      Empty before initialize.
     function pools() external view returns (address[] memory);
 
-    /// @dev While the last print is at most `heartbeat` seconds old on a weekday the
-    ///      feed may be running and only quiet, so the pool is held to quietBandBps
-    ///      around it; past the heartbeat, and on Saturdays and Sundays (UTC), the
-    ///      market is closed and the band is maxDeviationBps.
+    /// @dev During the US regular session (Monday to Friday, 14:30-20:00 UTC, open in
+    ///      both daylight-saving regimes), while the last print is at most `heartbeat`
+    ///      seconds old, the pool is held to quietBandBps around it: the feed prints any
+    ///      0.5% move then. At every other hour, and past the heartbeat, the band is
+    ///      maxDeviationBps. Reverts NotInitialized before initialize.
     function quietTier() external view returns (uint64 heartbeat, uint64 quietBandBps);
 
+    /// @dev Readable before initialize: `initialized` says whether it has run.
     function config()
         external
         view
@@ -111,7 +116,8 @@ interface IAfterHours {
     /// @dev One-shot configuration, run by the deployment script right after activation.
     ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow under 3 s, 3 band not in
     ///      (0, 10000), 4 minLiquidity 0, 5 stock not in pool, 6 Morpho scale underflow,
-    ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 1 day,
+    ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 65,534 s (no pool
+    ///      can keep more than 65,535 observations),
     ///      10 a pool does not answer observe() at the four sub-window boundaries
     ///      [twapWindow, 2w/3, w/3, 0], 11 not 1-3 pools, 12 the pools do not share one
     ///      quote token, 13 a pool is listed twice, 14 the stock's uiMultiplier() is

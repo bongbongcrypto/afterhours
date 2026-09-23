@@ -11,7 +11,7 @@
     "maxAnchorAge": 432000,
     "heartbeat": 86400,
     "quietBandBps": 100,
-    "min_liquidity": "primary liquidity / 8 at discovery time",
+    "min_liquidity": "primary liquidity / 32 at discovery time, the AAPL instance's ratio (1.68e18 / 5e16 = 34, rounded down); check each with pool_depth.py before deploying",
     "recommended": "primary cardinality >= 1801 and 2% depth >= $50000"
   },
   "assets": [
@@ -58,7 +58,7 @@
           "0x6ba50150b17ffd0972915aaf04ffd5e8f4fa49b4"
         ],
         "stock": "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
-        "min_liquidity": "7750259577339596023"
+        "min_liquidity": "1937564894334899005"
       },
       "recommended": false,
       "notes": [
@@ -117,7 +117,7 @@
           "0xb75d2d02b0ec3de50d32e40a4f1a8dae8acc4333"
         ],
         "stock": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
-        "min_liquidity": "1487232628046388617"
+        "min_liquidity": "371808157011597154"
       },
       "recommended": true,
       "notes": []
@@ -174,7 +174,7 @@
           "0xfbb32c09488e3fc33fe6fd84fe6ae442b4d13a31"
         ],
         "stock": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
-        "min_liquidity": "636791544199838473"
+        "min_liquidity": "159197886049959618"
       },
       "recommended": true,
       "notes": []
@@ -230,7 +230,7 @@
           "0x553e9a453425cd9b90919f317061fbc3794cc57a"
         ],
         "stock": "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
-        "min_liquidity": "239123398726548319"
+        "min_liquidity": "59780849681637079"
       },
       "recommended": true,
       "notes": []
@@ -270,7 +270,7 @@
           "0x6ed11c7dfd8e2ca5620eed29a7b9b53ae90dd0d2"
         ],
         "stock": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
-        "min_liquidity": "348680499127010456"
+        "min_liquidity": "87170124781752614"
       },
       "recommended": true,
       "notes": []
@@ -366,7 +366,7 @@
           "0xa43b424bc609495aed4bcd88d654934b510b0ad9"
         ],
         "stock": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
-        "min_liquidity": "125449273108387487"
+        "min_liquidity": "31362318277096871"
       },
       "recommended": true,
       "notes": []
@@ -421,7 +421,7 @@
           "0x8ac92da74ab5f3b1d024dc1943ad7e15dc4179ef"
         ],
         "stock": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
-        "min_liquidity": "217624593400937680"
+        "min_liquidity": "54406148350234420"
       },
       "recommended": true,
       "notes": []
@@ -477,7 +477,7 @@
           "0x2ea9292113514ed84fd16aa4ad1e416537e39c8c"
         ],
         "stock": "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
-        "min_liquidity": "122159820825653088"
+        "min_liquidity": "30539955206413272"
       },
       "recommended": true,
       "notes": []
@@ -525,7 +525,7 @@
           "0xebd78dcfc8a6b3a696f1e191ad1ff321f9579f79"
         ],
         "stock": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
-        "min_liquidity": "54280672313976221"
+        "min_liquidity": "13570168078494055"
       },
       "recommended": true,
       "notes": []
@@ -572,7 +572,7 @@
           "0x654e4143e82a5824445ade0824351c2a9acd95a8"
         ],
         "stock": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
-        "min_liquidity": "150399595694351790"
+        "min_liquidity": "37599898923587947"
       },
       "recommended": true,
       "notes": []
@@ -629,7 +629,7 @@
           "0x0a0675689c2ad2a3ade86539bcbd27b6c0764e9d"
         ],
         "stock": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
-        "min_liquidity": "256634609626120589"
+        "min_liquidity": "64158652406530147"
       },
       "recommended": true,
       "notes": []
@@ -678,7 +678,7 @@
           "0x37ed4621d1eb3abc9e551a888e6aaf0a41f7be8e"
         ],
         "stock": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
-        "min_liquidity": "145930056620057647"
+        "min_liquidity": "36482514155014411"
       },
       "recommended": true,
       "notes": []
@@ -735,7 +735,7 @@
           "0xb349fb08c2712f3a70bad40a4d006b68d67e888b"
         ],
         "stock": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
-        "min_liquidity": "48911475467320528"
+        "min_liquidity": "12227868866830132"
       },
       "recommended": true,
       "notes": []
@@ -774,7 +774,7 @@
           "0xd057b1bc54917855bbee58ead58647f47cab35e5"
         ],
         "stock": "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
-        "min_liquidity": "25286129148909457"
+        "min_liquidity": "6321532287227364"
       },
       "recommended": true,
       "notes": []
@@ -822,7 +822,7 @@
           "0x6fd62e9843ad2ac2c4fbf2b62647953ea29b3537"
         ],
         "stock": "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
-        "min_liquidity": "14750965444363616"
+        "min_liquidity": "3687741361090904"
       },
       "recommended": false,
       "notes": [
@@ -864,7 +864,7 @@
           "0x2c08bcef714bc8124972b7181494fc598e8ed111"
         ],
         "stock": "0xec262a75e413fAfD0dF80480274532C79D42da09",
-        "min_liquidity": "26726971510493950"
+        "min_liquidity": "6681742877623487"
       },
       "recommended": false,
       "notes": [
@@ -906,7 +906,7 @@
           "0xc30c89cb7815a1488b7998d15eec73961707fc5a"
         ],
         "stock": "0x941AE714EC6D8130c7B75d67160Ca08f1e7d11Dd",
-        "min_liquidity": "13986830167270837"
+        "min_liquidity": "3496707541817709"
       },
       "recommended": false,
       "notes": [
@@ -940,7 +940,7 @@
           "0x851680416a4f4e1c463d45171d61acddbc8554c0"
         ],
         "stock": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
-        "min_liquidity": "23570576713344850"
+        "min_liquidity": "5892644178336212"
       },
       "recommended": false,
       "notes": [
@@ -991,7 +991,7 @@
           "0x368ddd38861d31435d764fc54df7d16481e3590b"
         ],
         "stock": "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
-        "min_liquidity": "26393012421520218"
+        "min_liquidity": "6598253105380054"
       },
       "recommended": false,
       "notes": [
@@ -1041,7 +1041,7 @@
           "0xd6af1dcb75cdae4f2efc403a58ef023a51edc686"
         ],
         "stock": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
-        "min_liquidity": "7850644823646613"
+        "min_liquidity": "1962661205911653"
       },
       "recommended": false,
       "notes": [
@@ -1083,7 +1083,7 @@
           "0x07e8ea83d4c1340774c8965125e26e12bf943bf1"
         ],
         "stock": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
-        "min_liquidity": "6262306295674008"
+        "min_liquidity": "1565576573918502"
       },
       "recommended": false,
       "notes": [
@@ -1116,7 +1116,7 @@
           "0x2e5a92f5013a64661a49312111be2e8abd33f56a"
         ],
         "stock": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
-        "min_liquidity": "7762894049756886"
+        "min_liquidity": "1940723512439221"
       },
       "recommended": false,
       "notes": [
@@ -1166,7 +1166,7 @@
           "0x04391780f519b7d3ba59c9590459d76e23d225c4"
         ],
         "stock": "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
-        "min_liquidity": "19672172724653245"
+        "min_liquidity": "4918043181163311"
       },
       "recommended": false,
       "notes": [
@@ -1209,7 +1209,7 @@
           "0xce79c1b7b5f9ae1aab3b1796e7fcd2f5f24cf265"
         ],
         "stock": "0x47F93d52cBeC7C6D2CfC080e154002370a60dAEA",
-        "min_liquidity": "1186709022373293"
+        "min_liquidity": "296677255593323"
       },
       "recommended": false,
       "notes": [
@@ -1251,7 +1251,7 @@
           "0xa1e1c9519cd5ae47e9a935645e1a7b935b944559"
         ],
         "stock": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
-        "min_liquidity": "1062841283268441"
+        "min_liquidity": "265710320817110"
       },
       "recommended": false,
       "notes": [
@@ -1285,7 +1285,7 @@
           "0xa9888de1b9d64a93eaeb495a39fe9b3d00654928"
         ],
         "stock": "0x3b14C39E89D60D627b42a1A4CA45b5bb45Fc12e2",
-        "min_liquidity": "36236352774"
+        "min_liquidity": "9059088193"
       },
       "recommended": false,
       "notes": [
@@ -1319,7 +1319,7 @@
           "0xbc44b11f569d3feed9b4088f5a3fc569d2e3c77f"
         ],
         "stock": "0x558378E000D634A36593E338eBacdd6207640EfE",
-        "min_liquidity": "46136988556"
+        "min_liquidity": "11534247139"
       },
       "recommended": false,
       "notes": [

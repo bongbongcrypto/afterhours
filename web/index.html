@@ -213,7 +213,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
 <main id="top">
   <section class="wrap intro" aria-labelledby="h1">
     <h1 id="h1">A stock price that keeps answering when the exchange is closed.</h1>
-    <p class="lede">AfterHours passes Chainlink's price through while the market is open. When the feed goes quiet, it answers with the Robinhood Chain pool's price, held within 1% of the last print while the feed may only be quiet and within 10% once the market is closed, and refuses when the pool is too thin to trust. <strong>Every price, age and pool figure on this page is read from Robinhood Chain by your browser.</strong></p>
+    <p class="lede">AfterHours passes Chainlink's price through while the market is open. When the feed goes quiet, it answers with the Robinhood Chain pool's price, held within 1% of the last print during the US regular session, when a quiet feed means a quiet market, and within 10% overnight and at weekends. It refuses when the pool is too thin to trust. <strong>Every price, age and pool figure on this page is read from Robinhood Chain by your browser.</strong></p>
   </section>
 
   <section class="wrap panel" aria-labelledby="panel-h">
@@ -235,7 +235,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       </div>
       <figure class="gauge">
         <svg id="gauge" role="img" aria-labelledby="gauge-cap"></svg>
-        <figcaption class="gauge__cap" id="gauge-cap">The band: within 1% of the last Chainlink print while the feed may only be quiet, within 10% once the market is closed.</figcaption>
+        <figcaption class="gauge__cap" id="gauge-cap">The band: within 1% of the last Chainlink print during the US regular session, within 10% at every other hour.</figcaption>
       </figure>
       <dl class="facts">
         <div><dt>Pool read</dt><dd id="pool-name">…</dd></div>
@@ -423,8 +423,11 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     if (age <= BigInt(P.liveMaxAge) && !rebased) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
     if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
     q.bandBps = bandBps(age, nowTs);
-    var dev = BigInt(q.bandBps), bps = 10000n;
+    var bps = 10000n, dev = BigInt(q.bandBps), wide = BigInt(P.maxDeviationBps);
     var lower = feedAnswer * (bps - dev) / bps, upper = feedAnswer * (bps + dev) / bps;
+    // a corporate action after the print is judged against the wide band: a
+    // split moves the price per share by half or more, a distribution by a few percent
+    var wideLower = feedAnswer * (bps - wide) / bps, wideUpper = feedAnswer * (bps + wide) / bps;
     var chosen = null;
     for (var i = 0; i < r.obs.length; i++) {
       var o = r.obs[i];
@@ -437,23 +440,28 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     q.liquidity = chosen.liq;
     if (chosen.liq < BigInt(a.minLiquidity)) { q.session = "NO_DATA"; q.reason = 2; return q; }
     var twap = perShare(twapOf(chosen.o, a, feedDecimals), r.multiplier);
-    if (twap === null) { q.session = "NO_DATA"; q.reason = 3; return q; }
+    // a price that rounds to zero per share is not a price
+    if (twap === null || twap === 0n) { q.session = "NO_DATA"; q.reason = 3; return q; }
     q.twap = twap;
-    if (rebased && (twap < lower || twap > upper)) { q.session = "NO_DATA"; q.reason = 5; q.twap = null; return q; }
+    if (rebased && (twap < wideLower || twap > wideUpper)) { q.session = "NO_DATA"; q.reason = 5; q.twap = null; return q; }
     if (twap < lower) { q.answer = lower; q.clamped = true; }
     else if (twap > upper) { q.answer = upper; q.clamped = true; }
     else { q.answer = twap; }
     q.session = "ONCHAIN_TWAP";
     return q;
   }
-  // Saturday or Sunday in UTC: always inside the US closure (src/lib.rs, is_weekend).
-  function isWeekend(ts) { return (ts / 86400n + 3n) % 7n >= 5n; }
+  // Monday to Friday, 14:30 to 20:00 UTC: the US regular session is open in both
+  // daylight-saving regimes (src/lib.rs, in_regular_session).
+  function inRegularSession(ts) {
+    var second = ts % 86400n;
+    return (ts / 86400n + 3n) % 7n < 5n && second >= 52200n && second < 72000n;
+  }
   // The band a print `age` seconds old holds the pool to at time `nowTs` (src/lib.rs,
-  // evaluate): narrow while the print is younger than the feed's heartbeat on a
-  // weekday, wide after the heartbeat and all weekend.
+  // evaluate): narrow during the regular session while the print is younger than the
+  // feed's heartbeat, wide at every other hour and past the heartbeat.
   function bandBps(age, nowTs) {
     var P = DATA.params;
-    return age <= BigInt(P.heartbeat) && !isWeekend(nowTs) ? P.quietBandBps : P.maxDeviationBps;
+    return age <= BigInt(P.heartbeat) && inRegularSession(nowTs) ? P.quietBandBps : P.maxDeviationBps;
   }
   function bandText(bps) { return "±" + (bps / 100) + "%"; }
   // pool price of one token of raw balance -> price of one share (the feed's unit)
@@ -477,7 +485,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     return ratio === null ? null : stockPrice(ratio, a.stockIsToken0, a.stockDecimals, DATA.quote.decimals, feedDecimals);
   }
 
-  // Values the contract produces in its end-to-end test (e2e/run.sh): if the
+  // Values the contract produces in its tests (src/tests.rs, e2e/run.sh): if the
   // port drifts from the contract, the page says so instead of showing numbers.
   function selfTest() {
     var a = stockPrice(ratioQ96(218301), false, 18, 6, 8);
@@ -487,7 +495,47 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     [218301n, 198301n, 218301n].forEach(function (t) { ticks.push(ticks[ticks.length - 1] + t * 600n); });
     var mt = medianTick({ ticks: ticks });
     var c = mt === null ? null : stockPrice(ratioQ96(mt), false, 18, 6, 8);
-    return a === 33096497304n && b === 31482440784n && c === 33096497304n;
+    return a === 33096497304n && b === 31482440784n && c === 33096497304n && decisionsMatch();
+  }
+  // The decision cases of src/tests.rs, run through evaluate() with the tests'
+  // configuration: Friday 16:00 UTC, the $332.52 print, the pool 500 ticks under
+  // the AAPL tick (-5.3%), 1e15 of liquidity in every sub-window.
+  function decisionsMatch() {
+    var saved = { params: DATA.params, quote: DATA.quote };
+    DATA.params = { liveMaxAge: 21600, twapWindow: 1800, maxDeviationBps: 1000, maxAnchorAge: 432000, heartbeat: 86400, quietBandBps: 100 };
+    DATA.quote = { decimals: 6 };
+    try {
+      var FRI = 1800028800n, HOUR = 3600n, ONE = 10n ** 18n, MIN = 10n ** 15n;
+      var asset = { minLiquidity: "1000000000000000", stockIsToken0: false, stockDecimals: 18 };
+      var pool = function (tick) {
+        var t = [1000000n], l = [0n], step = (600n << 128n) / MIN;
+        for (var k = 0; k < 3; k++) { t.push(t[k] + BigInt(tick) * 600n); l.push(l[k] + step); }
+        return { ticks: t, spl: l };
+      };
+      var read = function (tick, printAge, now, multiplier, sinceAction) {
+        return {
+          paused: false, multiplier: multiplier, effectiveAt: sinceAction === null ? 0n : now - sinceAction,
+          round: { answer: 33252000000n, updatedAt: now - printAge }, obs: [pool(tick)]
+        };
+      };
+      var got = function (r, now) {
+        var q = evaluate(asset, r, 8, now);
+        return q.session + "/" + q.reason + "/" + q.answer + "/" + q.clamped;
+      };
+      return [
+        // a quiet feed in the regular session: held to -1%
+        got(read(218801, 7n * HOUR, FRI, ONE, null), FRI) === "ONCHAIN_TWAP/0/32919480000/true",
+        // the same read at 22:00 UTC, after the close: the wide band lets the pool through
+        got(read(218801, 7n * HOUR, FRI + 6n * HOUR, ONE, null), FRI + 6n * HOUR) === "ONCHAIN_TWAP/0/31482440784/false",
+        // a 3% distribution a minute ago: inside the wide band, so held to the narrow one
+        got(read(218301, 120n, FRI, 1030000000000000000n, 60n), FRI) === "ONCHAIN_TWAP/0/32919480000/true",
+        // a 2-for-1 split a minute ago: past the wide band, refused
+        got(read(218301, 120n, FRI, 2n * ONE, 60n), FRI) === "NO_DATA/5/0/false"
+      ].every(Boolean);
+    } finally {
+      DATA.params = saved.params;
+      DATA.quote = saved.quote;
+    }
   }
 
   // ---- ABI helpers ----
@@ -884,8 +932,8 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       kids.push(el("circle", { cx: x(toNum(answer, fd)), cy: y, r: 4, class: "g-answer" }));
     }
     svg.replaceChildren.apply(svg, kids);
-    var cap = "The band: on a weekday AfterHours answers within " + (DATA.params.quietBandBps / 100) + "% of the last Chainlink print while that print is younger than the feed's " +
-      (DATA.params.heartbeat / 3600) + "-hour heartbeat; after that, and all weekend, within " + (DATA.params.maxDeviationBps / 100) + "%. Now: " + bandText(bps) + ".";
+    var cap = "The band: on a weekday from 14:30 to 20:00 UTC AfterHours answers within " + (DATA.params.quietBandBps / 100) + "% of the last Chainlink print while that print is younger than the feed's " +
+      (DATA.params.heartbeat / 3600) + "-hour heartbeat; at every other hour, and past the heartbeat, within " + (DATA.params.maxDeviationBps / 100) + "%. Now: " + bandText(bps) + ".";
     if (twap !== null) cap += " Ring: the pool's price, the median of three 10-minute averages (" + pct(toNum(twap, fd) / f - 1) + "). Dot: AfterHours' answer.";
     $("gauge-cap").textContent = cap;
   }
@@ -976,7 +1024,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       (longest ? dur(longest[1] - longest[0], false) + " (" + utc(longest[0]) + " to " + (longest[2] ? "now" : utc(longest[1])) + ")" : "none") +
       ". AfterHours hands over to the pool when the last print is more than 6 hours old: that was " + covered + "% of the week, " +
       dur(weekendSec, false) + " of it over the weekend and " + dur(staleSec - weekendSec, false) +
-      " on weekdays, when the feed is running but the price did not move its 0.5% update trigger." +
+      " on weekday nights, when the feed prints only now and then and can hold a move until the next open." +
       (sinceLast > DATA.params.liveMaxAge ? " The feed is quiet now: last print " + dur(sinceLast, false) + " ago." : "");
     $("tape-legend").textContent = legend;
   }
@@ -1004,7 +1052,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     ["link-design", "cta-design"].forEach(function (id) { $(id).href = DATA.repo + "/blob/main/DESIGN.md"; });
     var ok = selfTest();
     $("selftest").textContent = ok ?
-      "Self-check passed: this page's port of the contract's math reproduces exact results of the contract's end-to-end test (33096497304 and 31482440784, and 33096497304 again with a ten-minute spike to 7.4x ignored)." :
+      "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, and four band and corporate-action decisions)." :
       "Self-check FAILED: this page's math does not reproduce the contract's end-to-end prices. Do not trust the AfterHours readout.";
     if (!ok) $("selftest").className = "refuse";
     await refresh();

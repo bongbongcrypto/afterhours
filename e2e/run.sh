@@ -26,7 +26,7 @@ POOL2_TWAP=31482440784        # standby, stock as token0, tick -218801: floor of
 DOWN_TWAP=31482440784         # primary at tick 218801 (-5.3%): the same exact price, the same floor
 HELD_TWAP=32118396159         # primary at tick 218601 (-3%): floor of 32118396159.78
 MORPHO_SCALE=10000000000000000  # 10^(36 + 6 - 18 - 8)
-ONE=1000000000000000000         # uiMultiplier for one share per raw unit
+ONE=1000000000000000000         # uiMultiplier for one share per token of raw balance
 AAPL_MULT=1000566080000000000   # AAPL's uiMultiplier on 2026-09-23
 DEEP=1600000000000000000        # 1.6e18, the real AAPL 0.05% pool's depth
 
@@ -77,6 +77,14 @@ for t in sys.argv[1:]:
 print("[" + ",".join(str(v) for v in out) + "]")
 PY
 }
+# revert data must be InvalidConfig's selector followed by the exact code word
+reverts_config() { # label code cmd...
+  local label="$1" code="$2"; shift 2
+  local want; want="$(cast sig "InvalidConfig(uint8)" | sed 's/^0x//')$(printf '%064x' "$code")"
+  local out; if out=$(cast call --rpc-url "$RPC" "$@" 2>&1); then fail=$((fail + 1)); echo "  FAIL $label: did not revert ($out)"; return; fi
+  if echo "$out" | tr A-Z a-z | grep -q "$want"; then pass=$((pass + 1)); echo "  ok   $label reverts InvalidConfig($code)"
+  else fail=$((fail + 1)); echo "  FAIL $label: expected InvalidConfig($code): $out"; fi
+}
 # revert data must be the error's selector followed by the exact reason word
 reverts_nodata() { # label reason cmd...
   local label="$1" reason="$2"; shift 2
@@ -95,6 +103,8 @@ USDG=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src
 POOL=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockPool --constructor-args "$USDG" "$STOCK" | jq -r .deployedTo)
 # a second pool with the stock as token0 (mirrored ticks), shallower
 POOL2=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockPool --constructor-args "$STOCK" "$USDG" | jq -r .deployedTo)
+# a Solidity contract that reads the oracle the way Morpho does (STATICCALL)
+CONSUMER=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:OracleConsumer | jq -r .deployedTo)
 echo "  feed $FEED stock $STOCK usdg $USDG pool $POOL pool2 $POOL2"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" $((ROUND - 1)) 31000000000 $((T - 9000)) $((T - 9000))
@@ -123,6 +133,9 @@ echo "  AfterHours at $ADDR"
 echo "== initialize"
 reverts_with "read before initialize" "NotInitialized()" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)"
 reverts_with "decimals before initialize" "NotInitialized()" "$ADDR" "decimals()(uint8)"
+send "$POOL" "setCardinality(uint16)" "$WINDOW"
+reverts_config "a primary keeping one observation too few" 16 "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" "$HEARTBEAT" "$QUIET_BPS"
+send "$POOL" "setCardinality(uint16)" "$((WINDOW + 1))"
 send "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" "$HEARTBEAT" "$QUIET_BPS"
 mapfile -t c < <(call "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)")
 expect "initialized" "${c[0]}" "true"
@@ -161,6 +174,9 @@ expect "startedAt = last print" "$(num "${r[2]}")" "$((T - 144000))"
 UPD=$(num "${r[3]}"); NOW2=$(now)
 if [ "$UPD" -ge "$((NOW2 - 5))" ] && [ "$UPD" -le "$((NOW2 + 5))" ]; then pass=$((pass + 1)); echo "  ok   updatedAt = now ($UPD)"; else fail=$((fail + 1)); echo "  FAIL updatedAt $UPD vs now $NOW2"; fi
 expect "price() = twap x 1e16" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$EXPECT_TWAP * $MORPHO_SCALE")"
+expect "a Solidity caller gets the same price() (STATICCALL)" "$(num "$(call "$CONSUMER" "priceOf(address)(uint256)" "$ADDR")")" "$(pyint "$EXPECT_TWAP * $MORPHO_SCALE")"
+mapfile -t ca < <(call "$CONSUMER" "answerOf(address)(int256,uint256)" "$ADDR")
+expect "a Solidity caller gets the same latestRoundData answer" "$(num "${ca[0]}")" "$EXPECT_TWAP"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "twap reported" "$(num "${s[5]}")" "$EXPECT_TWAP"
@@ -230,6 +246,7 @@ send "$POOL" "$OBS" "$FLAT" "$(spl4 dip:$DEEP dip:$DEEP $DEEP)"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
 reverts_nodata "price with two dips" 2 "$ADDR" "price()(uint256)"
+reverts_nodata "the refusal reaches a Solidity caller unchanged" 2 "$CONSUMER" "priceOf(address)(uint256)" "$ADDR"
 
 echo "== the venue is fixed: a standby three times deeper does not take over"
 send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
@@ -307,7 +324,7 @@ T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 1))" "$((FRIDAY / 2))" "$T" "$T"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "live again once the feed prints the split price" "${s[0]}/${s[1]}" "0/0"
-expect "a raw unit is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
+expect "a raw token is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
 send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 
 echo

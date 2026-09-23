@@ -3,8 +3,9 @@
 Each round was an independent reviewer (a separate agent, given the repository
 and, from round 4, a fixed scoring rubric, but no self-assessment) reading
 the code, running the read-only measurement scripts and reporting defects.
-Round 6 ran from an empty folder with a clean copy of the public repository,
-the rubric and the form text; it saw the findings below, not any score.
+Rounds 6 and 7 ran from an empty folder with a clean copy of the repository
+as it will be published, the rubric and the form text; they saw the findings
+below, not any score.
 Every finding below was either fixed in the commit shown or is listed as
 open with the reason.
 
@@ -58,7 +59,7 @@ open with the reason.
 | The docs called PARE the chain's single lending market; Morpho has 83 funded stock-collateral markets | census script `morpho_markets.py`; claim rewritten everywhere | bb82a42 |
 | One second out of range refuses for 30 minutes, a cheap and repeatable way to stop liquidations | liquidity is the median of three 10-minute sub-windows; the cost of a refusal was re-measured in round 5 | 01d8366 |
 | Manipulation-cost paragraph used reserves as a lower bound | replaced by a tick-by-tick depth map (`pool_depth.py`); the band caps the damage | 7f83d1a |
-| Raw token units vs per-share feed (found while checking the census oracles): one raw unit is `uiMultiplier` shares | `price()` multiplies by `uiMultiplier`; TWAP per share; NoData(5) when a multiplier change after the print moves the pool past the band | 01d8366 |
+| Raw token units vs per-share feed (found while checking the census oracles): one token of raw balance is `uiMultiplier / 1e18` shares | `price()` multiplies by `uiMultiplier`; TWAP per share; NoData(5) when a multiplier change after the print moves the pool past the band | 01d8366 |
 | USD feed vs USDG pool and loan token | documented (USDG/USD feed updates only on 0.5% moves) | bb82a42 |
 | AAPL standby pools can never clear the floor | AAPL deploys with the primary only | bb82a42 |
 | A zero-liquidity answer moved to the standby, contradicting the docs | an answering primary is always the venue | 01d8366 |
@@ -83,7 +84,7 @@ open with the reason.
 | Stale comments and counts (observe points, reasons 1-4, the e2e size comment, test counts); video lines not yet true (a mainnet deployment, a Saturday capture, and a claim that no contract reads the pool, which the raw-pool adapters do) | refreshed; the video says what is true before deployment | e8d2730 |
 | Not deployed, no public repo, no live URL, no final video | carried to round 6 | |
 
-## Round 6 (2026-09-23): review from a clean copy of the public repository
+## Round 6 (2026-09-23): review from a clean copy of the repository as published
 
 | finding | resolution | commit |
 |---|---|---|

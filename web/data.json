@@ -37,7 +37,7 @@
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,
-   "minLiquidity": "200000000000000000",
+   "minLiquidity": "50000000000000000",
    "depth2pctUsd": 308123,
    "oracle": null
   },

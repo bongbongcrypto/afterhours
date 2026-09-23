@@ -456,7 +456,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     return age <= BigInt(P.heartbeat) && !isWeekend(nowTs) ? P.quietBandBps : P.maxDeviationBps;
   }
   function bandText(bps) { return "±" + (bps / 100) + "%"; }
-  // pool price of one raw unit -> price of one share (the feed's unit)
+  // pool price of one token of raw balance -> price of one share (the feed's unit)
   function perShare(raw, multiplier) {
     return raw === null || !multiplier ? null : raw * ONE_SHARE / multiplier;
   }

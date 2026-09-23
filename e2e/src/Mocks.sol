@@ -40,6 +40,7 @@ contract MockPool {
     int56[4] private cum;
     uint160[4] private spl;
     bool private revertObserve;
+    uint16 private cardinality = 1801;
 
     constructor(address token0_, address token1_) { token0 = token0_; token1 = token1_; }
 
@@ -53,6 +54,12 @@ contract MockPool {
     }
 
     function setRevert(bool on) external { revertObserve = on; }
+    function setCardinality(uint16 c) external { cardinality = c; }
+
+    /// Uniswap's slot0; AfterHours reads only the observation cardinality (fourth field).
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool) {
+        return (0, 0, 0, cardinality, cardinality, 0, true);
+    }
 
     function observe(uint32[] calldata secondsAgos)
         external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
@@ -77,7 +84,7 @@ contract MockToken {
     uint8 private dec;
     bool public oraclePaused;
     string public symbol;
-    /// Robinhood's scaled-UI surface: one raw unit is uiMultiplier / 1e18 shares.
+    /// Robinhood's scaled-UI surface: one token of raw balance is uiMultiplier / 1e18 shares.
     uint256 public uiMultiplier = 1e18;
     uint256 public effectiveAt;
 
@@ -87,5 +94,23 @@ contract MockToken {
     function setPaused(bool on) external { oraclePaused = on; }
     function setMultiplier(uint256 multiplier, uint256 effectiveAt_) external {
         uiMultiplier = multiplier; effectiveAt = effectiveAt_;
+    }
+}
+
+interface IAfterHoursLike {
+    function price() external view returns (uint256);
+    function latestRoundData() external view returns (uint80, int256, uint256, uint256, uint80);
+}
+
+/// A Solidity caller that reads the oracle the way Morpho Blue and a Chainlink
+/// consumer do: a view call from another contract (STATICCALL), revert data
+/// bubbling up unchanged.
+contract OracleConsumer {
+    function priceOf(address oracle) external view returns (uint256) {
+        return IAfterHoursLike(oracle).price();
+    }
+
+    function answerOf(address oracle) external view returns (int256 answer, uint256 updatedAt) {
+        (, answer,, updatedAt,) = IAfterHoursLike(oracle).latestRoundData();
     }
 }

@@ -27,7 +27,8 @@
 //! configuration is fixed at deployment; there is no owner and no upgrade.
 //!
 //! Units: Chainlink prices one share. A Robinhood stock token is a scaled-UI
-//! token: one raw unit is `uiMultiplier / 1e18` shares, and the multiplier
+//! token that keeps balances raw: one token of raw balance is
+//! `uiMultiplier / 1e18` shares, and the multiplier
 //! grows with every dividend and jumps on a split. Every Chainlink-shaped
 //! answer here is per share, like the feed; `price()` (Morpho) values raw
 //! collateral units, so it multiplies by the token's current `uiMultiplier`.
@@ -64,8 +65,8 @@ pub const REASON_TWAP_UNAVAILABLE: u8 = 3;
 /// the stock is halted, and no band anchored to it can be trusted.
 pub const REASON_ANCHOR_STALE: u8 = 4;
 /// A new share multiplier took effect after the last print (a corporate action)
-/// and the pool, read per share, sits outside the band: a split or a merger the
-/// last print knows nothing about. Refuse until the feed prints again.
+/// and the pool, read per share, sits outside the wide band: a split or a merger
+/// the last print knows nothing about. Refuse until the feed prints again.
 pub const REASON_MULTIPLIER_CHANGED: u8 = 5;
 /// Only `price()` raises this: the answer is valid, but Morpho's 1e36 scale
 /// times the share multiplier cannot hold it (an absurd price).
@@ -96,6 +97,10 @@ pub const CONFIG_BAD_MULTIPLIER: u8 = 14;
 /// `heartbeat` must lie in `[liveMaxAge, maxAnchorAge)` and `quietBandBps` in
 /// `(0, maxDeviationBps]`.
 pub const CONFIG_QUIET_TIER: u8 = 15;
+/// The primary pool keeps fewer than `twapWindow + 1` observations. Uniswap
+/// writes at most one a second, so anyone swapping every second could then
+/// make `observe()` answer "OLD" for the window and switch pricing off.
+pub const CONFIG_PRIMARY_HISTORY_TOO_SHORT: u8 = 16;
 
 const BPS: u64 = 10_000;
 /// Longest TWAP window accepted (one day); longer windows are always unavailable.
@@ -112,7 +117,7 @@ const MAX_POOLS: usize = 3;
 const SUBWINDOWS: u32 = 3;
 /// Shortest TWAP window: each sub-window must last at least a second.
 const MIN_TWAP_WINDOW: u32 = SUBWINDOWS;
-/// 1e18, the token's multiplier for "one raw unit is one share".
+/// 1e18, the token's multiplier for "one token of raw balance is one share".
 const ONE_SHARE: U256 = U256::from_limbs([1_000_000_000_000_000_000, 0, 0, 0]);
 
 sol_interface! {
@@ -127,6 +132,7 @@ sol_interface! {
         function token0() external view returns (address);
         function token1() external view returns (address);
         function observe(uint32[] seconds_agos) external view returns (int56[], uint160[]);
+        function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool);
     }
 
     interface IERC20Decimals {
@@ -239,7 +245,7 @@ pub struct Quote {
     /// The pool that was observed to price (or to refuse: NO_DATA 2, 5 and the
     /// tick conversion case of 3). Zero when no pool was needed or none could be observed.
     pub pool: Address,
-    /// The stock's share multiplier at this read (1e18 = one raw unit is one share).
+    /// The stock's share multiplier at this read (1e18 = one token of raw balance is one share).
     pub multiplier: U256,
 }
 
@@ -312,7 +318,7 @@ impl AfterHours {
 
         let mut quote = Address::ZERO;
         let mut stock_first: Vec<bool> = Vec::with_capacity(pools.len());
-        for &pool in &pools {
+        for (i, &pool) in pools.iter().enumerate() {
             let pool_iface = IUniswapV3PoolMinimal::new(pool);
             let token0 = pool_iface
                 .token_0(self.vm(), Call::new())
@@ -340,6 +346,17 @@ impl AfterHours {
                     if cumulatives.len() == points.len()
                         && seconds_per_liquidity.len() == points.len() => {}
                 _ => return Err(invalid(CONFIG_POOL_NOT_OBSERVABLE)),
+            }
+            // The primary must keep a window's worth of one-a-second observations
+            // (slot0's fourth field). A standby only covers a primary that cannot
+            // be observed, so it may keep fewer.
+            if i == 0 {
+                let (_, _, _, cardinality, ..) = pool_iface
+                    .slot0(self.vm(), Call::new())
+                    .map_err(|_| call_failed(pool))?;
+                if u32::from(cardinality) < twap_window + 1 {
+                    return Err(invalid(CONFIG_PRIMARY_HISTORY_TOO_SHORT));
+                }
             }
             stock_first.push(is_token0);
         }
@@ -657,7 +674,7 @@ impl AfterHours {
         // A new share multiplier took effect after the last print: that print is
         // in pre-action shares, so it is not passed through. The pool, which
         // trades raw units, is read per share instead, and a move beyond the
-        // band (a split) refuses rather than clamps.
+        // wide band (a split) refuses rather than clamps.
         let rebased = effective_at > updated_at && effective_at <= now;
         if age <= U256::from(self.live_max_age.get()) && !rebased {
             q.session = SESSION_LIVE_FEED;
@@ -688,11 +705,20 @@ impl AfterHours {
         // The band is anchored to the last feed print; a print so large that the
         // arithmetic overflows is not a print to anchor to. Checked before any
         // pool read so a refusal never carries a half-computed TWAP.
-        let dev = U256::from(band_bps);
         let bps = U256::from(BPS);
-        let (Some(lower), Some(upper)) = (
-            feed_answer.checked_mul(bps - dev).map(|v| v / bps),
-            feed_answer.checked_mul(bps + dev).map(|v| v / bps),
+        let bounds = |band: u64| {
+            let dev = U256::from(band);
+            Some((
+                feed_answer.checked_mul(bps - dev)? / bps,
+                feed_answer.checked_mul(bps + dev)? / bps,
+            ))
+        };
+        // The wide band also judges a corporate action after the print: a split
+        // moves the price per share by half or more, a distribution by a few
+        // percent, and only the first means the print knows nothing.
+        let (Some((wide_lower, wide_upper)), Some((lower, upper))) = (
+            bounds(self.max_deviation_bps.get().to::<u64>()),
+            bounds(band_bps),
         ) else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_FEED_INVALID;
@@ -750,7 +776,7 @@ impl AfterHours {
                 self.feed_decimals.get().to::<u8>(),
             )
         });
-        // The pool prices one raw unit; the band and every Chainlink-shaped
+        // The pool prices one token of raw balance; the band and every Chainlink-shaped
         // answer are per share. A price that rounds to zero is not a price.
         let Some(twap) = twap
             .and_then(|raw| raw.checked_mul(ONE_SHARE))
@@ -762,7 +788,7 @@ impl AfterHours {
             return Ok(q);
         };
         q.twap = twap;
-        if rebased && (twap < lower || twap > upper) {
+        if rebased && (twap < wide_lower || twap > wide_upper) {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_MULTIPLIER_CHANGED;
             q.twap = U256::ZERO;

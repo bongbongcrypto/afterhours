@@ -22,7 +22,7 @@ direction:
 Floating point (double) is plenty for costs; no fixed-point exactness is
 claimed here. Read-only, stdlib; selectors from keccak.py.
 
-    python scripts/measure/pool_depth.py [--pool 0x...] [--stock 0x...] [--floor 2e17]
+    python scripts/measure/pool_depth.py [--pool 0x...] [--stock 0x...] [--floor 5e16]
 """
 import argparse
 import io
@@ -30,7 +30,9 @@ import json
 import math
 import sys
 import time
+import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
@@ -45,14 +47,29 @@ MAX_TICK = 887272
 SUB = 600.0   # AfterHours' sub-window with the 30-minute window
 
 
+def post(body):
+    req = urllib.request.Request(RPC, json.dumps(body).encode(), {"content-type": "application/json", "user-agent": "curl/8"})
+    for attempt in range(10):
+        try:
+            time.sleep(0.5)
+            return json.load(urllib.request.urlopen(req, timeout=60))
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 9:
+                raise
+            # public RPC rate limit: back off (up to about five minutes in all), never hammer
+            wait = e.headers.get("Retry-After") if e.headers else None
+            time.sleep(float(wait) if wait and wait.isdigit() else min(60, 2 ** (attempt + 1)))
+
+
+BLOCK = None   # every read is pinned to this block, so the walk sees one consistent pool
+
+
 def batch(calls):
     out = []
     for s in range(0, len(calls), 25):
-        body = [{"jsonrpc": "2.0", "id": i, "method": "eth_call", "params": [{"to": t, "data": d}, "latest"]}
+        body = [{"jsonrpc": "2.0", "id": i, "method": "eth_call", "params": [{"to": t, "data": d}, BLOCK]}
                 for i, (t, d) in enumerate(calls[s:s + 25])]
-        time.sleep(0.5)
-        r = json.load(urllib.request.urlopen(urllib.request.Request(
-            RPC, json.dumps(body).encode(), {"content-type": "application/json", "user-agent": "curl/8"}), timeout=60))
+        r = post(body)
         by = {x["id"]: x for x in r}
         out += [by[i].get("result") for i in range(len(body))]
     return out
@@ -79,10 +96,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--pool", default=POOL)
     ap.add_argument("--stock", default=STOCK)
-    ap.add_argument("--floor", type=float, default=2e17, help="the instance's minLiquidity")
+    ap.add_argument("--floor", type=float, default=5e16, help="the instance's minLiquidity (AAPL: 5e16)")
     ap.add_argument("--profile", type=float, default=0, help="also list every stretch's liquidity within this move, e.g. 0.3")
     a = ap.parse_args()
     pool = a.pool
+    global BLOCK
+    head = post({"jsonrpc": "2.0", "id": 1, "method": "eth_getBlockByNumber", "params": ["latest", False]})["result"]
+    BLOCK = head["number"]
+    print("block %d (%s UTC)" % (int(BLOCK, 16), datetime.fromtimestamp(int(head["timestamp"], 16), timezone.utc).strftime("%Y-%m-%d %H:%M")))
 
     s0, liq, spacing, fee, t0, mult = batch([
         (pool, selector("slot0()")), (pool, selector("liquidity()")), (pool, selector("tickSpacing()")),
@@ -190,11 +211,12 @@ def main():
             print("  in-range liquidity runs out at %+.2f%%: input worth %s" % (empty[0] * 100, usd(cost(empty[2], empty[3]))))
         else:
             print("  in-range liquidity never runs out (a full-range position underlies the pool)")
-        # cost grows along the walk, so the first stretch that works is the cheapest one
+        # cost grows along the walk, so the first stretch that works is the cheapest one;
+        # the stretch past the last initialized tick sits at the end of the price range and is out of reach
         for limit in (1, 10, 60):
-            found = next((s for s in segs if stay_needed(s[1]) <= limit), None)
+            found = next((s for s in segs[:-1] if stay_needed(s[1]) <= limit), None)
             if not found:
-                print("  no price at which a stay of %d s drags a sub-window below the floor" % limit)
+                print("  no reachable price at which a stay of %d s drags a sub-window below the floor" % limit)
                 continue
             mv, l, a0, a1, _ = found
             usd_in = cost(a0, a1)

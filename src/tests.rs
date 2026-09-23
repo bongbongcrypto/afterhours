@@ -19,6 +19,7 @@ sol! {
     function oraclePaused() external view returns (bool);
     function uiMultiplier() external view returns (uint256);
     function effectiveAt() external view returns (uint256);
+    function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool);
 }
 
 const FEED: Address = Address::repeat_byte(0xF1);
@@ -50,7 +51,7 @@ const AAPL_TWAP: u64 = 33_096_497_304;
 /// Exact 31482440784.887..., floor ...784 (80-digit decimal reference).
 const POOL2_TICK: i64 = -(AAPL_TICK + 500);
 const POOL2_TWAP: u64 = 31_482_440_784;
-/// One raw unit is one share.
+/// One token of raw balance is one share.
 const ONE_X: u128 = 1_000_000_000_000_000_000;
 /// AAPL's uiMultiplier on 2026-09-23 (dividends reinvested since tokenization).
 const AAPL_MULT: u128 = 1_000_566_080_000_000_000;
@@ -107,6 +108,7 @@ impl World {
         w.mock_paused(false);
         w.mock_multiplier(ONE_X, 0);
         w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
+        w.mock_cardinality(POOL, (TWAP_WINDOW + 1) as u16);
         w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
         w
     }
@@ -133,6 +135,30 @@ impl World {
             descriptionCall {}.abi_encode(),
             Ok(String::from("AAPL / USD").abi_encode()),
         );
+    }
+
+    /// slot0() of `pool`; only the observation cardinality (fourth field) matters.
+    fn mock_cardinality(&self, pool: Address, cardinality: u16) {
+        type Slot0 = (
+            sol_data::Uint<160>,
+            sol_data::Int<24>,
+            sol_data::Uint<16>,
+            sol_data::Uint<16>,
+            sol_data::Uint<16>,
+            sol_data::Uint<8>,
+            sol_data::Bool,
+        );
+        let ret = <Slot0 as SolType>::abi_encode_params(&(
+            U160::ZERO,
+            alloy_primitives::aliases::I24::ZERO,
+            0u16,
+            cardinality,
+            cardinality,
+            0u8,
+            true,
+        ));
+        self.vm
+            .mock_static_call(pool, slot0Call {}.abi_encode(), Ok(ret));
     }
 
     fn mock_paused(&self, paused: bool) {
@@ -567,6 +593,32 @@ fn initialize_rejects_a_pool_without_the_stock() {
         config_reason(w.try_deploy().expect_err("stock is neither token")),
         CONFIG_STOCK_NOT_IN_POOL
     );
+}
+
+#[test]
+fn initialize_rejects_a_primary_that_keeps_too_little_history() {
+    // One observation short of the window: anyone swapping once a second could
+    // then make observe() answer "OLD" and switch pricing off.
+    let w = World::new();
+    w.mock_cardinality(POOL, TWAP_WINDOW as u16);
+    assert_eq!(
+        config_reason(w.try_deploy().expect_err("cardinality 1800")),
+        CONFIG_PRIMARY_HISTORY_TOO_SHORT
+    );
+    // An unreadable slot0 is a failed read, not a pass.
+    let w = World::new();
+    w.vm.mock_static_call(POOL, slot0Call {}.abi_encode(), Err(Vec::new()));
+    assert!(matches!(
+        w.try_deploy().expect_err("slot0 reverted"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == POOL
+    ));
+    // Exactly window + 1 is enough, and a standby is not asked: it only covers
+    // a primary that cannot be observed.
+    let w = World::new();
+    w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY);
+    w.mock_cardinality(POOL2, 10);
+    w.try_deploy_with(vec![POOL, POOL2])
+        .expect("primary at window + 1, standby short");
 }
 
 #[test]
@@ -1514,10 +1566,31 @@ fn a_dividend_after_the_last_print_moves_pricing_to_the_pool() {
 }
 
 #[test]
+fn a_distribution_beyond_the_narrow_band_is_held_to_it_not_refused() {
+    // A 3% special distribution on a weekday: the pool per share sits 3.4% under
+    // the pre-distribution print. Outside the 1% band, so the answer is held at
+    // -1%; only a move past the wide band (a split) means the print knows nothing.
+    let w = World::new();
+    let c = w.deploy();
+    let mult: u128 = 1_030_000_000_000_000_000;
+    w.mock_multiplier(mult, NOW - 60);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
+        / U256::from(10_000u64);
+    let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+    assert_eq!((ans, clamped), (narrow, true));
+    assert_eq!(
+        twap,
+        U256::from(AAPL_TWAP) * U256::from(ONE_X) / U256::from(mult)
+    );
+}
+
+#[test]
 fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
     let w = World::new();
     let c = w.deploy();
-    // 2-for-1: every raw unit is now two shares; the last print is pre-split.
+    // 2-for-1: every token of raw balance is now two shares; the last print is pre-split.
     w.mock_multiplier(2 * ONE_X, NOW - 60);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
     let (session, reason, ans, _, _, twap, _, _, pool) = c.state().unwrap();
@@ -1533,7 +1606,7 @@ fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
             reason: REASON_MULTIPLIER_CHANGED
         })
     ));
-    // The feed prints the post-split price: live again, and a raw unit is worth
+    // The feed prints the post-split price: live again, and a raw token is worth
     // what it was worth before the split.
     let half = FRIDAY_ANSWER / 2;
     w.mock_feed(half as i128, NOW - 30);

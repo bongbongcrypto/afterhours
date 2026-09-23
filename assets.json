@@ -317,8 +317,8 @@
           "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"
         ],
         "stock": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
-        "min_liquidity": "200000000000000000",
-        "instance": "the AAPL instance: the 0.05% primary only (the other tiers sit below the floor), floor 2e17"
+        "min_liquidity": "50000000000000000",
+        "instance": "the AAPL instance: the 0.05% primary only (it keeps 1,801 observations, so no standby is ever read), floor 5e16"
       },
       "recommended": true,
       "notes": []

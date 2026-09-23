@@ -54,4 +54,5 @@ off = word(r, 0) // 32
 ln = word(r, off)
 print("feed description()          = %r" % bytes.fromhex(r[2 + 64 * (off + 1): 2 + 64 * (off + 1) + ln * 2]).decode())
 print("stock oraclePaused()        = %s" % bool(int(call(STOCK, "0x7706ba52"), 16)))
-print("floor 2e17 vs harmonic(1800 s): %.1fx margin" % (harmonic_1800 / 2e17))
+FLOOR = float(sys.argv[1]) if len(sys.argv) > 1 else 5e16   # the AAPL instance's minLiquidity (DEPLOYMENTS.md)
+print("floor %.0e vs harmonic(1800 s): %.1fx margin" % (FLOOR, harmonic_1800 / FLOOR))

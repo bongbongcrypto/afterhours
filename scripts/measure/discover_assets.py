@@ -53,8 +53,8 @@ MIN_DEPTH_USD = 50_000
 # Instances whose inputs were decided after discovery (DEPLOYMENTS.md): the
 # manifest records what they deploy with, so it never disagrees with the docs.
 INSTANCES = {
-    "AAPL": {"pools": ["0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"], "min_liquidity": "200000000000000000",
-             "why": "the AAPL instance: the 0.05% primary only (the other tiers sit below the floor), floor 2e17"},
+    "AAPL": {"pools": ["0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"], "min_liquidity": "50000000000000000",
+             "why": "the AAPL instance: the 0.05% primary only (it keeps 1,801 observations, so no standby is ever read), floor 5e16"},
 }
 HERE = Path(__file__).resolve().parent
 CALLS = 0

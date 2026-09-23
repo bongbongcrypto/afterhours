@@ -42,15 +42,17 @@ def rpc(method, params):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(RPC, body, {"content-type": "application/json",
                                              "user-agent": "curl/8"})
-    for attempt in range(6):
+    for attempt in range(10):
         try:
             time.sleep(0.25)
             out = json.load(urllib.request.urlopen(req, timeout=60))
             break
         except urllib.error.HTTPError as e:
-            if e.code != 429 or attempt == 5:
+            if e.code != 429 or attempt == 9:
                 raise
-            time.sleep(4 * (attempt + 1))   # public RPC rate limit: back off, never hammer
+            # public RPC rate limit: back off (up to about five minutes in all), never hammer
+            wait = e.headers.get("Retry-After") if e.headers else None
+            time.sleep(float(wait) if wait and wait.isdigit() else min(60, 2 ** (attempt + 1)))
     if "error" in out:
         raise RuntimeError(out["error"])
     return out["result"]

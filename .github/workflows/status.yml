@@ -14,6 +14,9 @@ permissions:
 
 jobs:
   probe:
+    # Only the working repository records the log; a published copy receives it
+    # through the copy, so two repositories never write diverging histories.
+    if: github.repository == 'bongbongcrypto/afterhours-oracle'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

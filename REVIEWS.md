@@ -49,7 +49,7 @@ open with the reason.
 | `state()` corner cases | zero pool/liquidity when no pool was read | 12f8919 |
 | Stale numbers across docs; probe label | refreshed; label fixed | cb6ff8a |
 
-## Round 4 (2026-09-23): scored against the rubric
+## Round 4 (2026-09-23): blind review against the judging criteria
 
 | finding | resolution | commit |
 |---|---|---|

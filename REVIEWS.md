@@ -120,4 +120,22 @@ open with the reason.
 | `weekend_swaps.py` gave up on the RPC's rate limit; `pool_depth.py` had no backoff | both back off for up to about five minutes; `pool_depth.py` reads everything at one block and prints it. The re-run reproduced 44,338 and 26,331 swaps, $5.14M and $4.17M | be241af |
 | The "2% depth" in `assets.json` assumes in-range liquidity holds and is about twice the tick-walked cost | stated where the tiers are described | be241af |
 | A clamped answer in the quiet tier is reported as fresh, hiding a large weekday move from a consumer's staleness check | kept, with the reason in DESIGN: the feeds print weekday moves within minutes in every session, and reporting the old time would let anyone make the oracle look stale by holding the pool 1% off for ten minutes | |
+| Not deployed, no public repo, no live URL, no final video | carried to round 8 | |
+
+## Round 8 (2026-09-23): third review from a clean copy of the repository as published
+
+| finding | resolution | commit |
+|---|---|---|
+| The weekday 1% band rested on "the price just did not move 0.5%", which `feed_cadence.py`'s own prices contradict: AAPL was +0.78% and +0.53% across weekday gaps with no print in between | the narrow band applies only during the US regular session (Monday to Friday, 14:30-20:00 UTC); at every other hour the pool gets the wide band. `session_prints.py` measures why: inside the session the next print lands at most 0.69% (AAPL) and 0.56% (SPY) from the last, while outside it the next print often lands at the open (AAPL +0.84%, NVDA -1.01%) | ef3d3b1, db352cc |
+| No sequencer-uptime check, listed without a reason | Chainlink lists none of its 58 feeds on Robinhood Chain as a sequencer-uptime feed (`feed_directory.py`); README and DESIGN say so | ef3d3b1, db352cc |
+| The live page judged a corporate action on the band that applies, the contract on the wide band, and the self-check could not see the difference | the page uses the wide band too and refuses a per-share price that rounds to zero; its self-check runs four decision cases from the unit tests through the page's own rules (quiet session, after hours, a 3% distribution, a split) | ef3d3b1 |
+| Every asset but AAPL in `assets.json` kept the primary-liquidity / 8 floor that round 7 rejected for AAPL | / 32, AAPL's ratio, for every asset; `discover_assets.py` writes it, and README says how to check an asset's range with `pool_depth.py` | ef3d3b1 |
+| Holding a Morpho market in refusal costs about $1.5k an hour; the weekend total was missing | about $88k over a 60-hour weekend, next to the hourly figure | db352cc |
+| The tick-math tests allowed 10 parts per billion, a million times looser than the module's stated bound, and README called the math exact | the tests assert the bound (1e-23 relative, one unit below tick 0) and AAPL's prices exactly; README states what the tests show | ef3d3b1 |
+| The cost of a 1% move had drifted from the quoted $92k-100k | `pool_depth.py` re-run at block 70,432,466: $90k-102k, 10% at $243k up / $305k down; DESIGN notes that the figures move by a few percent between blocks | db352cc |
+| `description()` and `quietTier()` answered before `initialize` | both revert `NotInitialized`; `config()` stays readable (its first field says whether initialize ran), `pools()` is empty, `version()` is a constant | ef3d3b1 |
+| `MAX_TWAP_WINDOW` of one day could never pass: a uint16 cardinality holds at most 65,535 observations | 65,534, tested at the bound | ef3d3b1 |
+| The submission text tied three silent windows to two swap figures | each figure names its window (submission text, outside this repository) | |
+| Suspected: mainnet gas is higher than the figures measured on test doubles | README says the gas is measured on Solidity doubles and will be re-measured on mainnet | db352cc |
+| USD feed against a USDG pool; `initialize` can be front-run | kept, as documented | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

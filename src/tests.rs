@@ -1575,8 +1575,8 @@ fn a_distribution_beyond_the_narrow_band_is_held_to_it_not_refused() {
     let mult: u128 = 1_030_000_000_000_000_000;
     w.mock_multiplier(mult, NOW - 60);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
-    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
-        / U256::from(10_000u64);
+    let narrow =
+        U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64);
     let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
     assert_eq!((ans, clamped), (narrow, true));

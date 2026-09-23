@@ -15,6 +15,8 @@ not to a slot, so a caption never outlives its sentence. ffmpeg only.
 """
 import io
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -23,9 +25,15 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 NARR = HERE / "narration"
-MASTER_LIB = Path(".")  # ffmpeg locator
-sys.path.insert(0, str(MASTER_LIB))
-from _lib.ffmpeg import find_ffmpeg  # noqa: E402
+
+
+def find_ffmpeg():
+    """ffmpeg from $FFMPEG, else from PATH."""
+    exe = os.environ.get("FFMPEG") or shutil.which("ffmpeg")
+    if not exe:
+        sys.exit("ffmpeg not found: install it or set FFMPEG to its full path")
+    return exe
+
 
 GAP = 0.35      # seconds between lines
 LEAD = 0.6      # silence before the first line of a slide
@@ -83,7 +91,8 @@ def esc(text):
 
 def main():
     ffmpeg = find_ffmpeg()
-    ffprobe = str(Path(ffmpeg).with_name("ffprobe.exe")) if ffmpeg.endswith(".exe") else "ffprobe"
+    sibling = Path(ffmpeg).with_name("ffprobe" + Path(ffmpeg).suffix)
+    ffprobe = str(sibling) if sibling.exists() else (shutil.which("ffprobe") or "ffprobe")
     script = json.load(io.open(HERE / "script.json", encoding="utf-8"))
     segments = []
     total = 0.0

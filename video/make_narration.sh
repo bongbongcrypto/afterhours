@@ -2,11 +2,11 @@
 # Synthesise the narration on a remote host with edge-tts, one mp3 per script line
 # (video/script.json -> video/narration/SS-LL.mp3). Same voice as the earlier
 # demo videos (en-US-AndrewNeural, -4%), so they sound like one shop. Nothing
-# is installed on this PC; the PC only ships text out and audio back.
+# is installed locally; the script only ships text out and audio back.
 #
-#   bash video/make_narration.sh
+#   REMOTE=<ssh host with edge-tts> bash video/make_narration.sh
 set -euo pipefail
-REMOTE="${REMOTE:-a remote host}"
+REMOTE="${REMOTE:?set REMOTE to an ssh host that has edge-tts installed}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT="$HERE/narration"
 # Windows python cannot open /c/... paths; hand it a native path.

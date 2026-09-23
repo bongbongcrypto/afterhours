@@ -300,6 +300,14 @@ and a new instance is deployed with the new primary (one workflow run).
 Following liquidity automatically is exactly the lever a manipulator would
 pull.
 
+The multiplier guard sees only the latest scheduled change: the token exposes
+one `effectiveAt()`. If a change took effect after the last print and the
+issuer scheduled another one before the feed printed again, the first change
+would pass unseen until the next print. For a dividend that is a fraction of
+a percent; for a split the issuer's `oraclePaused()` flag, which Robinhood
+sets while it processes a corporate action, is the primary protection and
+the guard is the second.
+
 Operational risks, both fail closed: every read calls the issuer's upgradeable
 token for `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`; if a token
 upgrade removed one of them, reads would revert until a new instance is

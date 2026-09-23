@@ -41,8 +41,8 @@
           "애플 하나만 주말마다 400~500만 달러, 수만 건의 스왑, 그리고 가격은 움직입니다."
         ],
         [
-          "And no contract can read that price.",
-          "그런데 그 가격을 읽을 수 있는 컨트랙트가 없습니다."
+          "The contracts that lend against it either ignore that price or read it raw.",
+          "이 토큰으로 대출하는 컨트랙트들은 그 가격을 무시하거나, 날것 그대로 읽습니다."
         ]
       ]
     },
@@ -57,12 +57,12 @@
           "그런데 공급 88만 달러에 대출은 6천 달러뿐입니다."
         ],
         [
-          "Their oracles keep Friday's price all weekend, read a raw pool price, or accept a five-day-old print.",
-          "그 오라클들은 금요일 가격을 주말 내내 쓰거나, 풀 가격을 그대로 읽거나, 5일 묵은 가격을 받아들입니다."
+          "Their oracles keep Friday's price all weekend, or read a raw pool price with no bound.",
+          "그 오라클들은 금요일 가격을 주말 내내 쓰거나, 풀 가격을 한도 없이 그대로 읽습니다."
         ],
         [
-          "One of them already trusts the pool's thirty-minute average for another leg; nobody bounds it and points it at the stock.",
-          "그중 하나는 이미 풀의 30분 평균을 다른 용도로 신뢰합니다. 그걸 안전장치와 함께 주식 가격에 쓰는 곳은 없습니다."
+          "Another protocol here already trusts a pool's thirty-minute average; nobody prices the stock from its pool with a bound.",
+          "이 체인의 다른 프로토콜은 이미 풀의 30분 평균을 한쪽 가격에 믿고 씁니다. 한도를 걸고 주식 가격을 풀에서 읽는 곳은 없습니다."
         ]
       ]
     },
@@ -77,12 +77,12 @@
           "피드가 신선하면 그대로 통과."
         ],
         [
-          "Silent feed: the thirty-minute average of one fixed pool, the stock's main venue.",
-          "피드가 멈추면 고정된 주 거래 풀 하나의 30분 평균값."
+          "Quiet feed: the price of one fixed pool, the stock's main venue, taken as the middle of three ten-minute averages.",
+          "피드가 조용하면, 고정된 주 거래 풀 하나의 가격. 10분 평균 세 개 중 가운데 값을 씁니다."
         ],
         [
-          "Refused if that pool is thin, and held inside a circuit-breaker band around the last print.",
-          "그 풀이 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."
+          "Refused if that pool is thin, and held near the last print: within one percent for a day, ten after.",
+          "그 풀이 얕으면 거부하고, 마지막 프린트 근처로 묶습니다. 하루 동안은 1% 안, 그 뒤엔 10% 안."
         ],
         [
           "Corporate actions: refuse while paused, and value raw tokens with the share multiplier.",
@@ -101,12 +101,12 @@
     {
       "lines": [
         [
-          "This is Saturday.",
-          "지금은 토요일입니다."
+          "This is the live page on a weekend.",
+          "주말의 라이브 페이지입니다."
         ],
         [
-          "Chainlink's last print is thirty-six hours old.",
-          "체인링크의 마지막 프린트는 36시간 전."
+          "Chainlink's last print is more than a day old.",
+          "체인링크의 마지막 프린트는 하루도 더 지났습니다."
         ],
         [
           "AfterHours is answering from live trades, inside the band, and says which mode it is in.",
@@ -117,16 +117,16 @@
     {
       "lines": [
         [
-          "It is a Rust contract on Arbitrum Stylus, deployed on Robinhood Chain mainnet, no owner, no upgrade.",
-          "아비트럼 Stylus 위의 러스트 컨트랙트, 로빈후드 체인 메인넷 배포, 소유자 없음, 업그레이드 없음."
+          "It is a Rust contract on Arbitrum Stylus, with no owner and no upgrade.",
+          "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Sixty unit and property tests, and sixty-two assertions against the real wasm on a local Arbitrum node.",
-          "단위·속성 테스트 60개, 실제 아비트럼 노드 위 wasm 검증 62항목."
+          "Sixty-seven unit and property tests, and seventy-three assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 67개, 실제 아비트럼 노드 위 wasm 검증 73항목."
         ],
         [
-          "Tick math is checked against sixty-digit reference values, and four review rounds are folded in.",
-          "틱 수학은 60자리 기준값으로 검증했고, 독립 검수 4회를 반영했습니다."
+          "Tick math is checked against sixty-digit reference values, and five review rounds are folded in.",
+          "틱 수학은 60자리 기준값으로 검증했고, 독립 검수 5회를 반영했습니다."
         ],
         [
           "Fourteen stocks meet our bar for depth today, and twenty-eight can be deployed with the same contract.",

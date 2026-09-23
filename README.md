@@ -14,22 +14,25 @@ weekend** in 26-44k swaps, at prices that move.
 Lending against these tokens has started and stalled. On 2026-09-23 Morpho Blue on
 this chain had **83 funded markets with a Robinhood stock token as collateral:
 $0.88M supplied, $6.4k borrowed** (`scripts/measure/morpho_markets.py`). Their
-oracles read a Chainlink feed with no staleness check (Morpho's standard
-`ChainlinkOracleV2`, so the Friday print carries through the weekend), read a raw
-Uniswap pool price, or hard-code a five-day tolerance (PARE). Each is a way of
-living with a price that stops for 30% of the week.
+oracles either keep Friday's print through the weekend (Morpho's standard
+`ChainlinkOracleV2` has no staleness check, the largest markets' custom oracles
+expose none, and the two that do allow four days) or read a raw Uniswap pool
+price. Outside those markets, PARE's pSPY oracle hard-codes a five-day
+tolerance. Each is a way of living with a price that stops for 30% of the week.
 
-AfterHours answers during the closure with where the token actually trades: a
-30-minute Uniswap v3 TWAP, refused when the pool is thin, and bounded to a
-circuit-breaker band around the last exchange print. All numbers are measured;
-see [DESIGN.md](DESIGN.md).
+AfterHours answers during the closure with where the token actually trades: the
+median of three 10-minute Uniswap v3 averages, refused when the pool is thin, and
+bounded to a band around the last exchange print. The band is ±1% while that
+print is younger than the feed's 24-hour heartbeat (a weekday feed that is only
+quiet looks the same as the first day of a closure) and ±10% after. All numbers
+are measured; see [DESIGN.md](DESIGN.md).
 
 ## What it returns
 
 | session | when | `latestRoundData().answer` | `price()` |
 |---|---|---|---|
 | `LIVE_FEED` (0) | feed no older than `liveMaxAge`, and no share-multiplier change since its print | the feed's round, verbatim (per share) | answer × `uiMultiplier` × Morpho scale |
-| `ONCHAIN_TWAP` (1) | otherwise, when the primary pool is deep enough (median of three 10-minute windows; a standby only while the primary cannot be observed) | that pool's TWAP per share, clamped to ±`maxDeviationBps` of the last print | same |
+| `ONCHAIN_TWAP` (1) | otherwise, when the primary pool is deep enough (median of three 10-minute windows; a standby only while the primary cannot be observed) | the median of that pool's three 10-minute averages, per share, clamped to ±`quietBandBps` of the last print while it is younger than `heartbeat`, ±`maxDeviationBps` after | same |
 | `PAUSED` (2) | issuer's `oraclePaused()` (corporate action) | reverts `IssuerPaused()` | reverts |
 | `NO_DATA` (3) | 1 feed round invalid / 2 pool too thin / 3 no TWAP / 4 last print older than `maxAnchorAge` / 5 a share-multiplier change after the last print moved the pool past the band (a split) | reverts `NoData(reason)` | reverts |
 
@@ -44,8 +47,8 @@ and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`
 
 ## Live page
 
-`web/index.html` shows AAPL's Chainlink feed, its primary pool's 30-minute
-average and AfterHours' answer side by side, the feed's last seven days of
+`web/index.html` shows AAPL's Chainlink feed, its primary pool's price (the
+median of three 10-minute averages) and AfterHours' answer side by side, the feed's last seven days of
 prints, and the same rules applied to every recommended stock. It is static:
 every price, age and pool figure is read from Robinhood Chain by the
 visitor's browser, and before an instance is deployed the AfterHours column
@@ -67,15 +70,17 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | The feed goes silent for 52-57 hours every weekend | the live page's print tape, or `python scripts/measure/feed_cadence.py` (stdlib, about 60 reads) |
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed) |
-| 60 unit and property tests, 62 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read |
+| 67 unit and property tests, 73 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read |
 | The price math is exact | the live page's self-check line, and the 60-digit reference vectors from `scripts/measure/tick_vectors.py` in `src/tickmath.rs` |
 | It keeps answering while the market is closed | the live page on a weekend: the Chainlink print is hours old and AfterHours answers from the pool; after deployment, `python scripts/probe.py --oracle <address>` and the hourly `status/log.md` |
-| Moving AAPL's pool 10% takes $234k-$317k; the cheapest refusal needs a 9-second stay 9% above the price | `python scripts/measure/pool_depth.py` (walks every initialized tick) |
+| Moving AAPL's pool 10% takes $234k up or $314k down; the pool clears the depth floor from -4.6% to +3.2%; the cheapest refusal parks $235k at +17% for a second, once every ten minutes | `python scripts/measure/pool_depth.py` (walks every initialized tick over the pool's whole range) |
 | 28 stocks can be deployed today, 14 meet the bar | `assets.json`, regenerated by `scripts/measure/discover_assets.py` (about an hour of reads) |
 
 ## What it does not do
 
 - It does not predict Monday's open. During the closure it reports where the token trades on-chain; a gap caused by weekend news still lands on Monday, bounded by the band.
+- For the first 24 hours after the last print it moves at most 1% from it. A feed that stopped for the weekend and a weekday feed that is only quiet look the same on-chain; a weekend move larger than 1% shows in full once the heartbeat has passed.
+- It does not price a large move the pool's liquidity has not followed. LPs concentrate around the current price: AAPL's pool clears the 2e17 depth floor from -4.6% to +3.2% of today's price. A move past that, held for ten minutes, refuses (`NoData(2)`) until LPs re-center or the feed prints, because a pool nobody provides at that price is the pool that is cheap to push. The floor is set per instance; a lower one answers further out and lets a manipulator hold the price in thinner water.
 - It does not follow liquidity. The primary pool is fixed at deployment; if liquidity leaves it for good, the instance refuses and a new one is deployed.
 - It treats USDG as one dollar. Chainlink's USDG/USD feed on this chain updates only on 0.5% moves, so reading it would correct only a larger depeg; that is a v2 option.
 - It prices against one quote token per instance (USDG today).
@@ -109,18 +114,18 @@ cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
 
-End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 62
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 73
 assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
 against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
-Robinhood Chain runs, and the one a 2-fragment (36 KB) program needs.
+Robinhood Chain runs, and the one a 2-fragment (37.9 KB) program needs.
 
 Deploy (deploys, activates, then runs the one-shot `initialize`):
 
 ```bash
 cargo stylus deploy --endpoint <rpc> --private-key <key> --no-verify
-cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" \
-  <feed> "[<primary pool>]" <stock> 21600 1800 1000 200000000000000000 432000
-# liveMaxAge twapWindow maxDeviationBps minLiquidity maxAnchorAge
+cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" \
+  <feed> "[<primary pool>]" <stock> 21600 1800 1000 200000000000000000 432000 86400 100
+# liveMaxAge twapWindow maxDeviationBps minLiquidity maxAnchorAge heartbeat quietBandBps
 # one to three pools of the stock against one quote token. The first is the primary and
 # prices the asset; optional standbys are read only while the primary cannot be observed.
 # The deploy workflow refuses a primary whose observation cardinality is below window + 1.
@@ -128,7 +133,8 @@ cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,u
 
 ## Integrating
 
-**Morpho Blue market** — AfterHours is the market's `oracle`; nothing else changes:
+**Morpho Blue market** — a market's oracle is fixed when it is created, so an
+existing market cannot switch; a new one is opened with AfterHours as its `oracle`:
 
 ```solidity
 MarketParams({
@@ -160,7 +166,7 @@ guard would give, but only when there is genuinely nothing to stand behind.
 ```solidity
 (uint8 session, uint8 reason,,,, uint256 twap, uint128 liquidity, bool clamped, address pool) =
     IAfterHours(afterHoursAAPL).state();
-// session 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA (reason 1-4)
+// session 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA (reason 1-5)
 // alert on: session 3 for more than a window; clamped == true; liquidity near the floor
 ```
 

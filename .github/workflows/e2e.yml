@@ -64,7 +64,7 @@ jobs:
         shell: bash
         run: |
           # The dev account is chain owner (run-dev-node.sh calls becomeChainOwner). Multi-fragment
-          # Stylus programs (ours is 33 KB, 2 fragments) need the newer ArbOS.
+          # Stylus programs (ours is over 24 KB compressed, so 2 fragments) need the newer ArbOS.
           KEY=$(cat /tmp/devkey)
           cast send --rpc-url http://127.0.0.1:8547 --private-key "$KEY" 0x0000000000000000000000000000000000000070 "scheduleArbOSUpgrade(uint64,uint64)" 61 0 > /dev/null
           # any transaction produces a block on the dev node; the upgrade lands with it

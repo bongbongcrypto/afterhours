@@ -91,9 +91,9 @@ def demo_terminal():
         txt = io.open(p, encoding="utf-8").read().rstrip()
     else:
         txt = ("[Sat 09-20 03:15:02 UTC]\n"
-               "  Chainlink : $335.3800  printed Fri 09-19 15:11:00 UTC  (36.1 h ago)\n"
-               "  pool TWAP : $335.4300  (1800 s window, computed off-chain)\n"
-               "  AfterHours: ONCHAIN_TWAP  answer $335.4300  (twap $335.4300, inside band, window liquidity 1.53e+18)\n"
+               "  Chainlink : $335.3800  printed Fri 09-19 15:11:00 UTC  (36.1 h ago; the band at this age is 10.0%)\n"
+               "  primary pool: $335.4300 per share  (median of three 600 s averages, median liquidity 1.53e+18; computed off-chain)\n"
+               "  AfterHours: ONCHAIN_TWAP  answer $335.4300  (twap $335.4300, inside band, median liquidity 1.53e+18)\n"
                "  Morpho price(): 335430000000000000000000000  (= answer x 1e16)\n"
                "\n  (placeholder — replaced by the real capture after deployment)")
     out = []
@@ -132,7 +132,7 @@ def slides():
 <table><tr><th>weekend</th><th>swaps</th><th>volume</th><th>fill vs Monday's opening print</th></tr>
 <tr><td class="k">Labor Day (76 h)</td><td class="num">44,338</td><td class="num">$5.14M</td><td>median 0.35% · p90 0.56% · max 1.67%</td></tr>
 <tr><td class="k">09-11 → 09-14 (52 h)</td><td class="num">26,331</td><td class="num">$4.17M</td><td>median 0.45% · p90 0.59% · max 2.26%</td></tr></table>
-<div class="note">The pool price moved through the weekend (+0.56% → −0.23% against the open). <b>Nobody can read it from a contract.</b></div>
+<div class="note">The pool price moved through the weekend (+0.56% → −0.23% against the open). <b>Lending contracts ignore it or read it raw.</b></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">83 funded Morpho markets on stock collateral · <b>scripts/measure/morpho_markets.py</b> · 2026-09-23</div>
@@ -142,7 +142,7 @@ def slides():
 <tr><td class="k">custom, reads the Chainlink feed</td><td class="num">16</td><td class="num">$852k</td><td>Friday's print</td></tr>
 <tr><td class="k">Morpho ChainlinkOracleV2</td><td class="num">52</td><td class="num">$27.1k</td><td>Friday's print, no staleness check</td></tr>
 <tr><td class="k">raw Uniswap pool price</td><td class="num">15</td><td class="num">$2.0k</td><td>the pool, no band</td></tr></table>
-<div class="note">The one oracle with a written policy (PARE) accepts a <b>five-day-old</b> print, and already trusts a 30-minute pool TWAP for its other leg.</div>
+<div class="note">Two small custom oracles allow a four-day-old print. Outside these markets PARE accepts a <b>five-day-old</b> one, and already trusts a 30-minute pool TWAP for its other leg.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">The product · one contract per asset · <b>drop-in</b> for a Chainlink address</div>
@@ -163,24 +163,24 @@ def slides():
 </div>
 <div class="rules">
   <div><b>Fresh feed</b> → pass it through, verbatim.</div>
-  <div><b>Silent feed</b> → 30-min pool TWAP per share, <span class="m">clamped ±10%</span>.</div>
+  <div><b>Quiet feed</b> → median 10-min pool price, <span class="m">±1% first day, ±10% after</span>.</div>
   <div><b>Thin pool</b> (3-window median) → refuse, never switch venue.</div>
   <div><b>Paused, split since print, or print &gt;5 days</b> → refuse.</div>
 </div>
 <div class="grow"></div>""")
 
-    S.append(f"""<div class="kicker">Live on Robinhood Chain mainnet · <b>scripts/probe.py --watch</b> · the feed asleep, the oracle awake</div>
-<h2>Saturday. Chainlink is 36 hours old. AfterHours is answering.</h2>
+    S.append(f"""<div class="kicker">A weekend on Robinhood Chain mainnet · <b>the live page and scripts/probe.py</b> · the feed asleep, the oracle awake</div>
+<h2>A weekend. Chainlink's print is a day old. AfterHours is answering.</h2>
 <div class="term">{demo_terminal()}</div>""")
 
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">60 tests + 62 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, the venue rule and a stock split asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">67 tests + 73 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 60-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Four review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, liquidity judged over three sub-windows, the token's share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
+  <div class="col"><div class="t">Five review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band while the feed may only be quiet, the share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ 36 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">cargo stylus check ✓ 37.9 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>

@@ -22,9 +22,9 @@
 //!   (`NO_DATA`).
 //!
 //! It speaks Chainlink's `AggregatorV3Interface` (plus the v2 getters) and
-//! Morpho's `IOracle`, so a lending market swaps one address and keeps working
-//! through the weekend. The configuration is fixed at deployment; there is no
-//! owner and no upgrade.
+//! Morpho's `IOracle`: a feed consumer swaps one address, and a Morpho market
+//! opened with it as its oracle keeps working through the weekend. The
+//! configuration is fixed at deployment; there is no owner and no upgrade.
 //!
 //! Units: Chainlink prices one share. A Robinhood stock token is a scaled-UI
 //! token: one raw unit is `uiMultiplier / 1e18` shares, and the multiplier
@@ -800,8 +800,10 @@ fn observation_points(window: u32) -> Vec<u32> {
 /// Median of the sub-windows' time-weighted mean ticks (Uniswap's
 /// OracleLibrary.consult per sub-window, rounded toward negative infinity).
 /// A move confined to one sub-window, however far, does not reach the answer:
-/// it has to hold through two of the three. `None` when a sub-window's mean
-/// cannot be formed.
+/// it has to show in the averages of two of the three. With the depth rule
+/// at most one sub-window may be thin, so moving the answer takes at least a
+/// sub-window spent at a price where the pool clears the floor. `None` when
+/// a sub-window's mean cannot be formed.
 fn median_tick(points: &[u32], cumulatives: &[I56]) -> Option<i32> {
     let mut ticks = (0..points.len() - 1)
         .map(|k| {

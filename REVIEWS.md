@@ -183,7 +183,7 @@ open with the reason.
 |---|---|---|
 | The submission text said "measured gas" without saying it is measured against test doubles | it says so, and that mainnet will cost more (submission text, outside this repository) | |
 | A storage comment still said `tx.origin`; a units comment still said "one raw token unit" | both corrected | aeb0e7b |
-| "The same place a stale-feed market is in today" overstated it: a refusal blocks liquidation, while a market with no guard keeps liquidating at Friday's price | DESIGN and the submission use README's wording | aeb0e7b |
+| The docs equated a refusal with a stale-feed market: a refusal blocks liquidation, while a market with no guard keeps liquidating at Friday's price | DESIGN and the submission use README's wording | aeb0e7b |
 | `contract-client-gen` looked like a dead feature | kept: stylus-sdk's `#[public]` expansion gates code on it; Cargo.toml says so | aeb0e7b |
 | Suspected: a future `effectiveAt()` with no scheduled multiplier would read as a pending split | cannot happen with the token's verified implementation: one call sets both, and `newUIMultiplier()` answers 1e18 when none is set; DESIGN cites it | aeb0e7b |
 | `initialize` can be front-run; other entries are described, not named | kept, as documented | |

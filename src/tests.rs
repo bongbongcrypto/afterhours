@@ -17,6 +17,8 @@ sol! {
     function token1() external view returns (address);
     function observe(uint32[] secondsAgos) external view returns (int56[], uint160[]);
     function oraclePaused() external view returns (bool);
+    function uiMultiplier() external view returns (uint256);
+    function effectiveAt() external view returns (uint256);
 }
 
 const FEED: Address = Address::repeat_byte(0xF1);
@@ -44,6 +46,33 @@ const AAPL_TWAP: u64 = 33_096_497_304;
 /// Exact 31482440784.887..., floor ...784 (80-digit decimal reference).
 const POOL2_TICK: i64 = -(AAPL_TICK + 500);
 const POOL2_TWAP: u64 = 31_482_440_784;
+/// One raw unit is one share.
+const ONE_X: u128 = 1_000_000_000_000_000_000;
+/// AAPL's uiMultiplier on 2026-09-23 (dividends reinvested since tokenization).
+const AAPL_MULT: u128 = 1_000_566_080_000_000_000;
+
+/// The points AfterHours asks observe() for: three 600 s sub-windows.
+fn points() -> Vec<u32> {
+    let sub = TWAP_WINDOW / 3;
+    vec![TWAP_WINDOW, 2 * sub, sub, 0]
+}
+
+/// Cumulatives for a constant mean tick and per-sub-window liquidity.
+fn observation(start: i64, mean_tick: i64, spl_start: u64, liq: [u128; 3]) -> (Vec<I56>, Vec<U160>) {
+    let pts = points();
+    let ticks = pts
+        .iter()
+        .map(|s| I56::try_from(start + mean_tick * i64::from(TWAP_WINDOW - s)).unwrap())
+        .collect();
+    let mut spl = vec![U160::from(spl_start)];
+    for k in 0..3 {
+        let span = U256::from(pts[k] - pts[k + 1]);
+        let d = U160::from((span << 128usize) / U256::from(liq[k]));
+        let last = spl[k];
+        spl.push(last.wrapping_add(d));
+    }
+    (ticks, spl)
+}
 
 struct World {
     vm: MockVM,
@@ -57,6 +86,7 @@ impl World {
         let w = World { vm };
         w.mock_tokens(false);
         w.mock_paused(false);
+        w.mock_multiplier(ONE_X, 0);
         w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
         w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
         w
@@ -94,6 +124,20 @@ impl World {
         );
     }
 
+    /// The stock's share multiplier and the time it took effect.
+    fn mock_multiplier(&self, multiplier: u128, effective_at: u64) {
+        self.vm.mock_static_call(
+            STOCK,
+            uiMultiplierCall {}.abi_encode(),
+            Ok(U256::from(multiplier).abi_encode()),
+        );
+        self.vm.mock_static_call(
+            STOCK,
+            effectiveAtCall {}.abi_encode(),
+            Ok(U256::from(effective_at).abi_encode()),
+        );
+    }
+
     fn mock_feed(&self, answer: i128, updated_at: u64) {
         self.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
     }
@@ -114,15 +158,16 @@ impl World {
     }
 
     /// A pool whose time-weighted mean tick over TWAP_WINDOW is `mean_tick` and
-    /// whose harmonic-mean liquidity over the window is `liquidity`
-    /// (secondsPerLiquidityCumulativeX128 grows by window * 2^128 / L).
+    /// whose harmonic-mean liquidity is `liquidity` in every sub-window
+    /// (secondsPerLiquidityCumulativeX128 grows by span * 2^128 / L).
     fn mock_observe(&self, mean_tick: i64, liquidity: u128) {
-        let then = I56::try_from(1_000_000i64).unwrap();
-        let now = I56::try_from(1_000_000i64 + mean_tick * i64::from(TWAP_WINDOW)).unwrap();
-        let spl_then = U160::from(7_777_777u64);
-        let spl_delta = (U256::from(TWAP_WINDOW) << 128usize) / U256::from(liquidity);
-        let spl_now = spl_then + U160::from(spl_delta);
-        self.mock_observe_raw(vec![then, now], vec![spl_then, spl_now]);
+        self.mock_observe_thirds(mean_tick, [liquidity; 3]);
+    }
+
+    /// Same, with a separate liquidity per 600 s sub-window (oldest first).
+    fn mock_observe_thirds(&self, mean_tick: i64, liquidity: [u128; 3]) {
+        let (ticks, spl) = observation(1_000_000, mean_tick, 7_777_777, liquidity);
+        self.mock_observe_raw(ticks, spl);
     }
 
     /// A second pool, stock as token0 (mirrored tick), with its own liquidity.
@@ -131,18 +176,14 @@ impl World {
             .mock_static_call(POOL2, token0Call {}.abi_encode(), Ok(STOCK.abi_encode()));
         self.vm
             .mock_static_call(POOL2, token1Call {}.abi_encode(), Ok(USDG.abi_encode()));
-        let then = I56::try_from(5_000_000i64).unwrap();
-        let now = I56::try_from(5_000_000i64 + mean_tick * i64::from(TWAP_WINDOW)).unwrap();
-        let spl_then = U160::from(99u64);
-        let spl_now =
-            spl_then + U160::from((U256::from(TWAP_WINDOW) << 128usize) / U256::from(liquidity));
+        let (ticks, spl) = observation(5_000_000, mean_tick, 99, [liquidity; 3]);
         self.vm.mock_static_call(
             POOL2,
             observeCall {
-                secondsAgos: vec![TWAP_WINDOW, 0],
+                secondsAgos: points(),
             }
             .abi_encode(),
-            Ok((vec![then, now], vec![spl_then, spl_now]).abi_encode_params()),
+            Ok((ticks, spl).abi_encode_params()),
         );
     }
 
@@ -150,7 +191,7 @@ impl World {
         self.vm.mock_static_call(
             POOL2,
             observeCall {
-                secondsAgos: vec![TWAP_WINDOW, 0],
+                secondsAgos: points(),
             }
             .abi_encode(),
             Err(b"OLD".to_vec()),
@@ -161,7 +202,7 @@ impl World {
         self.vm.mock_static_call(
             POOL2,
             observeCall {
-                secondsAgos: vec![TWAP_WINDOW, 0],
+                secondsAgos: points(),
             }
             .abi_encode(),
             Ok((vec![I56::ZERO], vec![U160::ZERO]).abi_encode_params()),
@@ -189,7 +230,7 @@ impl World {
         self.vm.mock_static_call(
             POOL,
             observeCall {
-                secondsAgos: vec![TWAP_WINDOW, 0],
+                secondsAgos: points(),
             }
             .abi_encode(),
             // return values are encoded as a sequence (no leading offset), like a Solidity return
@@ -201,7 +242,7 @@ impl World {
         self.vm.mock_static_call(
             POOL,
             observeCall {
-                secondsAgos: vec![TWAP_WINDOW, 0],
+                secondsAgos: points(),
             }
             .abi_encode(),
             Err(b"OLD".to_vec()),
@@ -318,7 +359,7 @@ fn initialize_accepts_the_stock_as_token0() {
 fn initialize_rejects_bad_parameters() {
     let w = World::new();
     let mut c = AfterHours::from(&w.vm);
-    let cases: [(u64, u32, u64, u128, u64, u8); 9] = [
+    let cases: [(u64, u32, u64, u128, u64, u8); 10] = [
         (
             0,
             TWAP_WINDOW,
@@ -330,6 +371,14 @@ fn initialize_rejects_bad_parameters() {
         (
             LIVE_MAX_AGE,
             0,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            CONFIG_ZERO_TWAP_WINDOW,
+        ),
+        (
+            LIVE_MAX_AGE,
+            2,
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
@@ -466,6 +515,24 @@ fn initialize_requires_the_pause_flag_to_be_readable() {
     w.vm.mock_static_call(STOCK, oraclePausedCall {}.abi_encode(), Err(Vec::new()));
     let err = w.try_deploy().expect_err("token without oraclePaused()");
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
+}
+
+#[test]
+fn initialize_requires_the_share_multiplier_to_be_readable() {
+    let w = World::new();
+    w.vm.mock_static_call(STOCK, uiMultiplierCall {}.abi_encode(), Err(Vec::new()));
+    let err = w.try_deploy().expect_err("token without uiMultiplier()");
+    assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
+    let w = World::new();
+    w.vm.mock_static_call(STOCK, effectiveAtCall {}.abi_encode(), Err(Vec::new()));
+    let err = w.try_deploy().expect_err("token without effectiveAt()");
+    assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
+    let w = World::new();
+    w.mock_multiplier(0, 0);
+    assert_eq!(
+        config_reason(w.try_deploy().expect_err("zero multiplier")),
+        CONFIG_BAD_MULTIPLIER
+    );
 }
 
 #[test]
@@ -788,25 +855,15 @@ fn malformed_observations_refuse_to_price() {
         (session, reason),
         (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
     );
-    // no liquidity-seconds recorded across the window
-    w.mock_observe_raw(
-        vec![I56::ZERO, I56::ZERO],
-        vec![U160::from(5u64), U160::from(5u64)],
-    );
-    let (session, reason, ..) = c.state().unwrap();
-    assert_eq!(
-        (session, reason),
-        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
-    );
+    // no liquidity-seconds recorded: the pool answered, so it is the venue,
+    // and an empty pool is a thin one (it never hands over to a standby)
+    w.mock_observe_raw(vec![I56::ZERO; 4], vec![U160::from(5u64); 4]);
+    let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
+    assert_eq!((liq, pool), (0, POOL));
     // a mean tick outside Uniswap's range
-    let spl_delta = U160::from((U256::from(TWAP_WINDOW) << 128usize) / U256::from(MIN_LIQUIDITY));
-    w.mock_observe_raw(
-        vec![
-            I56::ZERO,
-            I56::try_from(1_000_000i64 * i64::from(TWAP_WINDOW)).unwrap(),
-        ],
-        vec![U160::ZERO, spl_delta],
-    );
+    let (ticks, spl) = observation(0, 1_000_000, 0, [MIN_LIQUIDITY; 3]);
+    w.mock_observe_raw(ticks, spl);
     let (session, reason, ..) = c.state().unwrap();
     assert_eq!(
         (session, reason),
@@ -954,25 +1011,55 @@ fn initialize_requires_a_readable_feed_round() {
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == FEED));
 }
 
+/// A sub-window in which the price left every position for one second:
+/// Uniswap accumulates seconds * 2^128 / max(L, 1), so that second adds 2^128
+/// and the sub-window's harmonic mean collapses to about its length.
+fn dipped(deep: u128) -> U160 {
+    U160::from((U256::from(599u64) << 128usize) / U256::from(deep) + (U256::from(1u64) << 128usize))
+}
+
 #[test]
-fn a_second_of_empty_liquidity_inside_the_window_refuses() {
-    // Uniswap accumulates seconds * 2^128 / max(L, 1). One second at zero
-    // in-range liquidity adds 2^128, which drags the harmonic mean to ~1800
-    // no matter how deep the other 1799 seconds were. Fail closed for the window.
+fn one_second_out_of_range_no_longer_switches_pricing_off() {
+    // Before: one second at zero liquidity collapsed the whole window's mean and
+    // refused for 30 minutes, a cheap and repeatable way to stop liquidations.
+    // Now it collapses one sub-window; the median of three still prices.
     let w = World::new();
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
-    let deep = U256::from(1_600_000_000_000_000_000u128); // 1.6e18, today's pool
-    let delta = (U256::from(TWAP_WINDOW - 1) << 128usize) / deep + (U256::from(1u64) << 128usize);
-    let then = I56::try_from(1_000_000i64).unwrap();
-    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
-    w.mock_observe_raw(vec![then, now], vec![U160::ZERO, U160::from(delta)]);
-    let (session, reason, _, _, _, _, liq, _, _) = c.state().unwrap();
+    let deep: u128 = 1_600_000_000_000_000_000; // 1.6e18, today's pool
+    let (ticks, mut spl) = observation(1_000_000, AAPL_TICK, 0, [deep; 3]);
+    // the dip in the middle sub-window
+    let d0 = spl[1];
+    spl[2] = d0.wrapping_add(dipped(deep));
+    spl[3] = spl[2].wrapping_add(spl[1]);
+    w.mock_observe_raw(ticks, spl);
+    let (session, reason, ans, _, _, _, liq, _, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+    assert_eq!(ans, U256::from(AAPL_TWAP));
+    assert_eq!(liq, deep, "the median sub-window is a deep one");
+}
+
+#[test]
+fn empty_liquidity_in_two_of_three_sub_windows_refuses() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    let deep: u128 = 1_600_000_000_000_000_000;
+    let (ticks, _) = observation(1_000_000, AAPL_TICK, 0, [deep; 3]);
+    let first = dipped(deep);
+    let spl = vec![
+        U160::ZERO,
+        first,
+        first.wrapping_add(dipped(deep)),
+        first
+            .wrapping_add(dipped(deep))
+            .wrapping_add(U160::from((U256::from(600u64) << 128usize) / U256::from(deep))),
+    ];
+    w.mock_observe_raw(ticks, spl);
+    let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
-    assert!(
-        liq < 2000,
-        "harmonic mean collapses to about the window length: {liq}"
-    );
+    assert!(liq < 1000, "median collapses to about a sub-window's length: {liq}");
+    assert_eq!(pool, POOL);
 }
 
 #[test]
@@ -982,13 +1069,17 @@ fn liquidity_accumulator_wraps_around_uint160() {
     let w = World::new();
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
-    let delta = U160::from((U256::from(TWAP_WINDOW) << 128usize) / U256::from(MIN_LIQUIDITY));
-    let spl_then = U160::MAX - U160::from(5u64);
-    let spl_now = spl_then.wrapping_add(delta);
-    assert!(spl_now < spl_then, "the test straddles the wrap");
-    let then = I56::try_from(1_000_000i64).unwrap();
-    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
-    w.mock_observe_raw(vec![then, now], vec![spl_then, spl_now]);
+    let (ticks, _) = observation(1_000_000, AAPL_TICK, 0, [MIN_LIQUIDITY; 3]);
+    let third = U160::from((U256::from(600u64) << 128usize) / U256::from(MIN_LIQUIDITY));
+    let s0 = U160::MAX - U160::from(5u64);
+    let spl = vec![
+        s0,
+        s0.wrapping_add(third),
+        s0.wrapping_add(third).wrapping_add(third),
+        s0.wrapping_add(third).wrapping_add(third).wrapping_add(third),
+    ];
+    assert!(spl[1] < spl[0], "the test straddles the wrap");
+    w.mock_observe_raw(ticks, spl);
     let (session, _, ans, _, _, _, liq, _, _) = c.state().unwrap();
     assert_eq!(session, SESSION_ONCHAIN_TWAP);
     assert_eq!(liq, MIN_LIQUIDITY);
@@ -1000,10 +1091,12 @@ fn absurdly_deep_liquidity_saturates_instead_of_overflowing() {
     let w = World::new();
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
-    let then = I56::try_from(1_000_000i64).unwrap();
-    let now = I56::try_from(1_000_000i64 + AAPL_TICK * i64::from(TWAP_WINDOW)).unwrap();
-    // delta of 1: window * 2^128 liquidity, far beyond u128
-    w.mock_observe_raw(vec![then, now], vec![U160::from(9u64), U160::from(10u64)]);
+    let (ticks, _) = observation(1_000_000, AAPL_TICK, 0, [MIN_LIQUIDITY; 3]);
+    // deltas of 1: 600 * 2^128 liquidity per sub-window, far beyond u128
+    w.mock_observe_raw(
+        ticks,
+        vec![U160::from(9u64), U160::from(10u64), U160::from(11u64), U160::from(12u64)],
+    );
     let (session, _, _, _, _, _, liq, _, _) = c.state().unwrap();
     assert_eq!(session, SESSION_ONCHAIN_TWAP);
     assert_eq!(liq, u128::MAX);
@@ -1048,6 +1141,115 @@ fn get_round_data_serves_history_while_refusing_to_price() {
     assert!(matches!(
         c.get_round_data(U80::from(ROUND - 2)).expect_err("feed rejected the round"),
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED
+    ));
+}
+
+// ---- share multiplier ---------------------------------------------------------------
+
+#[test]
+fn price_values_raw_units_with_the_share_multiplier() {
+    // One raw AAPL unit is 1.00056608 shares: the feed prices a share, Morpho
+    // lends against raw units.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(AAPL_MULT, NOW - 40 * 86_400);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let (_, answer, ..) = c.latest_round_data().unwrap();
+    assert_eq!(answer, I256::try_from(FRIDAY_ANSWER).unwrap(), "Chainlink-shaped answers stay per share");
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE) * U256::from(AAPL_MULT) / U256::from(ONE_X)
+    );
+}
+
+#[test]
+fn the_pool_average_is_reported_per_share() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(AAPL_MULT, NOW - 40 * 86_400);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    let per_share = U256::from(AAPL_TWAP) * U256::from(ONE_X) / U256::from(AAPL_MULT);
+    let (session, _, ans, _, _, twap, ..) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!((twap, ans), (per_share, per_share));
+    // and price() turns it back into raw units, within the two floors
+    let raw = c.price().unwrap();
+    let exact = U256::from(AAPL_TWAP) * u(MORPHO_SCALE);
+    assert!(raw <= exact && exact - raw <= u(MORPHO_SCALE) * U256::from(2u64));
+}
+
+#[test]
+fn a_dividend_after_the_last_print_moves_pricing_to_the_pool() {
+    // The multiplier grew after the feed's last print: the print is in
+    // pre-dividend shares, so it is not passed through even though it is fresh.
+    let w = World::new();
+    let c = w.deploy();
+    let mult: u128 = 1_003_000_000_000_000_000; // a 0.3% dividend reinvested
+    w.mock_multiplier(mult, NOW - 60);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let per_share = U256::from(AAPL_TWAP) * U256::from(ONE_X) / U256::from(mult);
+    let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+    assert_eq!((ans, twap, clamped), (per_share, per_share, false));
+    // once the feed prints after the change, it is live again
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 30);
+    let (session, ..) = c.state().unwrap();
+    assert_eq!(session, SESSION_LIVE_FEED);
+}
+
+#[test]
+fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
+    let w = World::new();
+    let c = w.deploy();
+    // 2-for-1: every raw unit is now two shares; the last print is pre-split.
+    w.mock_multiplier(2 * ONE_X, NOW - 60);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let (session, reason, ans, _, _, twap, _, _, pool) = c.state().unwrap();
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_MULTIPLIER_CHANGED),
+        "the pool per share is half the pre-split print: refuse, never clamp"
+    );
+    assert_eq!((ans, twap, pool), (U256::ZERO, U256::ZERO, POOL));
+    assert!(matches!(
+        c.price().expect_err("split"),
+        AfterHoursError::NoData(NoData {
+            reason: REASON_MULTIPLIER_CHANGED
+        })
+    ));
+    // The feed prints the post-split price: live again, and a raw unit is worth
+    // what it was worth before the split.
+    let half = FRIDAY_ANSWER / 2;
+    w.mock_feed(half as i128, NOW - 30);
+    let (session, ..) = c.state().unwrap();
+    assert_eq!(session, SESSION_LIVE_FEED);
+    assert_eq!(c.price().unwrap(), U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE));
+}
+
+#[test]
+fn a_scheduled_multiplier_changes_nothing_before_it_takes_effect() {
+    // The token keeps answering the old multiplier until effectiveAt.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(ONE_X, NOW + 3600);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let (session, ..) = c.state().unwrap();
+    assert_eq!(session, SESSION_LIVE_FEED);
+}
+
+#[test]
+fn an_unreadable_or_zero_multiplier_is_a_failed_read() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(0, 0);
+    assert!(matches!(
+        c.state().expect_err("zero multiplier"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK
+    ));
+    w.vm.mock_static_call(STOCK, uiMultiplierCall {}.abi_encode(), Err(Vec::new()));
+    assert!(matches!(
+        c.state().expect_err("reverting multiplier"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK
     ));
 }
 
@@ -1198,7 +1400,7 @@ fn initialize_checks_every_pool_for_history() {
     w.vm.mock_static_call(
         POOL2,
         observeCall {
-            secondsAgos: vec![TWAP_WINDOW, 0],
+            secondsAgos: points(),
         }
         .abi_encode(),
         Err(b"OLD".to_vec()),
@@ -1249,8 +1451,8 @@ mod props {
         use proptest::test_runner::{Config, TestRunner};
         use std::cell::RefCell;
 
-        let spl_for =
-            |liq: u128| ((U256::from(TWAP_WINDOW) << 128usize) / U256::from(liq)).to::<u128>();
+        // per 600 s sub-window
+        let spl_for = |liq: u128| ((U256::from(600u64) << 128usize) / U256::from(liq)).to::<u128>();
         // pools between 1e14 and 1e20 of liquidity, around the 1e15 floor
         let healthy_spl = spl_for(100_000_000_000_000_000_000)..=spl_for(100_000_000_000_000);
         let strategy = (
@@ -1272,9 +1474,14 @@ mod props {
             ],
             any::<u128>(),
             prop_oneof![4 => healthy_spl, 1 => any::<u128>(), 1 => Just(0u128)],
+            prop_oneof![
+                3 => Just(ONE_X),
+                1 => 500_000_000_000_000_000u128..=4_000_000_000_000_000_000u128,
+            ],
+            prop::bool::weighted(0.2),
         );
         let sessions = RefCell::new([0usize; 4]);
-        let reasons = RefCell::new([0usize; 5]);
+        let reasons = RefCell::new([0usize; 6]);
         let mut runner = TestRunner::new(Config {
             cases: 3000,
             ..Config::default()
@@ -1282,21 +1489,33 @@ mod props {
         runner
             .run(
                 &strategy,
-                |(answer, updated_at, paused, cum_then, cum_delta, spl_then, spl_delta)| {
+                |(answer, updated_at, paused, cum_then, cum_delta, spl_then, spl_delta, mult, rebase)| {
                     let w = World::new();
                     let c = w.deploy();
                     w.mock_paused(paused);
+                    // rebase: a new multiplier took effect a second after the print
+                    let effective_at = if rebase { updated_at.saturating_add(1) } else { 0 };
+                    w.mock_multiplier(mult, effective_at);
                     w.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
                     let clamp56 = |v: i64| v.clamp(-(1i64 << 55) + 1, (1i64 << 55) - 1);
-                    let then = I56::try_from(clamp56(cum_then)).unwrap();
-                    let now = I56::try_from(clamp56(cum_then.saturating_add(cum_delta))).unwrap();
-                    let spl_a = U160::from(spl_then);
-                    let spl_b = spl_a.wrapping_add(U160::from(spl_delta));
-                    w.mock_observe_raw(vec![then, now], vec![spl_a, spl_b]);
+                    let at = |k: i64| {
+                        I56::try_from(clamp56(cum_then.saturating_add(cum_delta / 3 * k))).unwrap()
+                    };
+                    let ticks = vec![at(0), at(1), at(2), I56::try_from(clamp56(cum_then.saturating_add(cum_delta))).unwrap()];
+                    let s0 = U160::from(spl_then);
+                    let d = U160::from(spl_delta);
+                    let spl = vec![s0, s0.wrapping_add(d), s0.wrapping_add(d).wrapping_add(d), s0.wrapping_add(d).wrapping_add(d).wrapping_add(d)];
+                    w.mock_observe_raw(ticks, spl);
 
                     let (session, reason, ans, feed_answer, _, twap, _, clamped, pool) =
                         c.state().unwrap();
-                    prop_assert!(session <= SESSION_NO_DATA && reason <= REASON_ANCHOR_STALE);
+                    prop_assert!(session <= SESSION_NO_DATA && reason <= REASON_MULTIPLIER_CHANGED);
+                    if session == SESSION_LIVE_FEED || session == SESSION_ONCHAIN_TWAP {
+                        // Morpho values raw units: per-share answer times the multiplier
+                        if let Ok(p) = c.price() {
+                            prop_assert_eq!(p, ans * u(MORPHO_SCALE) * U256::from(mult) / U256::from(ONE_X));
+                        }
+                    }
                     match session {
                         SESSION_LIVE_FEED => {
                             prop_assert!(answer > 0);

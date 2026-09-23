@@ -39,16 +39,18 @@ contract MockPool {
     address public token1;
     int56 private cumThen;
     int56 private cumNow;
-    uint160 private splThen;
-    uint160 private splNow;
+    uint160[4] private spl;
     bool private revertObserve;
 
     constructor(address token0_, address token1_) { token0 = token0_; token1 = token1_; }
 
-    /// The mean tick over the window is (cumNow - cumThen) / window; the harmonic
-    /// liquidity is window * 2^128 / (splNow - splThen).
-    function setObservation(int56 cumThen_, int56 cumNow_, uint160 splThen_, uint160 splNow_) external {
-        cumThen = cumThen_; cumNow = cumNow_; splThen = splThen_; splNow = splNow_; revertObserve = false;
+    /// The mean tick over the window is (cumNow - cumThen) / window, with the
+    /// tick cumulatives in between on a straight line. `spl_` is the
+    /// secondsPerLiquidityCumulativeX128 at the four points AfterHours asks
+    /// for (oldest first), so each sub-window's harmonic liquidity is
+    /// span * 2^128 / (spl[k+1] - spl[k]).
+    function setObservation(int56 cumThen_, int56 cumNow_, uint160[4] calldata spl_) external {
+        cumThen = cumThen_; cumNow = cumNow_; spl = spl_; revertObserve = false;
     }
 
     function setRevert(bool on) external { revertObserve = on; }
@@ -57,12 +59,20 @@ contract MockPool {
         external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
     {
         require(!revertObserve, "OLD");
-        // AfterHours must ask for [window, 0]; a reversed or extra request fails here.
-        require(secondsAgos.length == 2 && secondsAgos[0] > 0 && secondsAgos[1] == 0, "shape");
-        tickCumulatives = new int56[](2);
-        secondsPerLiquidityCumulativeX128s = new uint160[](2);
-        tickCumulatives[0] = cumThen; tickCumulatives[1] = cumNow;
-        secondsPerLiquidityCumulativeX128s[0] = splThen; secondsPerLiquidityCumulativeX128s[1] = splNow;
+        // AfterHours asks for [window, 2w/3, w/3, 0]; any other shape fails here.
+        require(
+            secondsAgos.length == 4 && secondsAgos[3] == 0 && secondsAgos[2] > 0
+                && secondsAgos[1] > secondsAgos[2] && secondsAgos[0] > secondsAgos[1],
+            "shape"
+        );
+        int56 w = int56(uint56(secondsAgos[0]));
+        tickCumulatives = new int56[](4);
+        secondsPerLiquidityCumulativeX128s = new uint160[](4);
+        for (uint256 i = 0; i < 4; i++) {
+            int56 elapsed = w - int56(uint56(secondsAgos[i]));
+            tickCumulatives[i] = cumThen + (cumNow - cumThen) * elapsed / w;
+            secondsPerLiquidityCumulativeX128s[i] = spl[i];
+        }
     }
 }
 
@@ -70,9 +80,15 @@ contract MockToken {
     uint8 private dec;
     bool public oraclePaused;
     string public symbol;
+    /// Robinhood's scaled-UI surface: one raw unit is uiMultiplier / 1e18 shares.
+    uint256 public uiMultiplier = 1e18;
+    uint256 public effectiveAt;
 
     constructor(string memory symbol_, uint8 decimals_) { symbol = symbol_; dec = decimals_; }
 
     function decimals() external view returns (uint8) { return dec; }
     function setPaused(bool on) external { oraclePaused = on; }
+    function setMultiplier(uint256 multiplier, uint256 effectiveAt_) external {
+        uiMultiplier = multiplier; effectiveAt = effectiveAt_;
+    }
 }

@@ -22,6 +22,12 @@
 //! Morpho's `IOracle`, so a lending market swaps one address and keeps working
 //! through the weekend. The configuration is fixed at deployment; there is no
 //! owner and no upgrade.
+//!
+//! Units: Chainlink prices one share. A Robinhood stock token is a scaled-UI
+//! token: one raw unit is `uiMultiplier / 1e18` shares, and the multiplier
+//! grows with every dividend and jumps on a split. Every Chainlink-shaped
+//! answer here is per share, like the feed; `price()` (Morpho) values raw
+//! collateral units, so it multiplies by the token's current `uiMultiplier`.
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -54,6 +60,10 @@ pub const REASON_TWAP_UNAVAILABLE: u8 = 3;
 /// The last exchange print is older than `maxAnchorAge`: the feed is dead or
 /// the stock is halted, and no band anchored to it can be trusted.
 pub const REASON_ANCHOR_STALE: u8 = 4;
+/// A new share multiplier took effect after the last print (a corporate action)
+/// and the pool, read per share, sits outside the band: a split or a merger the
+/// last print knows nothing about. Refuse until the feed prints again.
+pub const REASON_MULTIPLIER_CHANGED: u8 = 5;
 
 /// `InvalidConfig(reason)` codes raised by `initialize`.
 pub const CONFIG_ZERO_LIVE_MAX_AGE: u8 = 1;
@@ -74,6 +84,8 @@ pub const CONFIG_POOL_COUNT: u8 = 11;
 pub const CONFIG_POOL_QUOTE_MISMATCH: u8 = 12;
 /// The same pool was given twice.
 pub const CONFIG_DUPLICATE_POOL: u8 = 13;
+/// The stock's `uiMultiplier()` answered zero.
+pub const CONFIG_BAD_MULTIPLIER: u8 = 14;
 
 const BPS: u64 = 10_000;
 /// Longest TWAP window accepted (one day); longer windows are always unavailable.
@@ -83,6 +95,13 @@ const MAX_DECIMALS: u8 = 36;
 /// Primary plus standby pools. Standbys are read only while the primary
 /// cannot be observed.
 const MAX_POOLS: usize = 3;
+/// The window's liquidity is judged per sub-window; the median must clear the
+/// floor, so one brief excursion out of range cannot switch pricing off.
+const LIQUIDITY_SUBWINDOWS: u32 = 3;
+/// Shortest TWAP window: each liquidity sub-window must last at least a second.
+const MIN_TWAP_WINDOW: u32 = LIQUIDITY_SUBWINDOWS;
+/// 1e18, the token's multiplier for "one raw unit is one share".
+const ONE_SHARE: U256 = U256::from_limbs([1_000_000_000_000_000_000, 0, 0, 0]);
 
 sol_interface! {
     interface IAggregatorV3 {
@@ -104,6 +123,8 @@ sol_interface! {
 
     interface IStockOraclePause {
         function oraclePaused() external view returns (bool);
+        function uiMultiplier() external view returns (uint256);
+        function effectiveAt() external view returns (uint256);
     }
 }
 
@@ -153,7 +174,8 @@ sol_storage! {
         address[] pools;
         /// Per pool: true when the stock is token0 (the pool's tick is quote per stock).
         bool[] pool_stock_is_token0;
-        /// The stock token (also queried for the issuer's oracle pause flag).
+        /// The stock token (also queried for the issuer's oracle pause flag and
+        /// its share multiplier).
         address stock;
         /// The quote token shared by every pool (USDG on Robinhood Chain).
         address quote;
@@ -187,15 +209,18 @@ pub struct Quote {
     pub feed_started_at: U256,
     pub feed_updated_at: U256,
     pub feed_answered_in_round: U80,
-    /// Raw pool TWAP in feed decimals before the band is applied (0 outside ONCHAIN_TWAP).
+    /// Pool TWAP per share, in feed decimals, before the band is applied (0 outside ONCHAIN_TWAP).
     pub twap: U256,
-    /// Harmonic-mean in-range liquidity over the TWAP window of `pool` (0 when no pool was read).
+    /// Median of the three sub-windows' harmonic-mean in-range liquidity of
+    /// `pool` (0 when no pool was read).
     pub liquidity: u128,
     /// True when the TWAP was pulled back to the edge of the allowed band.
     pub clamped: bool,
-    /// The pool that was observed to price (or to refuse: NO_DATA 2 and the tick
-    /// conversion case of 3). Zero when no pool was needed or none could be observed.
+    /// The pool that was observed to price (or to refuse: NO_DATA 2, 5 and the
+    /// tick conversion case of 3). Zero when no pool was needed or none could be observed.
     pub pool: Address,
+    /// The stock's share multiplier at this read (1e18 = one raw unit is one share).
+    pub multiplier: U256,
 }
 
 #[public]
@@ -209,6 +234,7 @@ impl AfterHours {
     /// here rather than at the first weekend. `pools` holds one to three
     /// distinct Uniswap v3 pools of the stock against one quote token; the
     /// first is the primary (give the deepest fee tier), the rest are standbys.
+    /// The stock must expose `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`.
     pub fn initialize(
         &mut self,
         feed: Address,
@@ -226,7 +252,7 @@ impl AfterHours {
         if live_max_age == 0 {
             return Err(invalid(CONFIG_ZERO_LIVE_MAX_AGE));
         }
-        if twap_window == 0 {
+        if twap_window < MIN_TWAP_WINDOW {
             return Err(invalid(CONFIG_ZERO_TWAP_WINDOW));
         }
         if twap_window > MAX_TWAP_WINDOW {
@@ -273,10 +299,12 @@ impl AfterHours {
                 return Err(invalid(CONFIG_POOL_QUOTE_MISMATCH));
             }
             // A v2 pair has token0/token1 too; only a v3 pool with enough history
-            // answers observe() for the window this oracle will ask for.
-            match pool_iface.observe(self.vm(), Call::new(), vec![twap_window, 0]) {
+            // answers observe() for the points this oracle will ask for.
+            let points = observation_points(twap_window);
+            match pool_iface.observe(self.vm(), Call::new(), points.clone()) {
                 Ok((cumulatives, seconds_per_liquidity))
-                    if cumulatives.len() == 2 && seconds_per_liquidity.len() == 2 => {}
+                    if cumulatives.len() == points.len()
+                        && seconds_per_liquidity.len() == points.len() => {}
                 _ => return Err(invalid(CONFIG_POOL_NOT_OBSERVABLE)),
             }
             stock_first.push(is_token0);
@@ -303,11 +331,21 @@ impl AfterHours {
         {
             return Err(invalid(CONFIG_DECIMALS_TOO_LARGE));
         }
-        // The pause flag must be readable now, so a token without it fails at
-        // deployment rather than silently at the first weekend.
-        IStockOraclePause::new(stock)
+        // The pause flag and the share multiplier must be readable now, so a
+        // token without them fails at deployment rather than at the first weekend.
+        let stock_iface = IStockOraclePause::new(stock);
+        stock_iface
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
+        let multiplier = stock_iface
+            .ui_multiplier(self.vm(), Call::new())
+            .map_err(|_| call_failed(stock))?;
+        stock_iface
+            .effective_at(self.vm(), Call::new())
+            .map_err(|_| call_failed(stock))?;
+        if multiplier.is_zero() {
+            return Err(invalid(CONFIG_BAD_MULTIPLIER));
+        }
 
         // Morpho: 1e36 * 10^loan / (10^collateral * 10^feed) with loan = quote.
         let scale_num = 36u64 + u64::from(quote_decimals);
@@ -406,13 +444,16 @@ impl AfterHours {
 
     // ---- Morpho Blue IOracle ---------------------------------------------------
 
-    /// Quote-token value of one raw stock unit, scaled by 1e36 (Morpho's convention).
+    /// Quote-token value of one raw stock unit, scaled by 1e36 (Morpho's
+    /// convention): the per-share answer times the token's share multiplier.
     pub fn price(&self) -> Result<U256, AfterHoursError> {
         let q = self.evaluate()?;
         let answer = require_price(&q)?;
         // An answer too large for Morpho's 1e36 scale is not a price we can stand behind.
         answer
             .checked_mul(self.morpho_scale.get())
+            .and_then(|v| v.checked_mul(q.multiplier))
+            .map(|v| v / ONE_SHARE)
             .ok_or(AfterHoursError::NoData(NoData {
                 reason: REASON_FEED_INVALID,
             }))
@@ -499,9 +540,21 @@ impl AfterHours {
         let feed = self.feed.get();
         let stock = self.stock.get();
 
-        let paused = IStockOraclePause::new(stock)
+        let stock_iface = IStockOraclePause::new(stock);
+        let paused = stock_iface
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
+        // One raw token unit is `multiplier / 1e18` shares; the feed prices a share.
+        let multiplier = stock_iface
+            .ui_multiplier(self.vm(), Call::new())
+            .map_err(|_| call_failed(stock))?;
+        let effective_at = stock_iface
+            .effective_at(self.vm(), Call::new())
+            .map_err(|_| call_failed(stock))?;
+        // The token itself never answers zero (it defaults to 1e18); a zero is a broken read.
+        if multiplier.is_zero() {
+            return Err(call_failed(stock));
+        }
 
         let (round_id, feed_answer, started_at, updated_at, answered_in_round) =
             IAggregatorV3::new(feed)
@@ -513,6 +566,7 @@ impl AfterHours {
             feed_started_at: started_at,
             feed_updated_at: updated_at,
             feed_answered_in_round: answered_in_round,
+            multiplier,
             ..Quote::default()
         };
 
@@ -538,7 +592,12 @@ impl AfterHours {
         let feed_answer = q.feed_answer;
 
         let age = now - updated_at;
-        if age <= U256::from(self.live_max_age.get()) {
+        // A new share multiplier took effect after the last print: that print is
+        // in pre-action shares, so it is not passed through. The pool, which
+        // trades raw units, is read per share instead, and a move beyond the
+        // band (a split) refuses rather than clamps.
+        let rebased = effective_at > updated_at && effective_at <= now;
+        if age <= U256::from(self.live_max_age.get()) && !rebased {
             q.session = SESSION_LIVE_FEED;
             q.answer = feed_answer;
             return Ok(q);
@@ -568,9 +627,10 @@ impl AfterHours {
         // Closed market: price from the primary pool, guarded by depth and the band.
         // The venue is fixed: a standby is read only while every earlier pool
         // cannot be observed at all (history too short, wrong shape). A primary
-        // that is merely thin refuses; switching to whichever pool looks deepest
-        // would let anyone who deepens a shallow tier choose the price source.
+        // that answers is used, thin or not; switching to whichever pool looks
+        // deepest would let anyone who deepens a shallow tier choose the source.
         let window = self.twap_window.get().to::<u32>();
+        let points = observation_points(window);
         let mut chosen: Option<(Address, bool, u128, i64, i64)> = None;
         for i in 0..self.pools.len() {
             let Some(pool) = self.pools.get(i) else {
@@ -579,24 +639,19 @@ impl AfterHours {
             let is_token0 = self.pool_stock_is_token0.get(i).unwrap_or(false);
             // A pool with too little history reverts with "OLD": not observable.
             let observed = IUniswapV3PoolMinimal::new(pool)
-                .observe(self.vm(), Call::new(), vec![window, 0])
+                .observe(self.vm(), Call::new(), points.clone())
                 .ok()
-                .filter(|(ticks, liq)| ticks.len() == 2 && liq.len() == 2);
+                .filter(|(ticks, liq)| ticks.len() == points.len() && liq.len() == points.len());
             let Some((cumulatives, seconds_per_liquidity)) = observed else {
                 continue;
             };
-            // Harmonic-mean liquidity over the window (Uniswap OracleLibrary.consult):
-            // liquidity added in the last block cannot make a thinned pool look deep.
-            let spl_delta = seconds_per_liquidity[1].wrapping_sub(seconds_per_liquidity[0]);
-            let Some(liquidity) = harmonic_liquidity(window, spl_delta) else {
-                continue;
-            };
+            let last = points.len() - 1;
             chosen = Some((
                 pool,
                 is_token0,
-                liquidity,
+                median_liquidity(&points, &seconds_per_liquidity),
                 cumulatives[0].as_i64(),
-                cumulatives[1].as_i64(),
+                cumulatives[last].as_i64(),
             ));
             break;
         }
@@ -624,12 +679,23 @@ impl AfterHours {
                     self.feed_decimals.get().to::<u8>(),
                 )
             });
-        let Some(twap) = twap else {
+        // The pool prices one raw unit; the band and every Chainlink-shaped
+        // answer are per share.
+        let Some(twap) = twap
+            .and_then(|raw| raw.checked_mul(ONE_SHARE))
+            .map(|v| v / multiplier)
+        else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
             return Ok(q);
         };
         q.twap = twap;
+        if rebased && (twap < lower || twap > upper) {
+            q.session = SESSION_NO_DATA;
+            q.reason = REASON_MULTIPLIER_CHANGED;
+            q.twap = U256::ZERO;
+            return Ok(q);
+        }
         let (answer, clamped) = if twap < lower {
             (lower, true)
         } else if twap > upper {
@@ -668,9 +734,33 @@ impl AfterHours {
     }
 }
 
+/// `observe()` points: the window split into three sub-windows, oldest first.
+/// With the 30-minute window: 1800, 1200, 600 and 0 seconds ago.
+fn observation_points(window: u32) -> Vec<u32> {
+    let sub = window / LIQUIDITY_SUBWINDOWS;
+    vec![window, 2 * sub, sub, 0]
+}
+
+/// Median of the sub-windows' harmonic-mean liquidity (Uniswap's
+/// OracleLibrary.consult per sub-window). Liquidity added in the last block
+/// cannot make a pool that spent the window thin look deep, and one excursion
+/// out of range drags down one sub-window, not the answer. A sub-window with no
+/// liquidity-seconds recorded counts as empty.
+fn median_liquidity(points: &[u32], seconds_per_liquidity: &[U160]) -> u128 {
+    let mut liquidity: Vec<u128> = (0..points.len() - 1)
+        .map(|k| {
+            let span = points[k] - points[k + 1];
+            let delta = seconds_per_liquidity[k + 1].wrapping_sub(seconds_per_liquidity[k]);
+            harmonic_liquidity(span, delta).unwrap_or(0)
+        })
+        .collect();
+    liquidity.sort_unstable();
+    liquidity[liquidity.len() / 2]
+}
+
 /// `window * 2^128 / delta(secondsPerLiquidityCumulativeX128)`, saturating at
 /// `u128::MAX`. `None` when the pool recorded no liquidity-seconds (window 0
-/// or identical observations), which is not a pool to price from.
+/// or identical observations).
 fn harmonic_liquidity(window: u32, spl_delta: U160) -> Option<u128> {
     if window == 0 || spl_delta.is_zero() {
         return None;

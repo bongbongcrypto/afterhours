@@ -22,6 +22,9 @@ TICK=218301
 EXPECT_TWAP=33096497304       # floor of the exact 33096497304.69 (scripts/measure/tick_vectors.py)
 POOL2_TWAP=31482440784        # standby, stock as token0, tick -218801: floor of 31482440784.887
 MORPHO_SCALE=10000000000000000  # 10^(36 + 6 - 18 - 8)
+ONE=1000000000000000000         # uiMultiplier for one share per raw unit
+AAPL_MULT=1000566080000000000   # AAPL's uiMultiplier on 2026-09-23
+DEEP=1600000000000000000        # 1.6e18, the real AAPL 0.05% pool's depth
 
 pass=0; fail=0
 expect() { # label actual expected
@@ -40,7 +43,31 @@ reverts_with() { # label selector-sig cmd...
   else fail=$((fail + 1)); echo "  FAIL $label: reverted without $sig: $out"; fi
 }
 pyint() { python3 -c "print($1)"; }
-spl_delta() { pyint "($WINDOW << 128) // $1"; }
+# secondsPerLiquidityCumulativeX128 at [1800, 1200, 600, 0] s ago for three
+# 600 s sub-windows of liquidity L1 L2 L3; "dip" = one second out of range.
+spl4() {
+  python3 - "$@" <<'PY'
+import sys
+s = 7777777
+out = [s]
+for arg in sys.argv[1:]:
+    if arg.startswith("dip:"):
+        deep = int(arg[4:])
+        s += (599 << 128) // deep + (1 << 128)
+    else:
+        s += (600 << 128) // int(arg)
+    out.append(s)
+print("[" + ",".join(str(v) for v in out) + "]")
+PY
+}
+# revert data must be the error's selector followed by the exact reason word
+reverts_nodata() { # label reason cmd...
+  local label="$1" reason="$2"; shift 2
+  local want; want="$(cast sig "NoData(uint8)" | sed 's/^0x//')$(printf '%064x' "$reason")"
+  local out; if out=$(cast call --rpc-url "$RPC" "$@" 2>&1); then fail=$((fail + 1)); echo "  FAIL $label: did not revert ($out)"; return; fi
+  if echo "$out" | tr A-Z a-z | grep -q "$want"; then pass=$((pass + 1)); echo "  ok   $label reverts NoData($reason)"
+  else fail=$((fail + 1)); echo "  FAIL $label: expected NoData($reason): $out"; fi
+}
 
 echo "== mocks (forge)"
 cd "$HERE"
@@ -49,7 +76,7 @@ FEED=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src
 STOCK=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockToken --constructor-args "AAPL" 18 | jq -r .deployedTo)
 USDG=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockToken --constructor-args "USDG" 6 | jq -r .deployedTo)
 POOL=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockPool --constructor-args "$USDG" "$STOCK" | jq -r .deployedTo)
-# a second pool with the stock as token0 (mirrored ticks), shallower, no history yet
+# a second pool with the stock as token0 (mirrored ticks), shallower
 POOL2=$(forge create --json --rpc-url "$RPC" --private-key "$KEY" --broadcast src/Mocks.sol:MockPool --constructor-args "$STOCK" "$USDG" | jq -r .deployedTo)
 echo "  feed $FEED stock $STOCK usdg $USDG pool $POOL pool2 $POOL2"
 T=$(now)
@@ -57,12 +84,10 @@ send "$FEED" "set(uint80,int256,uint256,uint256)" $((ROUND - 1)) 31000000000 $((
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
 CUM_THEN=1000000
 CUM_NOW=$((CUM_THEN + TICK * WINDOW))
-SPL_THEN=7777777
-SPL_NOW=$(pyint "$SPL_THEN + $(spl_delta $MIN_LIQ)")
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$SPL_NOW"
+SPL_FLOOR=$(spl4 $MIN_LIQ $MIN_LIQ $MIN_LIQ)
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
 # POOL2: mirrored tick 500 lower (a lower price), half the liquidity of POOL
-SPL2_NOW=$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ / 2)))")
-send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$((CUM_THEN - (TICK + 500) * WINDOW))" "$SPL_THEN" "$SPL2_NOW"
+send "$POOL2" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$((CUM_THEN - (TICK + 500) * WINDOW))" "$(spl4 $((MIN_LIQ / 2)) $((MIN_LIQ / 2)) $((MIN_LIQ / 2)))"
 
 echo "== deploy AfterHours (cargo stylus)"
 cd "$ROOT"
@@ -89,9 +114,7 @@ expect "maxAnchorAge" "$(num "${c[14]}")" "$ANCHOR"
 expect "pools()" "$(call "$ADDR" "pools()(address[])" | tr -d ' ' | tr A-Z a-z)" "$(echo "[$POOL,$POOL2]" | tr A-Z a-z)"
 expect "description" "$(call "$ADDR" "description()(string)")" "\"Robinhood AAPL / USD (AfterHours)\""
 expect "decimals()" "$(call "$ADDR" "decimals()(uint8)")" "8"
-if cast send --json --rpc-url "$RPC" --private-key "$KEY" "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" 2>/dev/null | jq -e '.status == "0x1"' > /dev/null 2>&1; then
-  fail=$((fail + 1)); echo "  FAIL second initialize succeeded"
-else pass=$((pass + 1)); echo "  ok   second initialize rejected"; fi
+reverts_with "second initialize" "AlreadyInitialized()" "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR"
 
 echo "== LIVE_FEED"
 mapfile -t r < <(call "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)")
@@ -120,14 +143,14 @@ expect "price() = twap x 1e16" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "twap reported" "$(num "${s[5]}")" "$EXPECT_TWAP"
-expect "window liquidity" "$(num "${s[6]}")" "$MIN_LIQ"
+expect "window liquidity (median of three sub-windows)" "$(num "${s[6]}")" "$MIN_LIQ"
 expect "not clamped" "${s[7]}" "false"
 expect "answered by the primary" "$(echo "${s[8]}" | tr A-Z a-z)" "$(echo "$POOL" | tr A-Z a-z)"
 GAS_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "latestRoundData()")
 GAS_PRICE_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "price()")
 
 echo "== band clamp (pool 18% below the last print)"
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$((CUM_THEN + (TICK + 2000) * WINDOW))" "$SPL_THEN" "$SPL_NOW"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$((CUM_THEN + (TICK + 2000) * WINDOW))" "$SPL_FLOOR"
 LOWER=$(pyint "$FRIDAY * 9000 // 10000")
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "answer clamped to lower band" "$(num "${s[2]}")" "$LOWER"
@@ -135,25 +158,38 @@ expect "clamped flag" "${s[7]}" "true"
 expect "price() clamped" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$LOWER * $MORPHO_SCALE")"
 
 lower() { echo "$1" | tr A-Z a-z; }
+
+echo "== one second out of range in one sub-window: still priced"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 $DEEP dip:$DEEP $DEEP)"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
+expect "median sub-window is a deep one" "$(num "${s[6]}")" "$DEEP"
+expect "answer = pool TWAP" "$(num "${s[2]}")" "$EXPECT_TWAP"
+
+echo "== out of range in two of three sub-windows: refuses"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 dip:$DEEP dip:$DEEP $DEEP)"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
+reverts_nodata "price with two dips" 2 "$ADDR" "price()(uint256)"
 POOL2_OBS_THEN="$CUM_THEN"
 POOL2_OBS_NOW="$((CUM_THEN - (TICK + 500) * WINDOW))"
 
 echo "== the venue is fixed: a standby three times deeper does not take over"
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$SPL_NOW"
-send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$POOL2_OBS_THEN" "$POOL2_OBS_NOW" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ * 3)))")"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
+send "$POOL2" "setObservation(int56,int56,uint160[4])" "$POOL2_OBS_THEN" "$POOL2_OBS_NOW" "$(spl4 $((MIN_LIQ * 3)) $((MIN_LIQ * 3)) $((MIN_LIQ * 3)))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "the primary still answers" "$(lower "${s[8]}")" "$(lower "$POOL")"
 expect "at the primary's price" "$(num "${s[2]}")" "$EXPECT_TWAP"
 
 echo "== a thin primary refuses instead of moving venue"
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ - 1)))")"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 $((MIN_LIQ - 1)) $((MIN_LIQ - 1)) $((MIN_LIQ - 1)))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
 expect "the refusal names the primary" "$(lower "${s[8]}")" "$(lower "$POOL")"
 expect "primary liquidity reported" "$(num "${s[6]}")" "$((MIN_LIQ - 1))"
-reverts_with "latestRoundData while thin" "NoData(uint8)" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
-reverts_with "price while thin" "NoData(uint8)" "$ADDR" "price()(uint256)"
+reverts_nodata "latestRoundData while thin" 2 "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+reverts_nodata "price while thin" 2 "$ADDR" "price()(uint256)"
 
 echo "== the primary cannot be observed: the standby prices"
 send "$POOL" "setRevert(bool)" true
@@ -170,7 +206,7 @@ expect "session NO_DATA/twap unavailable" "${s[0]}/${s[1]}" "3/3"
 expect "no pool named" "$(lower "${s[8]}")" "0x0000000000000000000000000000000000000000"
 send "$POOL" "setRevert(bool)" false
 send "$POOL2" "setRevert(bool)" false
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$SPL_NOW"
+send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
 
 echo "== issuer pause"
 send "$STOCK" "setPaused(bool)" true
@@ -186,13 +222,36 @@ T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - ANCHOR - 60))" "$((T - ANCHOR - 60))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/anchor stale" "${s[0]}/${s[1]}" "3/4"
-reverts_with "price while anchor stale" "NoData(uint8)" "$ADDR" "price()(uint256)"
+reverts_nodata "price while anchor stale" 4 "$ADDR" "price()(uint256)"
 
 echo "== broken feed round"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" 0 "$((T - 60))" "$((T - 60))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/feed invalid" "${s[0]}/${s[1]}" "3/1"
+reverts_nodata "price with a broken round" 1 "$ADDR" "price()(uint256)"
+
+echo "== share multiplier: price() values raw units, answers stay per share"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
+send "$STOCK" "setMultiplier(uint256,uint256)" "$AAPL_MULT" "$((T - 86400))"
+mapfile -t r < <(call "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)")
+expect "latestRoundData per share (the feed's)" "$(num "${r[1]}")" "$FRIDAY"
+expect "price() = feed x 1e16 x multiplier" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE * $AAPL_MULT // $ONE")"
+
+echo "== a split after the last print refuses until the feed prints"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
+send "$STOCK" "setMultiplier(uint256,uint256)" "$((2 * ONE))" "$((T - 60))"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session NO_DATA/multiplier changed" "${s[0]}/${s[1]}" "3/5"
+reverts_nodata "price after a split" 5 "$ADDR" "price()(uint256)"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 1))" "$((FRIDAY / 2))" "$T" "$T"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "live again once the feed prints the split price" "${s[0]}/${s[1]}" "0/0"
+expect "a raw unit is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
+send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 
 echo
 echo "gas per read: latestRoundData LIVE=$GAS_LIVE TWAP=$GAS_TWAP | price() LIVE=$GAS_PRICE_LIVE TWAP=$GAS_PRICE_TWAP"

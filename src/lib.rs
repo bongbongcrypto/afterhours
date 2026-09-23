@@ -679,8 +679,8 @@ impl AfterHours {
         // The pool is held close to the print. Past the heartbeat, or on a
         // Saturday or Sunday, the market is closed and the pool may move up to
         // `max_deviation_bps`.
-        let quiet = age <= U256::from(self.heartbeat.get())
-            && !is_weekend(self.vm().block_timestamp());
+        let quiet =
+            age <= U256::from(self.heartbeat.get()) && !is_weekend(self.vm().block_timestamp());
         let band_bps = if quiet {
             self.quiet_band_bps.get().to::<u64>()
         } else {

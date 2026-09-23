@@ -1004,8 +1004,8 @@ fn a_weekend_read_uses_the_wide_band_from_the_first_hour() {
     let w = World::new();
     let c = w.deploy();
     w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
-    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
-        / U256::from(10_000u64);
+    let narrow =
+        U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64);
     for (day, now, want, clamped_want) in [
         ("Friday", NOW, narrow, true),
         ("Saturday", NOW + 86_400, U256::from(DOWN_TWAP), false),
@@ -1131,7 +1131,10 @@ fn a_pool_price_that_rounds_to_zero_per_share_is_refused() {
     w.mock_feed(1, NOW - 40 * 3600);
     w.mock_observe(460_517, MIN_LIQUIDITY);
     let (session, reason, ans, ..) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
     assert_eq!(ans, U256::ZERO);
 }
 

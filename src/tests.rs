@@ -1123,7 +1123,10 @@ fn a_standby_prices_only_while_the_primary_cannot_be_observed() {
     // Nothing observable: refuse, naming no pool.
     w.mock_pool2_reverts();
     let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
-    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE)
+    );
     assert_eq!((pool, liq), (Address::ZERO, 0));
 
     // The primary comes back: it prices again, whatever the standby does.
@@ -1298,7 +1301,10 @@ mod props {
                         SESSION_LIVE_FEED => {
                             prop_assert!(answer > 0);
                             prop_assert_eq!(ans, U256::from(answer as u128));
-                            prop_assert_eq!(c.latest_answer().unwrap(), I256::try_from(answer).unwrap());
+                            prop_assert_eq!(
+                                c.latest_answer().unwrap(),
+                                I256::try_from(answer).unwrap()
+                            );
                         }
                         SESSION_ONCHAIN_TWAP => {
                             let lower = feed_answer * U256::from(9000u64) / U256::from(10_000u64);
@@ -1338,7 +1344,10 @@ mod props {
             assert!(*n >= 20, "session {i} reached only {n} times: {s:?}");
         }
         for (code, n) in r.iter().enumerate().skip(1) {
-            assert!(*n >= 5, "NO_DATA reason {code} reached only {n} times: {r:?}");
+            assert!(
+                *n >= 5,
+                "NO_DATA reason {code} reached only {n} times: {r:?}"
+            );
         }
     }
 

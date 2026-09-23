@@ -331,6 +331,35 @@ expect "live again once the feed prints the split price" "${s[0]}/${s[1]}" "0/0"
 expect "a raw token is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
 send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 
+echo "== the deploy workflow's own steps (scripts/deploy.sh), run the way the mainnet deploy runs them"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 2))" "$FRIDAY" "$T" "$T"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
+send "$POOL" "setCardinality(uint16)" "$WINDOW"
+export RPC FEED STOCK LIVE_MAX_AGE HEARTBEAT
+export DEPLOYER_KEY="$KEY" POOLS="$POOL" EXPECTED_DESCRIPTION="Robinhood AAPL / USD" EXPECTED_QUOTE="$USDG"   EXPECTED_DECIMALS="8/18/6" TWAP_WINDOW="$WINDOW" MAX_DEVIATION_BPS="$DEV_BPS" MIN_LIQUIDITY="$MIN_LIQ"   MAX_ANCHOR_AGE="$ANCHOR" QUIET_BAND_BPS="$QUIET_BPS" DEPLOY_LOG="$HERE/deploy2.log"
+step() { # name [VAR=value ...]: runs one step; r = passed/failed, o = its output
+  local name="$1"; shift
+  if o=$(env "$@" bash "$ROOT/scripts/deploy.sh" "$name" 2>&1); then r=passed; else r=failed; fi
+}
+step preflight
+expect "preflight refuses a primary one observation short" "$r/$(echo "$o" | grep -c 'primary cardinality 1800 < 1801' || true)" "failed/1"
+send "$POOL" "setCardinality(uint16)" "$((WINDOW + 1))"
+step preflight
+expect "preflight" "$r" "passed"
+DEPLOYER2=$(echo "$o" | grep -oE '^deployer=0x[0-9a-fA-F]{40}' | cut -d= -f2 || true)
+step deploy
+ADDR2=$(echo "$o" | grep -oE '^address=0x[0-9a-fA-F]{40}' | cut -d= -f2 | tail -1 || true)
+has_code=none
+if [ -n "$ADDR2" ] && [ "$(cast code --rpc-url "$RPC" "$ADDR2")" != "0x" ]; then has_code=code; fi
+expect "deploy + activate a second instance" "$r/$has_code" "passed/code"
+step initialize ADDR="$ADDR2"
+expect "initialize" "$r" "passed"
+step verify ADDR="$ADDR2" DEPLOYER="$DEPLOYER2"
+expect "read back and verify every field" "$r/$(echo "$o" | grep -c 'all fields verified' || true)" "passed/1"
+step verify ADDR="$ADDR2" DEPLOYER="$DEPLOYER2" EXPECTED_DECIMALS=8/18/18
+expect "verify fails when a field differs" "$r/$(echo "$o" | grep -c 'decimals mismatch' || true)" "failed/1"
+
 echo
 echo "gas per read: latestRoundData LIVE=$GAS_LIVE TWAP=$GAS_TWAP | price() LIVE=$GAS_PRICE_LIVE TWAP=$GAS_PRICE_TWAP"
 echo "result: $pass passed, $fail failed"

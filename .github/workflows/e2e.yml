@@ -93,3 +93,4 @@ jobs:
           path: |
             e2e/result.txt
             e2e/deploy.log
+            e2e/deploy2.log

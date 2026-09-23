@@ -105,8 +105,9 @@ src/tests.rs      unit tests; every external read is mocked with exact calldata
 src/mockvm.rs     TestVM wrapper that serves the matched mock (stylus-test 0.10.9 serves the last registered)
 e2e/              end-to-end on a local Nitro node: Solidity doubles + cast scenario, gas per read
 abi/              Solidity interface for integrators
-scripts/measure/  the evidence: feed cadence, weekend swaps, pool depth, PARE's oracle
+scripts/measure/  the evidence: feed cadence and session prints, weekend swaps, pool depth, PARE's oracle
 scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdlib only)
+scripts/deploy.sh the deployment steps, run by the deploy workflow and by e2e
 web/              the live page (static HTML; reads the chain from the browser) and its data builder
 .github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, hourly status, pages
 ```
@@ -137,6 +138,13 @@ cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,u
 # prices the asset; optional standbys are read only while the primary cannot be observed.
 # initialize refuses a primary whose observation cardinality is below window + 1 (InvalidConfig 16).
 ```
+
+The manual `deploy` workflow runs these steps with checks around them, all in
+`scripts/deploy.sh`: a preflight of every read `initialize` will make before
+any gas is spent, deploy and activate, `initialize`, and a read-back that
+fails on any field that differs from the inputs. The e2e run executes the same
+script against a second instance on every push, including a preflight that
+must refuse and a read-back that must fail.
 
 ## Integrating
 

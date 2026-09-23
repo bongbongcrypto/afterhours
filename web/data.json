@@ -20,7 +20,8 @@
  "hero": "AAPL",
  "counts": {
   "explorerTokens": 122,
-  "passInitialize": 28,
+  "withFeedAndPool": 28,
+  "passInitialize": 18,
   "recommended": 14
  },
  "assets": [

@@ -76,11 +76,12 @@ jobs:
         run: cargo update --workspace
       - name: cargo stylus check (compiles to wasm, validates against the chain)
         run: cargo stylus check --endpoint "$CHECK_ENDPOINT"
-      - name: export Solidity ABI
+      - name: export Solidity ABI and check the integrator interface against it
         run: |
           mkdir -p out
           cargo stylus export-abi > out/AfterHours.abi.sol
           cat out/AfterHours.abi.sol
+          python3 scripts/abi_check.py out/AfterHours.abi.sol abi/IAfterHours.sol
       - name: collect wasm
         run: |
           ls -la target/wasm32-unknown-unknown/release/*.wasm

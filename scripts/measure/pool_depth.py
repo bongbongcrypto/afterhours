@@ -88,6 +88,11 @@ def enc_int(v):
     return format(v % (1 << 256), "064x")
 
 
+def whole_seconds(x):
+    """A stay counts in whole seconds; a stretch that never drags a sub-window below the floor stays infinite."""
+    return math.ceil(x) if math.isfinite(x) else x
+
+
 def usd(v):
     return "$" + format(round(v), ",")
 
@@ -213,16 +218,19 @@ def main():
             print("  in-range liquidity never runs out (a full-range position underlies the pool)")
         # cost grows along the walk, so the first stretch that works is the cheapest one;
         # the stretch past the last initialized tick sits at the end of the price range and is out of reach
+        # the accumulator advances in whole seconds of block time, so a stay counts
+        # only in whole seconds: 7.15 s of exposure needs an 8-second stay
         for limit in (1, 10, 60):
-            found = next((s for s in segs[:-1] if stay_needed(s[1]) <= limit), None)
+            found = next((s for s in segs[:-1] if whole_seconds(stay_needed(s[1])) <= limit), None)
             if not found:
                 print("  no reachable price at which a stay of %d s drags a sub-window below the floor" % limit)
                 continue
             mv, l, a0, a1, _ = found
             usd_in = cost(a0, a1)
-            print("  cheapest refusal with a stay of <= %2d s: %+.2f%% (liquidity %.2e, %.2f s needed); "
-                  "input worth %s, round-trip fee %s, %s an hour to keep it refusing"
-                  % (limit, mv * 100, l, stay_needed(l), usd(usd_in), usd(2 * usd_in * fee), usd(6 * 2 * usd_in * fee)))
+            print("  cheapest refusal with a stay of <= %2d s: %+.2f%% (liquidity %.2e), a stay of %d whole seconds "
+                  "(%.2f s computed); input worth %s, round-trip fee %s, %s an hour to keep it refusing"
+                  % (limit, mv * 100, l, whole_seconds(stay_needed(l)), stay_needed(l), usd(usd_in),
+                     usd(2 * usd_in * fee), usd(6 * 2 * usd_in * fee)))
         print()
 
 

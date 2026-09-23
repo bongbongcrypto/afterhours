@@ -27,6 +27,11 @@ PARAM_KEYS = ("liveMaxAge", "twapWindow", "maxDeviationBps", "maxAnchorAge", "he
 HERO = "AAPL"
 
 
+def primary_cardinality(asset):
+    primary = asset["deploy"]["pools"][0].lower()
+    return next(p["cardinality"] for p in asset["pools"] if p["address"].lower() == primary)
+
+
 def main():
     manifest = json.load(io.open(ROOT / "assets.json", encoding="utf-8"))
     deployed = {}
@@ -70,7 +75,10 @@ def main():
         "hero": HERO,
         "counts": {
             "explorerTokens": len(manifest["assets"]) + len(manifest["not_deployable"]),
-            "passInitialize": len(manifest["assets"]),
+            "withFeedAndPool": len(manifest["assets"]),
+            # initialize refuses a primary keeping fewer than twapWindow + 1 observations
+            "passInitialize": sum(1 for a in manifest["assets"]
+                                  if primary_cardinality(a) >= manifest["defaults"]["twapWindow"] + 1),
             "recommended": sum(1 for a in manifest["assets"] if a["recommended"]),
         },
         "assets": assets,

@@ -19,6 +19,7 @@ sol! {
     function oraclePaused() external view returns (bool);
     function uiMultiplier() external view returns (uint256);
     function effectiveAt() external view returns (uint256);
+    function newUIMultiplier() external view returns (uint256);
     function slot0() external view returns (uint160, int24, uint16, uint16, uint16, uint8, bool);
 }
 
@@ -103,11 +104,12 @@ impl World {
     fn new() -> Self {
         let vm = MockVM::new();
         vm.set_block_timestamp(NOW);
-        vm.set_tx_origin(DEPLOYER);
+        vm.set_sender(DEPLOYER);
         let w = World { vm };
         w.mock_tokens(false);
         w.mock_paused(false);
         w.mock_multiplier(ONE_X, 0);
+        w.mock_next_multiplier(ONE_X);
         w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
         w.mock_cardinality(POOL, (TWAP_WINDOW + 1) as u16);
         w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
@@ -181,6 +183,15 @@ impl World {
             STOCK,
             effectiveAtCall {}.abi_encode(),
             Ok(U256::from(effective_at).abi_encode()),
+        );
+    }
+
+    /// The multiplier the token has scheduled for `effectiveAt` (`newUIMultiplier()`).
+    fn mock_next_multiplier(&self, next: u128) {
+        self.vm.mock_static_call(
+            STOCK,
+            newUIMultiplierCall {}.abi_encode(),
+            Ok(U256::from(next).abi_encode()),
         );
     }
 
@@ -404,7 +415,7 @@ fn initialize_reads_layout_and_decimals_from_the_contracts() {
         anchor,
     ) = c.config();
     assert!(initialized);
-    assert_eq!(initializer, DEPLOYER, "records tx.origin of initialize");
+    assert_eq!(initializer, DEPLOYER, "records the caller of initialize");
     assert_eq!((feed, pool, stock, quote), (FEED, POOL, STOCK, USDG));
     assert!(!stock_is_token0, "AAPL is token1 in the real pool");
     assert_eq!((fd, sd, qd), (8, 18, 6));
@@ -715,6 +726,10 @@ fn initialize_requires_the_share_multiplier_to_be_readable() {
     let w = World::new();
     w.vm.mock_static_call(STOCK, effectiveAtCall {}.abi_encode(), Err(Vec::new()));
     let err = w.try_deploy().expect_err("token without effectiveAt()");
+    assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
+    let w = World::new();
+    w.vm.mock_static_call(STOCK, newUIMultiplierCall {}.abi_encode(), Err(Vec::new()));
+    let err = w.try_deploy().expect_err("token without newUIMultiplier()");
     assert!(matches!(err, AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK));
     let w = World::new();
     w.mock_multiplier(0, 0);
@@ -1668,7 +1683,11 @@ fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
         (SESSION_NO_DATA, REASON_MULTIPLIER_CHANGED),
         "the pool per share is half the pre-split print: refuse, never clamp"
     );
-    assert_eq!((ans, twap, pool), (U256::ZERO, U256::ZERO, POOL));
+    assert_eq!(
+        (ans, twap, pool),
+        (U256::ZERO, U256::from(AAPL_TWAP / 2), POOL),
+        "the pool price that refused is reported"
+    );
     assert!(matches!(
         c.price().expect_err("split"),
         AfterHoursError::NoData(NoData {
@@ -1688,14 +1707,80 @@ fn a_split_after_the_last_print_refuses_until_the_feed_prints() {
 }
 
 #[test]
-fn a_scheduled_multiplier_changes_nothing_before_it_takes_effect() {
-    // The token keeps answering the old multiplier until effectiveAt.
+fn a_scheduled_dividend_changes_nothing_before_it_takes_effect() {
+    // The token keeps answering the old multiplier until effectiveAt. A pending
+    // change of dividend size moves a raw unit's value by less than the band,
+    // so the fresh print passes through and the pool is not read.
     let w = World::new();
     let c = w.deploy();
     w.mock_multiplier(ONE_X, NOW + 3600);
+    w.mock_next_multiplier(1_003_000_000_000_000_000);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let before = w.vm.call_log().len();
     let (session, ..) = c.state().unwrap();
     assert_eq!(session, SESSION_LIVE_FEED);
+    assert!(
+        w.vm.call_log()
+            .split_off(before)
+            .iter()
+            .all(|(to, _)| *to != POOL),
+        "no pool read for a dividend-sized change"
+    );
+}
+
+#[test]
+fn a_split_scheduled_but_not_yet_in_effect_needs_the_pool_to_agree() {
+    // A 2-for-1 split takes effect in an hour. Until then the token counts raw
+    // balances in pre-split shares, while the feed may already print the
+    // post-split price; the pool, in the token's current units, decides.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(ONE_X, NOW + 3600);
+    w.mock_next_multiplier(2 * ONE_X);
+    // The feed still prints pre-split: the pool agrees and the print passes.
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let (session, reason, ans, _, _, twap, _, _, pool) = c.state().unwrap();
+    assert_eq!(
+        (session, reason, ans),
+        (SESSION_LIVE_FEED, REASON_NONE, U256::from(FRIDAY_ANSWER))
+    );
+    assert_eq!(
+        (twap, pool),
+        (U256::from(AAPL_TWAP), POOL),
+        "the pool was read to confirm it"
+    );
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(FRIDAY_ANSWER) * u(MORPHO_SCALE)
+    );
+    // The feed prints the post-split price before the token switches: valued
+    // with the old multiplier it would halve the collateral. The pool says
+    // twice that print, so it is neither passed through nor anchored to.
+    w.mock_feed((FRIDAY_ANSWER / 2) as i128, NOW - 30);
+    let (session, reason, _, _, _, twap, ..) = c.state().unwrap();
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_MULTIPLIER_CHANGED)
+    );
+    assert_eq!(twap, U256::from(AAPL_TWAP), "the pool price that refused");
+    assert!(matches!(
+        c.price().expect_err("half the collateral value"),
+        AfterHoursError::NoData(NoData {
+            reason: REASON_MULTIPLIER_CHANGED
+        })
+    ));
+    // Stale and post-split: not clamped to the band around it either.
+    w.mock_feed((FRIDAY_ANSWER / 2) as i128, NOW - 40 * 3600);
+    let (session, reason, ..) = c.state().unwrap();
+    assert_eq!(
+        (session, reason),
+        (SESSION_NO_DATA, REASON_MULTIPLIER_CHANGED)
+    );
+    // A pool too thin to confirm anything refuses rather than trust the print.
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY - 1);
+    let (session, reason, ..) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
 }
 
 #[test]
@@ -1930,7 +2015,7 @@ fn the_contract_reads_real_mainnet_answers() {
     }
     let vm = MockVM::new();
     vm.set_block_timestamp(timestamp);
-    vm.set_tx_origin(DEPLOYER);
+    vm.set_sender(DEPLOYER);
     for (who, call, ret) in rets {
         let data = match call {
             "decimals" => decimalsCall {}.abi_encode(),
@@ -1946,6 +2031,7 @@ fn the_contract_reads_real_mainnet_answers() {
             "oraclePaused" => oraclePausedCall {}.abi_encode(),
             "uiMultiplier" => uiMultiplierCall {}.abi_encode(),
             "effectiveAt" => effectiveAtCall {}.abi_encode(),
+            "newUIMultiplier" => newUIMultiplierCall {}.abi_encode(),
             other => panic!("unexpected read {other}"),
         };
         vm.mock_static_call(at[who], data, Ok(ret));

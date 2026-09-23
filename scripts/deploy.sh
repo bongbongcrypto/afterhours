@@ -54,7 +54,15 @@ preflight() {
     fi
     role=standby
   done
+  # the feed's, the stock's and the quote's decimals, and the stock's pause flag and
+  # share multiplier with its schedule: initialize reads every one of them
+  cast call --rpc-url "$RPC" "$FEED" "decimals()(uint8)"
+  cast call --rpc-url "$RPC" "$STOCK" "decimals()(uint8)"
+  cast call --rpc-url "$RPC" "$EXPECTED_QUOTE" "decimals()(uint8)"
   cast call --rpc-url "$RPC" "$STOCK" "oraclePaused()(bool)"
+  cast call --rpc-url "$RPC" "$STOCK" "uiMultiplier()(uint256)"
+  cast call --rpc-url "$RPC" "$STOCK" "effectiveAt()(uint256)"
+  cast call --rpc-url "$RPC" "$STOCK" "newUIMultiplier()(uint256)"
   addr=$(cast wallet address --private-key "$DEPLOYER_KEY")
   bal=$(cast balance --rpc-url "$RPC" "$addr")
   echo "deployer $addr balance $bal wei"

@@ -345,6 +345,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     oraclePaused: "0x7706ba52",
     uiMultiplier: "0xa60bf13d",
     effectiveAt: "0x97a4064f",
+    newUIMultiplier: "0xdc767007",
     observe: "0x883bdbfd",
     state: "0xc19d93fb"
   };
@@ -420,7 +421,14 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     var feedAnswer = round.answer, age = nowTs - round.updatedAt;
     // a new share multiplier took effect after the last print: the print is pre-action
     var rebased = r.effectiveAt > round.updatedAt && r.effectiveAt <= nowTs;
-    if (age <= BigInt(P.liveMaxAge) && !rebased) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
+    // a split-sized change scheduled but not yet in effect: the feed may already print
+    // the post-action price while the token keeps the old multiplier, so the pool has
+    // to confirm the print (an unreadable schedule is treated the same way)
+    var B = 10000n, W = BigInt(P.maxDeviationBps), next = r.nextMultiplier;
+    var splitPending = r.effectiveAt > nowTs && (next === null || next === undefined ||
+      next * B < r.multiplier * (B - W) || next * B > r.multiplier * (B + W));
+    var unconfirmed = rebased || splitPending;
+    if (age <= BigInt(P.liveMaxAge) && !unconfirmed) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
     if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
     q.bandBps = bandBps(age, nowTs);
     var bps = 10000n, dev = BigInt(q.bandBps), wide = BigInt(P.maxDeviationBps);
@@ -443,7 +451,11 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     // a price that rounds to zero per share is not a price
     if (twap === null || twap === 0n) { q.session = "NO_DATA"; q.reason = 3; return q; }
     q.twap = twap;
-    if (rebased && (twap < wideLower || twap > wideUpper)) { q.session = "NO_DATA"; q.reason = 5; q.twap = null; return q; }
+    // the print and the multiplier may count different shares: past the wide band, refuse
+    // (the pool price that refused stays in the answer, as in the contract)
+    if (unconfirmed && (twap < wideLower || twap > wideUpper)) { q.session = "NO_DATA"; q.reason = 5; return q; }
+    // a split is pending and the pool puts the print in the token's current units
+    if (splitPending && age <= BigInt(P.liveMaxAge)) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
     if (twap < lower) { q.answer = lower; q.clamped = true; }
     else if (twap > upper) { q.answer = upper; q.clamped = true; }
     else { q.answer = twap; }
@@ -512,10 +524,11 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         for (var k = 0; k < 3; k++) { t.push(t[k] + BigInt(tick) * 600n); l.push(l[k] + step); }
         return { ticks: t, spl: l };
       };
-      var read = function (tick, printAge, now, multiplier, sinceAction) {
+      var read = function (tick, printAge, now, multiplier, sinceAction, next, answer) {
         return {
           paused: false, multiplier: multiplier, effectiveAt: sinceAction === null ? 0n : now - sinceAction,
-          round: { answer: 33252000000n, updatedAt: now - printAge }, obs: [pool(tick)]
+          nextMultiplier: next === undefined ? ONE : next,
+          round: { answer: answer === undefined ? 33252000000n : answer, updatedAt: now - printAge }, obs: [pool(tick)]
         };
       };
       var got = function (r, now) {
@@ -530,7 +543,9 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         // a 3% distribution a minute ago: inside the wide band, so held to the narrow one
         got(read(218301, 120n, FRI, 1030000000000000000n, 60n), FRI) === "ONCHAIN_TWAP/0/32919480000/true",
         // a 2-for-1 split a minute ago: past the wide band, refused
-        got(read(218301, 120n, FRI, 2n * ONE, 60n), FRI) === "NO_DATA/5/0/false"
+        got(read(218301, 120n, FRI, 2n * ONE, 60n), FRI) === "NO_DATA/5/0/false",
+        // a 2-for-1 split an hour away, the feed already printing the post-split price: refused
+        got(read(218301, 30n, FRI, ONE, -3600n, 2n * ONE, 16626000000n), FRI) === "NO_DATA/5/0/false"
       ].every(Boolean);
     } finally {
       DATA.params = saved.params;
@@ -687,6 +702,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         calls.push(ethCall(a.stock, SEL.oraclePaused, blockHex, a.symbol + " oraclePaused()"));
         calls.push(ethCall(a.stock, SEL.uiMultiplier, blockHex, a.symbol + " uiMultiplier()"));
         calls.push(ethCall(a.stock, SEL.effectiveAt, blockHex, a.symbol + " effectiveAt()"));
+        calls.push(ethCall(a.stock, SEL.newUIMultiplier, blockHex, a.symbol + " newUIMultiplier()"));
         calls.push(ethCall(a.feed, SEL.latestRoundData, blockHex, a.symbol + " feed latestRoundData()"));
         calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,1200,600,0])"));
         if (a.oracle) calls.push(ethCall(a.oracle, SEL.state, blockHex, a.symbol + " AfterHours state()"));
@@ -701,13 +717,14 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
           var d = res[k++];
           if (d.result) S.feedDecimals[a.symbol] = Number(words(d.result)[0]);
         }
-        var paused = res[k++], mult = res[k++], eff = res[k++], round = res[k++], obs = res[k++];
+        var paused = res[k++], mult = res[k++], eff = res[k++], nxt = res[k++], round = res[k++], obs = res[k++];
         var st = a.oracle ? res[k++] : null;
         reads[a.symbol] = {
           pausedOk: !!paused.result,
           paused: paused.result ? words(paused.result)[0] !== 0n : false,
           multiplier: mult.result && mult.result !== "0x" ? words(mult.result)[0] : null,
           effectiveAt: eff.result && eff.result !== "0x" ? words(eff.result)[0] : 0n,
+          nextMultiplier: nxt.result && nxt.result !== "0x" ? words(nxt.result)[0] : null,
           round: round.result ? decodeRound(round.result) : null,
           obs: [obs.result ? decodeObserve(obs.result) : null],
           state: st && st.result ? decodeState(st.result) : null,
@@ -1052,7 +1069,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     ["link-design", "cta-design"].forEach(function (id) { $(id).href = DATA.repo + "/blob/main/DESIGN.md"; });
     var ok = selfTest();
     $("selftest").textContent = ok ?
-      "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, and four band and corporate-action decisions)." :
+      "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, and five band and corporate-action decisions)." :
       "Self-check FAILED: this page's math does not reproduce the contract's end-to-end prices. Do not trust the AfterHours readout.";
     if (!ok) $("selftest").className = "refuse";
     await refresh();

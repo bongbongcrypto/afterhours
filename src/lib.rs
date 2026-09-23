@@ -65,9 +65,12 @@ pub const REASON_TWAP_UNAVAILABLE: u8 = 3;
 /// The last exchange print is older than `maxAnchorAge`: the feed is dead or
 /// the stock is halted, and no band anchored to it can be trusted.
 pub const REASON_ANCHOR_STALE: u8 = 4;
-/// A new share multiplier took effect after the last print (a corporate action)
-/// and the pool, read per share, sits outside the wide band: a split or a merger
-/// the last print knows nothing about. Refuse until the feed prints again.
+/// The last print and the token's multiplier may count different shares, and
+/// the pool, read per share in the token's current units, sits outside the wide
+/// band of the print: a new multiplier took effect after the print (a split or
+/// a merger the print knows nothing about), or a split-sized change is
+/// scheduled and the feed has already printed the post-action price. Refuse
+/// until the feed and the token agree again.
 pub const REASON_MULTIPLIER_CHANGED: u8 = 5;
 /// Only `price()` raises this: the answer is valid, but Morpho's 1e36 scale
 /// times the share multiplier cannot hold it (an absurd price).
@@ -146,6 +149,7 @@ sol_interface! {
         function oraclePaused() external view returns (bool);
         function uiMultiplier() external view returns (uint256);
         function effectiveAt() external view returns (uint256);
+        function newUIMultiplier() external view returns (uint256);
     }
 }
 
@@ -239,7 +243,8 @@ pub struct Quote {
     pub feed_updated_at: U256,
     pub feed_answered_in_round: U80,
     /// The median sub-window's pool average, per share, in feed decimals,
-    /// before the band is applied (0 outside ONCHAIN_TWAP).
+    /// before the band is applied (0 unless the pool was priced: ONCHAIN_TWAP,
+    /// NO_DATA 5, or a pending split confirmed by the pool).
     pub twap: U256,
     /// Median of the three sub-windows' harmonic-mean in-range liquidity of
     /// `pool` (0 when no pool was read).
@@ -398,6 +403,10 @@ impl AfterHours {
         stock_iface
             .effective_at(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
+        // Read only while a change is scheduled, but it must exist.
+        stock_iface
+            .new_ui_multiplier(self.vm(), Call::new())
+            .map_err(|_| call_failed(stock))?;
         if multiplier.is_zero() {
             return Err(invalid(CONFIG_BAD_MULTIPLIER));
         }
@@ -411,7 +420,7 @@ impl AfterHours {
         let morpho_scale = U256::from(10u64).pow(U256::from(scale_num - scale_den));
 
         self.initialized.set(true);
-        self.initializer.set(self.vm().tx_origin());
+        self.initializer.set(self.vm().msg_sender());
         self.feed.set(feed);
         for (&pool, &is_token0) in pools.iter().zip(stock_first.iter()) {
             self.pools.push(pool);
@@ -690,7 +699,25 @@ impl AfterHours {
         // trades raw units, is read per share instead, and a move beyond the
         // wide band (a split) refuses rather than clamps.
         let rebased = effective_at > updated_at && effective_at <= now;
-        if age <= U256::from(self.live_max_age.get()) && !rebased {
+        // A change is scheduled but not yet in effect. Until `effectiveAt` the
+        // token keeps the old multiplier, while the feed may already print the
+        // exchange's post-action price. A dividend-sized change moves a raw
+        // unit's value by less than the band either way; one the size of a
+        // split halves or doubles it. While such a change is pending, a print
+        // is passed through or anchored to only if the pool, read in the
+        // token's current units, puts it within the wide band.
+        let split_pending = effective_at > now && {
+            let next = stock_iface
+                .new_ui_multiplier(self.vm(), Call::new())
+                .map_err(|_| call_failed(stock))?;
+            let bps = U512::from(BPS);
+            let wide = U512::from(self.max_deviation_bps.get());
+            let next = U512::from(next) * bps;
+            let current = U512::from(multiplier);
+            next < current * (bps - wide) || next > current * (bps + wide)
+        };
+        let unconfirmed = rebased || split_pending;
+        if age <= U256::from(self.live_max_age.get()) && !unconfirmed {
             q.session = SESSION_LIVE_FEED;
             q.answer = feed_answer;
             return Ok(q);
@@ -803,10 +830,19 @@ impl AfterHours {
             return Ok(q);
         };
         q.twap = twap;
-        if rebased && (twap < wide_lower || twap > wide_upper) {
+        // The print and the token's multiplier may count different shares: a
+        // pool price per share beyond the wide band means the print knows
+        // nothing (a split). The pool price stays in the answer for keepers.
+        if unconfirmed && (twap < wide_lower || twap > wide_upper) {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_MULTIPLIER_CHANGED;
-            q.twap = U256::ZERO;
+            return Ok(q);
+        }
+        // A split is pending and the pool puts the print in the token's
+        // current units: a fresh print passes through as it always does.
+        if split_pending && age <= U256::from(self.live_max_age.get()) {
+            q.session = SESSION_LIVE_FEED;
+            q.answer = feed_answer;
             return Ok(q);
         }
         let (answer, clamped) = if twap < lower {

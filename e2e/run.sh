@@ -333,9 +333,26 @@ expect "live again once the feed prints the split price" "${s[0]}/${s[1]}" "0/0"
 expect "a raw token is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
 send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 
+echo "== a split scheduled but not yet in effect: the pool has to confirm the print"
+T=$(now)
+send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" "$((T + 3600))"
+send "$STOCK" "setNewMultiplier(uint256)" "$((2 * ONE))"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 2))" "$FRIDAY" "$T" "$T"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "a pre-split print the pool agrees with passes through" "${s[0]}/${s[1]}/$(num "${s[2]}")" "0/0/$FRIDAY"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 3))" "$((FRIDAY / 2))" "$T" "$T"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "a post-split print before the token switches refuses" "${s[0]}/${s[1]}" "3/5"
+expect "the pool price that refused is reported" "$(num "${s[5]}")" "$EXPECT_TWAP"
+reverts_nodata "price with a split pending and the print already split" 5 "$ADDR" "price()(uint256)"
+send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
+send "$STOCK" "setNewMultiplier(uint256)" "$ONE"
+
 echo "== the deploy workflow's own steps (scripts/deploy.sh), run the way the mainnet deploy runs them"
 T=$(now)
-send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 2))" "$FRIDAY" "$T" "$T"
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 4))" "$FRIDAY" "$T" "$T"
 send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
 send "$POOL" "setCardinality(uint16)" "$WINDOW"
 export RPC FEED STOCK LIVE_MAX_AGE HEARTBEAT

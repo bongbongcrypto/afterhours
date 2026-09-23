@@ -87,6 +87,8 @@ contract MockToken {
     /// Robinhood's scaled-UI surface: one token of raw balance is uiMultiplier / 1e18 shares.
     uint256 public uiMultiplier = 1e18;
     uint256 public effectiveAt;
+    /// The multiplier scheduled for effectiveAt (the real token answers 1e18 when none is).
+    uint256 public newUIMultiplier = 1e18;
 
     constructor(string memory symbol_, uint8 decimals_) { symbol = symbol_; dec = decimals_; }
 
@@ -95,6 +97,7 @@ contract MockToken {
     function setMultiplier(uint256 multiplier, uint256 effectiveAt_) external {
         uiMultiplier = multiplier; effectiveAt = effectiveAt_;
     }
+    function setNewMultiplier(uint256 next) external { newUIMultiplier = next; }
 }
 
 interface IAfterHoursLike {

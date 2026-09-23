@@ -55,8 +55,8 @@ impl MockVM {
         self.inner.set_block_timestamp(t);
     }
 
-    pub fn set_tx_origin(&self, origin: Address) {
-        self.inner.set_tx_origin(origin);
+    pub fn set_sender(&self, sender: Address) {
+        self.inner.set_sender(sender);
     }
 
     pub fn mock_static_call(&self, to: Address, data: Vec<u8>, ret: Outcome) {

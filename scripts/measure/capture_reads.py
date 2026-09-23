@@ -6,7 +6,7 @@ The unit test `the_contract_reads_real_mainnet_answers` serves these exact
 bytes to the contract, so its decoding of the real feed, pool and token is
 tested without a deployment. The answer the contract must give is computed
 here by a separate port of its rules (the live page's integer math, in
-Python), from the same bytes. Read-only, stdlib, 16 requests.
+Python), from the same bytes. Read-only, stdlib, 15 requests.
 
     python scripts/measure/capture_reads.py > fixtures/aapl_mainnet.txt
 """
@@ -109,6 +109,7 @@ def main():
         ("stock", STOCK, "oraclePaused", selector("oraclePaused()")),
         ("stock", STOCK, "uiMultiplier", selector("uiMultiplier()")),
         ("stock", STOCK, "effectiveAt", selector("effectiveAt()")),
+        ("stock", STOCK, "newUIMultiplier", selector("newUIMultiplier()")),
         ("quote", QUOTE, "decimals", selector("decimals()")),
     ]
     ret = {}
@@ -124,6 +125,7 @@ def main():
     paused = words(ret[("stock", "oraclePaused")])[0] != 0
     mult = words(ret[("stock", "uiMultiplier")])[0]
     eff = words(ret[("stock", "effectiveAt")])[0]
+    nxt = words(ret[("stock", "newUIMultiplier")])[0]
     w = words(ret[("pool", "observe")])
     a, b = w[0] // 32, w[1] // 32
     ticks = [signed(v, 256) for v in w[a + 1:a + 5]]
@@ -133,11 +135,14 @@ def main():
     want = {"session": 3, "reason": 0, "answer": 0, "twap": 0, "liquidity": 0, "clamped": 0}
     age = ts - updated
     rebased = updated < eff <= ts
+    # a split-sized change scheduled but not in effect: the pool has to confirm the print
+    split_pending = eff > ts and not mult * (10_000 - MAX_DEV) <= nxt * 10_000 <= mult * (10_000 + MAX_DEV)
+    unconfirmed = rebased or split_pending
     if paused:
         want["session"] = 2
     elif not (answer > 0 and 0 < updated <= ts):
         want["reason"] = 1
-    elif age <= LIVE_MAX_AGE and not rebased:
+    elif age <= LIVE_MAX_AGE and not unconfirmed:
         want.update(session=0, answer=answer)
     elif age > MAX_ANCHOR:
         want["reason"] = 4
@@ -157,8 +162,10 @@ def main():
             twap = stock_price(ratio_q96(tick), stock_is_token0, sd, qd, fd) * 10 ** 18 // mult
             if twap == 0:
                 want["reason"] = 3
-            elif rebased and not wlo <= twap <= whi:
-                want["reason"] = 5
+            elif unconfirmed and not wlo <= twap <= whi:
+                want.update(reason=5, twap=twap)
+            elif split_pending and age <= LIVE_MAX_AGE:
+                want.update(session=0, answer=answer, twap=twap)
             else:
                 clamped = twap < lo or twap > hi
                 want.update(session=1, twap=twap, answer=min(max(twap, lo), hi), clamped=int(clamped))

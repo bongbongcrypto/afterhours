@@ -25,8 +25,8 @@
           "주말마다 애플 피드가 52시간 멈춥니다. 연휴가 끼면 76시간."
         ],
         [
-          "Weeknight gaps are not closures; the price just did not move half a percent.",
-          "평일 밤의 공백은 멈춘 게 아니라, 가격이 0.5% 안 움직인 것뿐입니다."
+          "On weeknights it can hold back a move of almost one percent until the open.",
+          "평일 밤에도 1% 가까운 움직임을 개장 때까지 찍지 않기도 합니다."
         ]
       ]
     },
@@ -81,8 +81,8 @@
           "피드가 조용하면, 고정된 주 거래 풀 하나의 가격. 10분 평균 세 개 중 가운데 값을 씁니다."
         ],
         [
-          "Refused if the pool is thin; held within one percent of the last print while the feed may just be quiet, ten when closed.",
-          "풀이 얕으면 거부하고, 피드가 잠잠할 뿐일 수 있는 동안은 마지막 프린트의 1% 안, 시장이 닫히면 10% 안으로 묶습니다."
+          "Refused if the pool is thin; held within one percent of the last print while the exchange is open, ten at every other hour.",
+          "풀이 얕으면 거부하고, 정규장이 열려 있는 동안은 마지막 프린트의 1% 안, 그 밖의 시간엔 10% 안으로 묶습니다."
         ],
         [
           "Corporate actions: refuse while paused, and value raw tokens with the share multiplier.",
@@ -121,12 +121,12 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Seventy-two unit and property tests, and seventy-eight assertions against the real wasm on a local Arbitrum node.",
-          "단위·속성 테스트 72개, 실제 아비트럼 노드 위 wasm 검증 78항목."
+          "Seventy-three unit and property tests, and eighty assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 73개, 실제 아비트럼 노드 위 wasm 검증 80항목."
         ],
         [
-          "Tick math is checked against eighty-digit reference values, and seven review rounds are folded in.",
-          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 7회를 반영했습니다."
+          "Tick math is checked against eighty-digit reference values, and eight review rounds are folded in.",
+          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 8회를 반영했습니다."
         ],
         [
           "Fourteen stocks meet our bar for depth today, and twenty-eight can be deployed with the same contract.",

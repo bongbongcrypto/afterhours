@@ -24,7 +24,7 @@ last 60 rounds: the Labor Day row is from its 2026-09-19 run, the 09-18 row from
 | Fri 09-04 19:51 -> Tue 09-08 00:00 UTC | **76.2 h** | Labor Day weekend |
 | Fri 09-11 19:51 -> Mon 09-14 00:00 UTC | **52.2 h** | ordinary weekend |
 | Fri 09-18 15:11 -> Mon 09-21 00:00 UTC | **56.8 h** | ordinary weekend; Friday's last print came mid-session, the price then moved less than 0.5% before the close (re-measured 2026-09-23) |
-| weekdays | 13-21 h between prints (longest: Mon 09-21 16:43 -> Tue 13:30 UTC, 20.8 h), with prints at 02:24, 03:55, 08:05, 10:32 UTC on other nights | not closed — the price just did not move the 0.5% deviation threshold |
+| weekdays | 13-21 h between prints (longest: Mon 09-21 16:43 -> Tue 13:30 UTC, 20.8 h), with prints at 02:24, 03:55, 08:05, 10:32 UTC on other nights | not closed; outside the regular session the next print often lands at the open, for AAPL up to 0.84% from the last (`session_prints.py`, see "Two bands") |
 
 The feed's 24 h heartbeat is not honoured during the closure: the silence is
 by design (`us_equities_24/5`). NVDA and SPY show the same pattern (51.9 h and
@@ -167,9 +167,10 @@ Decision per read, in this order:
      moved the 30-minute mean to the band edge while the per-sub-window depth
      rule let it through (review round 5);
    - the median tick converts to nothing usable -> **NO_DATA(3)**;
-   - the band: `quietBandBps` (1%) while the last print is at most
-     `heartbeat` (24 h) old on a weekday, `maxDeviationBps` (10%) after
-     that and on Saturdays and Sundays in UTC (see "Two bands" below);
+   - the band: `quietBandBps` (1%) during the US regular session (Monday
+     to Friday, 14:30-20:00 UTC) while the last print is at most
+     `heartbeat` (24 h) old, `maxDeviationBps` (10%) at every other hour
+     and past the heartbeat (see "Two bands" below);
    - the price per share (pool price of a raw unit divided by the multiplier)
      is bounded to `[feedAnswer * (1 - band), feedAnswer * (1 + band)]`. If a
      new multiplier took effect after the last print and the price per share
@@ -219,8 +220,9 @@ session as an explicit state instead of a staleness error, the issuer's
 corporate-action surface (the pause flag and the share multiplier, with a
 split after the last print refusing rather than clamping), price and depth
 judged per sub-window so one excursion can neither move the price nor switch
-pricing off, a narrow band while the feed may only be quiet, and a venue
-fixed at deployment so depth elsewhere cannot redirect it.
+pricing off, a narrow band only while the exchange is open and the feed
+prints every move, and a venue fixed at deployment so depth elsewhere cannot
+redirect it.
 
 What else addresses this weekend, as of 2026-09-23: the 83 Morpho markets
 above; Chainlink's own documentation for these feeds, which leaves the
@@ -249,57 +251,67 @@ does two things at once:
 
 `clamped` tells consumers when the pool wanted to go further.
 
-### Two bands: a quiet feed is not a closed market
+### Two bands: a quiet feed means a quiet market only while the exchange is open
 
-The feed prints on a 0.5% move or its 24-hour heartbeat. On weekdays it goes
-13-21 hours without a print when AAPL does not move 0.5% (section 1); at
-07:20 UTC on Wednesday 2026-09-23 the AAPL, NVDA and SPY feeds were 11-16
-hours old (`morpho_markets.py`). With `liveMaxAge` at six hours, the pool
-prices those hours, but the feed is still running: had the stock moved 0.5%,
-it would have printed. A pool several percent away from the print on a
-weekday is lagging or being pushed, and a 10% band would let it through.
+The feed prints when the price moves 0.5% from the last print, or on its
+24-hour heartbeat (`feed_directory.py`). How far the next print lands from
+the last one depends on the hour (`session_prints.py`: the last 150 rounds of
+AAPL, NVDA and SPY on 2026-09-23, three to thirteen weeks of history):
 
-So on a weekday the band depends on the print's age. Up to `heartbeat`
-(24 h) the pool is held within `quietBandBps` (1%, twice the feed's
-threshold) of the print; past the heartbeat the feed has missed a print it
-owed, which on this feed means the market is closed, and the band widens to
-`maxDeviationBps`.
+| where the gap between two prints falls | gaps | largest move between the two prints |
+|---|---|---|
+| inside one regular session (Monday to Friday, 14:30-20:00 UTC) | 108 | AAPL 0.69%, SPY 0.56%; NVDA 1.43% once (below) |
+| across the session's edges, overnight and at weekends | 330 | AAPL 0.84%, SPY 0.70%, NVDA 1.12% |
 
-The 1% is not a claim that the stock moved less than that. It holds only
-while the feed may still be running. Once the exchange has closed, the pool
-is the only price and the narrow band delays a larger move, and the last
-print before a weekend is often not a recent one: SPY's last print before
-the 09-11 weekend was at 12:56 UTC, before Friday's open, and NVDA's price
-moved 1.12% across the same gap (`feed_gap.py`). Two things keep that delay
-short. Saturday and Sunday in UTC fall inside the closure in either
-daylight-saving regime (it runs from Friday 20:00 or 21:00 UTC to Monday
-00:00 or 01:00 UTC), and a weekday is a fixed property of the block
-timestamp, so on those two days the wide band applies from the first hour.
-What remains is Friday evening after the close, until Saturday 00:00 UTC,
-and weekday exchange holidays, until the heartbeat passes. A holiday
-calendar would close that too, but an immutable contract cannot update a
-holiday table; the weekend never changes.
+Inside the session the prints follow the price: each move is printed close
+to its 0.5% trigger. The one exception, NVDA's +1.43% between 14:31 and 19:55
+UTC on Friday 09-18, came while that print was younger than `liveMaxAge`, so
+AfterHours was passing the feed through and no band applied. Outside the
+session the next print often lands at the open: AAPL's +0.84% (Wednesday
+21:23 to Thursday 13:33 UTC) and +0.78% (Monday 16:43 to Tuesday 13:30),
+NVDA's -1.01% (Tuesday 09:06 to 13:32). Whether those moves happened
+overnight or at the opening cross, a print from the night before says little
+about where the market opens, and earnings and other news land after the
+close, when a stock can move far more than 1% before the feed prints again.
+
+So the band depends on the hour as well as the print's age. During the
+regular session, while the print is younger than `heartbeat` (24 h), the pool
+is held within `quietBandBps` (1%, twice the feed's threshold) of the print:
+a feed that prints every 0.5% move leaves nothing larger for the pool to
+price, and a pool more than 1% from a print that young is lagging or being
+pushed. At every other hour, and once the heartbeat has passed, the pool is
+the only current price and may move `maxDeviationBps` (10%) from the print,
+as it may through the weekend.
+
+The contract reads the session from the block timestamp: Monday to Friday,
+14:30 to 20:00 UTC. The regular session runs 13:30-20:00 UTC in summer and
+14:30-21:00 UTC in winter, so these hours are inside it in both regimes; the
+first summer hour and the last winter hour get the wide band although the
+exchange is open. What a clock cannot see are exchange holidays and half
+days. On a holiday that follows a trading day (Good Friday, Juneteenth,
+Thanksgiving and the like) and on a half day's afternoon, the narrow band
+applies until 20:00 UTC although the exchange is closed, delaying a larger
+move by up to five and a half hours. An immutable contract cannot keep a
+holiday table current; the weekly clock never changes.
 
 A clamped answer in the quiet tier is still reported as fresh
-(`updatedAt` = now), on purpose. The feeds cover the pre-market, post-market
-and overnight sessions as well as the regular one (Chainlink's page for
-them), so a real weekday move of more than 0.5% prints within minutes; a pool
-that sits beyond 1% while the feed stays quiet is more likely dislocated or
-pushed than informed. Reporting the old print's time instead would let
-anyone make the oracle look stale to every consumer with a staleness bound,
-by holding the pool 1% off for ten minutes, well inside the depth floor and
-far cheaper than a refusal. `state()` shows `clamped` for a consumer that
-wants to act on it.
+(`updatedAt` = now), on purpose. The narrow band applies only while the
+exchange is open and the feed prints each 0.5% move; a pool that sits beyond
+1% of a print that young is more likely dislocated or pushed than informed.
+Reporting the old print's time instead would let anyone make the oracle look
+stale to every consumer with a staleness bound, by holding the pool 1% off
+for ten minutes, well inside the depth floor and far cheaper than a refusal.
+`state()` shows `clamped` for a consumer that wants to act on it.
 
 ## 4. Parameters (AAPL deployment) and why
 
 | parameter | value | reason |
 |---|---|---|
-| `liveMaxAge` | 21,600 s (6 h) | On weekdays the feed can go 13-21 h without a print because the price does not move 0.5%. Six hours means the pool takes over ~6 h after Friday's last print and during long weekday gaps, held to the 1% band until the heartbeat, and the feed takes back over at its next print. Over 09-16 -> 09-23 the feed was older than 6 h for 60% of the week, half of it on weekdays (the live page computes this from the feed's rounds). |
+| `liveMaxAge` | 21,600 s (6 h) | On weekdays the feed can go 13-21 h without a print, mostly overnight. Six hours means the pool takes over ~6 h after Friday's last print and during long weekday gaps, held to the 1% band during the regular session and the 10% band at other hours, and the feed takes back over at its next print. Over 09-16 -> 09-23 the feed was older than 6 h for 60% of the week, half of it on weekdays (the live page computes this from the feed's rounds). |
 | `twapWindow` | 1,800 s (30 min) | Same window PARE trusts for its pool leg, judged in three 10-minute sub-windows. With ~1 swap every 7 s on the weekend, each sub-window averages ~85 fills. |
-| `heartbeat` | 86,400 s (24 h) | The feed's own heartbeat. The longest weekday gap measured is 20.8 h; every weekend silence (52-76 h) passes it. On Saturdays and Sundays (UTC) the quiet tier never applies. |
-| `quietBandBps` | 100 (1%) | Twice the feed's 0.5% deviation threshold: while the feed may still be running, a price more than 0.5% from the print would have printed. After Friday's close it only delays a larger move until Saturday 00:00 UTC. |
-| `maxDeviationBps` | 1,000 (10%) | The band on weekends and once the heartbeat has passed: the single-stock LULD band for closed-session moves. Measured weekend gaps: AAPL 0.25%, SPY 0.68%, NVDA 1.12% (`feed_gap.py`). |
+| `heartbeat` | 86,400 s (24 h) | The feed's own heartbeat (`feed_directory.py`). The longest weekday gap measured is 20.8 h; every weekend silence (52-76 h) passes it. Outside the regular session the quiet tier never applies. |
+| `quietBandBps` | 100 (1%) | Twice the feed's 0.5% deviation threshold, and only during the regular session, where the next print landed at most 0.69% (AAPL) and 0.56% (SPY) from the last (`session_prints.py`). |
+| `maxDeviationBps` | 1,000 (10%) | The band outside the regular session and once the heartbeat has passed: the single-stock LULD band for closed-session moves. Measured weekend gaps: AAPL 0.25%, SPY 0.68%, NVDA 1.12% (`feed_gap.py`). |
 | `minLiquidity` | 5e16 | The 0.05% pool's 30-minute harmonic-mean liquidity measured 1.68e18 (`pool_harmonic.py`, 2026-09-23), a 34x margin; refusing below about 1/34 of today's depth means a pool its LPs have all but left is not trusted. Liquidity clears it from -10.9% to +8.3% of today's price (`pool_depth.py`), about as far as the 10% band reaches, so a real move the LPs have not followed is priced up to the band. 2e17 (the value before review round 7) cleared only -4.5% / +3.2%: it also stopped a price being held beyond that, but refused the moves this oracle exists to price. |
 | `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
@@ -317,19 +329,21 @@ cannot answer.
 
 What manipulation can buy, and what it costs. `pool_depth.py` walks the AAPL
 0.05% pool over its whole tick range, every read at one block (block
-70,395,305, 2026-09-23 09:10 UTC; 186 initialized ticks). Liquidity is
+70,432,466, 2026-09-23 10:12 UTC; 187 initialized ticks). Liquidity is
 concentrated around the price: it clears the 5e16 floor from -10.9% to +8.3%
 (the 2e17 floor only from -4.5% to +3.2%), and beyond that only a thin
-full-range position remains (1e16 down to 3e14). Moving the AAPL price 1%
-takes about $92k-100k of input, 10% about $239k of USDG up or $309k of AAPL
-down. The fee on that is $50-160; the real cost is holding the move while
+full-range position remains. Moving the AAPL price 1% takes about $90k-102k
+of input, 10% about $243k of USDG up or $305k of AAPL down; the figures move
+by a few percent from block to block as liquidity shifts. The fee on that is
+$45-160; the real cost is holding the move while
 every trader who can reach another venue sells the premium back. What a move
 buys through this oracle:
 
 - nothing, if it stays inside one 10-minute sub-window, however far it goes
   (the price is the median sub-window);
-- at most 1% while a weekday print is younger than the heartbeat: quiet
-  weekday gaps, Friday evening after the close and weekday holidays;
+- at most 1% during the regular session while the print is younger than
+  the heartbeat, which includes exchange holidays that follow a trading day
+  and the afternoons of half days (see "Two bands");
 - otherwise, the level at which it can be held through a whole sub-window
   while the pool there clears the floor, with a second sub-window's average
   reaching it too. With the 5e16 floor that is about as far as the 10% band,
@@ -347,12 +361,14 @@ underlies it), so a refusal needs a stay in its thin stretches. Uniswap's
 accumulator counts whole seconds of block time, so one second is the shortest
 stay that counts, and with the 5e16 floor no reachable price refuses in one
 second: the cheapest refusal is a seven-second stay at +12.4% (liquidity
-6.1e14, $239k of USDG to get there) or four seconds at -26.6% ($325k of AAPL).
+6.1e14, $243k of USDG to get there) or four seconds at -26.6% ($321k of AAPL).
 The median rule makes that necessary in two sub-windows, so a refusal takes
 one such excursion every ten minutes for as long as it lasts. Each is a round
-trip that pays about $239 in fees and leaves $239k parked 12% above the market
+trip that pays about $243 in fees and leaves $243k parked 12% above the market
 for seven seconds (seventy blocks), where anyone holding AAPL can sell into
-it; the fees alone come to about $1.4k an hour. With the 2e17 floor one
+it; the fees alone come to about $1.5k an hour, or about $88k to hold a
+60-hour weekend closure, which is the figure to size a market against. With
+the 2e17 floor one
 second at +17.4% was enough, or ten seconds at +8.6%; before the median rule,
 one second at zero liquidity per 30 minutes. A refusal never moves the price; it delays liquidation to
 the feed's next print, which is where a stale-feed market already is today.
@@ -364,6 +380,9 @@ quality on two weekends; every Morpho market on the chain and its oracle
 (`morpho_markets.py`); PARE's 5-day tolerance and its use of a pool TWAP; the
 share multiplier and its effective time on every deployable stock; the AAPL
 pool's reserves and its liquidity over the whole tick range (`pool_depth.py`);
+how far the stock feeds let a move run inside the regular session and
+overnight (`session_prints.py`); Chainlink's feed list for the chain, with
+each feed's heartbeat, threshold and market hours (`feed_directory.py`);
 ArbOS 61, Stylus version 3 and program expiry (`ArbWasm.expiryDays()` = 365)
 on mainnet and testnet, and the average block time (`stylus_params.py`);
 pool observation cardinality per fee tier for every stock (`assets.json`;
@@ -382,8 +401,13 @@ with a large move has been observed on this chain yet); that lending curators wi
 has run on AfterHours yet; borrowing against stock tokens on this chain is
 $6.4k today, so the demand is a bet, not a measurement).
 
-Not handled in v1: a Chainlink L2 sequencer-uptime check (PARE deploys with it
-disabled on this chain too); the USDG/USD rate: the feed is in USD, the pool
+Not handled in v1: a sequencer-uptime check. Chainlink's feed list for this
+chain has 58 feeds and none of them is an L2 sequencer-uptime feed
+(`feed_directory.py`, 2026-09-23), so there is nothing to read; PARE deploys
+with the check disabled here for the same reason. After a sequencer outage
+AfterHours answers at once, like every oracle on this chain, and a market that
+wants a grace period cannot get one from the chain today. Also not handled:
+the USDG/USD rate: the feed is in USD, the pool
 and Morpho's loan token in USDG, and USDG is treated as one dollar. Chainlink's
 USDG/USD feed here (`0x61B7e5650328764B076A108EFF5fa7282a1B9aD2`) updates only
 on 0.5% moves, so reading it would correct only a larger depeg, at the cost of
@@ -428,15 +452,15 @@ re-activate it, and reads revert until someone does.
 
 | layer | what it proves | where |
 |---|---|---|
-| 72 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
-| tick-math reference vectors | 1.0001^tick and the price conversion against 80-digit decimal arithmetic | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
+| 73 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
+| tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands, the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does; 78 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
-| seven independent review rounds, from round 4 against a fixed rubric; rounds 6 and 7 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands, the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does; 80 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| eight independent review rounds, from round 4 against a fixed rubric; rounds 6 to 8 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction
 base; two pools configured, the primary answering): `latestRoundData()`
-113,925 in LIVE_FEED, 154,858 in ONCHAIN_TWAP; `price()` 116,083 / 157,005.
+113,940 in LIVE_FEED, 154,874 in ONCHAIN_TWAP; `price()` 116,099 / 157,020.
 These are against Solidity test doubles; the real feed, pool and beacon-proxy
 token cost more per call and the figure will be re-measured on mainnet. Five
 external reads (pause flag, multiplier, its effective time, feed round, pool
@@ -450,13 +474,16 @@ never shows. That is the manipulation trade-off the window encodes.
 
 ## 7. Why Stylus, why Robinhood Chain, why USDG
 
-The TWAP and band arithmetic is fixed-point integer math on 256-bit values
-with 512-bit intermediates; Rust with `alloy` primitives expresses it without
-unchecked blocks or assembly, and the contract is unit-tested against
-reference vectors computed independently in 80-digit decimal arithmetic.
-There is no Solidity twin to compare gas against; Stylus was chosen for the
-math and the tooling (property tests over the real decision code), not for a
-measured gas saving. The
+What Stylus bought here is one body of Rust that is both the contract and
+what the tests run. The decision code in `evaluate()` runs unchanged on a
+host under `cargo test`: every CI run sends 3,000 random feed, pool and
+multiplier cases through it and fails unless every session and every refusal
+reason was reached, and the same code, compiled to wasm, then runs on a Nitro
+node. The fixed-point math needs 512-bit intermediates (1.0001^tick by
+square-and-multiply, the price conversion); `alloy`'s `U512` gives them
+without assembly or unchecked blocks, checked against reference values
+computed independently in 80-digit decimal arithmetic. There is no Solidity
+twin to compare gas against, so no gas saving is claimed. The
 problem only exists where tokenized stocks trade around the clock with a
 market-hours oracle, which today is Robinhood Chain, and the quote asset of
 every stock pool there is USDG.

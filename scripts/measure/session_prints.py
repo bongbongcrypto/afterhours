@@ -90,6 +90,10 @@ def main():
                     rows.append((at, answer))
         rows.sort()
         gaps = [(a, b, pa, pb) for (a, pa), (b, pb) in zip(rows, rows[1:])]
+        # a jump by a factor of two or more is a change of scale, not a price move
+        # (SPY's first seven rounds, 06-22 and 06-23, were 1e8 times too large)
+        rescaled = [g for g in gaps if not 0.5 < g[3] / g[2] < 2]
+        gaps = [g for g in gaps if g not in rescaled]
         inside = [g for g in gaps
                   if in_session(g[0]) and in_session(g[1]) and g[1] // 86400 == g[0] // 86400]
         outside = [g for g in gaps if g not in inside]
@@ -105,6 +109,8 @@ def main():
                      fmt(top[0]), fmt(top[1])[-5:], sum(1 for g in inside if abs(move(g)) > NARROW)))
         print("  across the window's edges or outside it: %d gaps; over 1%%: %d; the largest moves between two prints:"
               % (len(outside), sum(1 for g in outside if abs(move(g)) > NARROW)))
+        for g in rescaled:
+            print("    (left out: a change of scale %s -> %s, %d -> %d)" % (fmt(g[0]), fmt(g[1]), g[2], g[3]))
         for g in sorted(outside, key=lambda g: -abs(move(g)))[:5]:
             print("    %+.2f%%  %s -> %s  (%.1f h)" % (100 * move(g), fmt(g[0]), fmt(g[1]), (g[1] - g[0]) / 3600))
     print("\neth_calls: %d" % CALLS)

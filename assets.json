@@ -2,13 +2,15 @@
   "chainId": 4663,
   "quote": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",
   "factory": "0x1f7d7550b1b028f7571e69a784071f0205fd2efa",
-  "generated": "2026-09-19 19:19 UTC",
+  "generated": "2026-09-23 05:05 UTC",
+  "genuine_beacon": "0xe10b6f6b275de231345c20d14ab812db62151b00",
   "defaults": {
     "liveMaxAge": 21600,
     "twapWindow": 1800,
     "maxDeviationBps": 1000,
     "maxAnchorAge": 432000,
-    "minLiquidity": "1/8 of the deepest pool's liquidity at deployment"
+    "min_liquidity": "primary liquidity / 8 at discovery time",
+    "recommended": "primary cardinality >= 1801 and 2% depth >= $50000"
   },
   "assets": [
     {
@@ -17,25 +19,49 @@
       "holders": 10230,
       "decimals": 18,
       "feed": "0xa0DF4ee0fFf975306345875E3548Fcc519577A11",
+      "feed_description": "Robinhood SGOV-USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xfab520051f96f4d2a32c22b6a3dd7fffdf231bfe",
-          "fee": 3000,
-          "liquidity": 90361064296892701680
+          "liquidity": 62002076618716768186,
+          "cardinality": 1800,
+          "observable": true,
+          "depth_2pct_usd": 6198619,
+          "fee": 3000
         },
         {
           "address": "0x6ba50150b17ffd0972915aaf04ffd5e8f4fa49b4",
-          "fee": 500,
-          "liquidity": 43545782667745819856
+          "liquidity": 11415414275857959595,
+          "cardinality": 50,
+          "observable": true,
+          "depth_2pct_usd": 1141801,
+          "fee": 500
         },
         {
           "address": "0xffb376bfc48668f16719b42ed8aeef5b98dbc4f1",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 50,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0xa0DF4ee0fFf975306345875E3548Fcc519577A11",
+        "expected_description": "Robinhood SGOV-USD",
+        "pools": [
+          "0xfab520051f96f4d2a32c22b6a3dd7fffdf231bfe",
+          "0x6ba50150b17ffd0972915aaf04ffd5e8f4fa49b4"
+        ],
+        "stock": "0x92FD66527192E3e61d4DDd13322Aa222DE86F9B5",
+        "min_liquidity": "7750259577339596023"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1800 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)"
+      ]
     },
     {
       "symbol": "NVDA",
@@ -43,30 +69,56 @@
       "holders": 172820,
       "decimals": 18,
       "feed": "0x379EC4f7C378F34a1B47E4F3cbeBCbAC3E8E9F15",
+      "feed_description": "RHNVDA / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xd4eb21209c4d6093f80b5b84f5c45cc093ea14a3",
-          "fee": 500,
-          "liquidity": 40365316642610853223
+          "liquidity": 11897861024371108943,
+          "cardinality": 6000,
+          "observable": true,
+          "depth_2pct_usd": 1791325,
+          "fee": 500
         },
         {
           "address": "0xb944cec30bd4175855215d767adc81f39e5f7e2b",
-          "fee": 3000,
-          "liquidity": 58383583404025293
+          "liquidity": 48589013300954112,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 7311,
+          "fee": 3000
         },
         {
           "address": "0xb75d2d02b0ec3de50d32e40a4f1a8dae8acc4333",
-          "fee": 100,
-          "liquidity": 14297015922504961
+          "liquidity": 14297015922504961,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 2048,
+          "fee": 100
         },
         {
           "address": "0xc277560df3689a401ba7dedd7626168b234ceb5e",
-          "fee": 10000,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x379EC4f7C378F34a1B47E4F3cbeBCbAC3E8E9F15",
+        "expected_description": "RHNVDA / USD",
+        "pools": [
+          "0xd4eb21209c4d6093f80b5b84f5c45cc093ea14a3",
+          "0xb944cec30bd4175855215d767adc81f39e5f7e2b",
+          "0xb75d2d02b0ec3de50d32e40a4f1a8dae8acc4333"
+        ],
+        "stock": "0xd0601CE157Db5bdC3162BbaC2a2C8aF5320D9EEC",
+        "min_liquidity": "1487232628046388617"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "SPCX",
@@ -74,56 +126,56 @@
       "holders": 107347,
       "decimals": 18,
       "feed": "0xB265810950ba6c5C0Ff821c9963014a56fD8Bffb",
+      "feed_description": "Robinhood SPCX / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xc61284332117c3fb23a2a56cceffd07f7af60029",
-          "fee": 500,
-          "liquidity": 39660822550347440505
+          "liquidity": 5094332353598707789,
+          "cardinality": 3100,
+          "observable": true,
+          "depth_2pct_usd": 629837,
+          "fee": 500
         },
         {
           "address": "0xeb07d9587efd1778dfb9c385ec43ef6d5f9fe401",
-          "fee": 3000,
-          "liquidity": 747975992791512586
+          "liquidity": 670459436194702573,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 82869,
+          "fee": 3000
         },
         {
           "address": "0xfbb32c09488e3fc33fe6fd84fe6ae442b4d13a31",
-          "fee": 10000,
-          "liquidity": 47386187361592118
+          "liquidity": 47386187361592118,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 5850,
+          "fee": 10000
         },
         {
           "address": "0x87c58b43537005189cfc7b512d818dc9125e94fc",
-          "fee": 100,
-          "liquidity": 38680902050250
+          "liquidity": 38680902050250,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 5,
+          "fee": 100
         }
       ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "QQQ",
-      "stock": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
-      "holders": 27151,
-      "decimals": 18,
-      "feed": "0x80901d846d5D7B030F26B480776EE3b29374C2ae",
-      "pools": [
-        {
-          "address": "0xd60a5d14db690b7afad71f76b108071d7175597d",
-          "fee": 500,
-          "liquidity": 4886211110283290578
-        },
-        {
-          "address": "0xebd78dcfc8a6b3a696f1e191ad1ff321f9579f79",
-          "fee": 3000,
-          "liquidity": 9026202292764268
-        },
-        {
-          "address": "0x4539019b527211998642fec342c85dcb44c7e5e4",
-          "fee": 100,
-          "liquidity": 0
-        }
-      ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0xB265810950ba6c5C0Ff821c9963014a56fD8Bffb",
+        "expected_description": "Robinhood SPCX / USD",
+        "pools": [
+          "0xc61284332117c3fb23a2a56cceffd07f7af60029",
+          "0xeb07d9587efd1778dfb9c385ec43ef6d5f9fe401",
+          "0xfbb32c09488e3fc33fe6fd84fe6ae442b4d13a31"
+        ],
+        "stock": "0x4a0E65A3EcceC6dBe60AE065F2e7bb85Fae35eEa",
+        "min_liquidity": "636791544199838473"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "GOOGL",
@@ -131,30 +183,55 @@
       "holders": 67556,
       "decimals": 18,
       "feed": "0xF6f373a037c30F0e5010d854385cA89185AE638b",
+      "feed_description": "Robinhood GOOGL / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0x34d0dc122cf9a8eb296fc5e0d3a233625d7d19b7",
-          "fee": 500,
-          "liquidity": 3815332404470831990
+          "liquidity": 1912987189812386557,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 357586,
+          "fee": 500
         },
         {
           "address": "0x553e9a453425cd9b90919f317061fbc3794cc57a",
-          "fee": 3000,
-          "liquidity": 4944349550014296
+          "liquidity": 21034657714110239,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 3930,
+          "fee": 3000
         },
         {
           "address": "0xa3617bb4d7dc9dd20f79165486097a54b3593164",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         },
         {
           "address": "0xb2bb17fa1905bcc1558b5aaec894faab666b323a",
-          "fee": 10000,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0xF6f373a037c30F0e5010d854385cA89185AE638b",
+        "expected_description": "Robinhood GOOGL / USD",
+        "pools": [
+          "0x34d0dc122cf9a8eb296fc5e0d3a233625d7d19b7",
+          "0x553e9a453425cd9b90919f317061fbc3794cc57a"
+        ],
+        "stock": "0x2e0847E8910a9732eB3fb1bb4b70a580ADAD4FE3",
+        "min_liquidity": "239123398726548319"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "USO",
@@ -162,82 +239,39 @@
       "holders": 11607,
       "decimals": 18,
       "feed": "0x75a9c76Ef439e2C7c2E5a34Ab105EcFe3766431c",
+      "feed_description": "RHUSO / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0x02175608f1b5e6b5ed221ccfdc7be197d111d915",
-          "fee": 3000,
-          "liquidity": 3217322798346249767
+          "liquidity": 2789443993016083649,
+          "cardinality": 1860,
+          "observable": true,
+          "depth_2pct_usd": 332264,
+          "fee": 3000
         },
         {
           "address": "0x6ed11c7dfd8e2ca5620eed29a7b9b53ae90dd0d2",
-          "fee": 10000,
-          "liquidity": 34970655896822708
+          "liquidity": 35682356284336332,
+          "cardinality": 1400,
+          "observable": true,
+          "depth_2pct_usd": 4265,
+          "fee": 10000
         }
       ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "AMZN",
-      "stock": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
-      "holders": 52530,
-      "decimals": 18,
-      "feed": "0xD5a1508ceD74c084eBf3cBe853e2C968fB2a651C",
-      "pools": [
-        {
-          "address": "0x8ac92da74ab5f3b1d024dc1943ad7e15dc4179ef",
-          "fee": 3000,
-          "liquidity": 2498578817692695068
-        },
-        {
-          "address": "0x7b242dfa849419242e3733308d5c91fe2a7dae7e",
-          "fee": 100,
-          "liquidity": 0
-        },
-        {
-          "address": "0xa99dea8d168392abb4aed0419629309dac7dbfbb",
-          "fee": 500,
-          "liquidity": 0
-        },
-        {
-          "address": "0x25967b7ca2d06aa46e47e188231ca78c87ef1fd7",
-          "fee": 10000,
-          "liquidity": 0
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "GME",
-      "stock": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
-      "holders": 54025,
-      "decimals": 18,
-      "feed": "0x27C71df6A64fB476468EdF256CF72c038baB5B67",
-      "pools": [
-        {
-          "address": "0xe9713f453adb9245b19559790c96f470a18f2fdf",
-          "fee": 10000,
-          "liquidity": 2418806955822997650
-        },
-        {
-          "address": "0xe2b46c905e12ab8e2f864e4821a4325884c1b126",
-          "fee": 500,
-          "liquidity": 2277798768554485482
-        },
-        {
-          "address": "0x0a0675689c2ad2a3ade86539bcbd27b6c0764e9d",
-          "fee": 3000,
-          "liquidity": 187722119407066921
-        },
-        {
-          "address": "0xb7723619e09e9317b3e538e7531ecbb910aec107",
-          "fee": 100,
-          "liquidity": 0
-        }
-      ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x75a9c76Ef439e2C7c2E5a34Ab105EcFe3766431c",
+        "expected_description": "RHUSO / USD",
+        "pools": [
+          "0x02175608f1b5e6b5ed221ccfdc7be197d111d915",
+          "0x6ed11c7dfd8e2ca5620eed29a7b9b53ae90dd0d2"
+        ],
+        "stock": "0xa30FA36Db767ad9eD3f7a60fC79526fB4d56D344",
+        "min_liquidity": "348680499127010456"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "AAPL",
@@ -245,77 +279,48 @@
       "holders": 79924,
       "decimals": 18,
       "feed": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0",
+      "feed_description": "Robinhood AAPL / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d",
-          "fee": 500,
-          "liquidity": 1685246096998268475
+          "liquidity": 1677619584598772795,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 308123,
+          "fee": 500
         },
         {
           "address": "0x783c9bbb765047cfdd2b84b92b2ca9f11d34b7ed",
-          "fee": 3000,
-          "liquidity": 96865408752807148
+          "liquidity": 165397580107357302,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 30397,
+          "fee": 3000
         },
         {
           "address": "0x3714aa8105de1f384481b425788af413748c1837",
-          "fee": 10000,
-          "liquidity": 172161551175904
+          "liquidity": 172161551175904,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 32,
+          "fee": 10000
         }
       ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "CRCL",
-      "stock": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
-      "holders": 11857,
-      "decimals": 18,
-      "feed": "0x6652eDf64bA3731C4F2D3ce821A0Fb1f1f6b482a",
-      "pools": [
-        {
-          "address": "0x654e4143e82a5824445ade0824351c2a9acd95a8",
-          "fee": 3000,
-          "liquidity": 1253344031596371976
-        },
-        {
-          "address": "0xa01e08626792d78c65c495b581a50d2156dc860c",
-          "fee": 500,
-          "liquidity": 0
-        },
-        {
-          "address": "0x9324a34abd68e46cd0f62a561a7bb10a2b1fa477",
-          "fee": 10000,
-          "liquidity": 0
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "SLV",
-      "stock": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
-      "holders": 7329,
-      "decimals": 18,
-      "feed": "0x209b73908e92Ae021826eD79609845451Ecba2ce",
-      "pools": [
-        {
-          "address": "0x8cb787e6c315d464775289bad00fdd67d53ecb3d",
-          "fee": 3000,
-          "liquidity": 1175134597088721118
-        },
-        {
-          "address": "0x0fa7bc480885dcf58ad2ef63ec7289cf2481d51c",
-          "fee": 10000,
-          "liquidity": 27690797984773636
-        },
-        {
-          "address": "0x37ed4621d1eb3abc9e551a888e6aaf0a41f7be8e",
-          "fee": 500,
-          "liquidity": 984816726956523
-        }
-      ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0",
+        "expected_description": "Robinhood AAPL / USD",
+        "pools": [
+          "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d",
+          "0x783c9bbb765047cfdd2b84b92b2ca9f11d34b7ed",
+          "0x3714aa8105de1f384481b425788af413748c1837"
+        ],
+        "stock": "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9",
+        "min_liquidity": "209702448074846599"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "SPY",
@@ -323,20 +328,102 @@
       "holders": 70243,
       "decimals": 18,
       "feed": "0x319724394D3A0e3669269846abE664Cd621f9f6A",
+      "feed_description": "RHSPY / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xa7bb1ac63bbab0c44316e6c8c455213441689167",
-          "fee": 500,
-          "liquidity": 983409941198138733
+          "liquidity": 1003594184867099900,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 278046,
+          "fee": 500
         },
         {
           "address": "0xa43b424bc609495aed4bcd88d654934b510b0ad9",
-          "fee": 3000,
-          "liquidity": 31121396115062355
+          "liquidity": 36217559658803288,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 10028,
+          "fee": 3000
+        },
+        {
+          "address": "0x62fde201c424d6d07730b77450dd73928ebac5f5",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         }
       ],
+      "deploy": {
+        "feed": "0x319724394D3A0e3669269846abE664Cd621f9f6A",
+        "expected_description": "RHSPY / USD",
+        "pools": [
+          "0xa7bb1ac63bbab0c44316e6c8c455213441689167",
+          "0xa43b424bc609495aed4bcd88d654934b510b0ad9"
+        ],
+        "stock": "0x117cc2133c37B721F49dE2A7a74833232B3B4C0C",
+        "min_liquidity": "125449273108387487"
+      },
+      "recommended": true,
+      "notes": []
+    },
+    {
+      "symbol": "AMZN",
+      "stock": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+      "holders": 52530,
+      "decimals": 18,
+      "feed": "0xD5a1508ceD74c084eBf3cBe853e2C968fB2a651C",
+      "feed_description": "Robinhood AMZN / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x8ac92da74ab5f3b1d024dc1943ad7e15dc4179ef",
+          "liquidity": 1740996747207501440,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 277066,
+          "fee": 3000
+        },
+        {
+          "address": "0x7b242dfa849419242e3733308d5c91fe2a7dae7e",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
+        },
+        {
+          "address": "0xa99dea8d168392abb4aed0419629309dac7dbfbb",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 500
+        },
+        {
+          "address": "0x25967b7ca2d06aa46e47e188231ca78c87ef1fd7",
+          "liquidity": 0,
+          "cardinality": 120,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
+        }
+      ],
+      "deploy": {
+        "feed": "0xD5a1508ceD74c084eBf3cBe853e2C968fB2a651C",
+        "expected_description": "Robinhood AMZN / USD",
+        "pools": [
+          "0x8ac92da74ab5f3b1d024dc1943ad7e15dc4179ef"
+        ],
+        "stock": "0x12f190a9F9d7D37a250758b26824B97CE941bF54",
+        "min_liquidity": "217624593400937680"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "MSFT",
@@ -344,30 +431,256 @@
       "holders": 59832,
       "decimals": 18,
       "feed": "0x45C3C877C15E6BA2EBB19eA114Ea508d14C1Af2E",
+      "feed_description": "RHMSFT / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xeb60bcd1d920ad6e102690ccfc6fb488899e1510",
-          "fee": 3000,
-          "liquidity": 717532029631069759
+          "liquidity": 977278566605224707,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 217562,
+          "fee": 3000
         },
         {
           "address": "0x2ea9292113514ed84fd16aa4ad1e416537e39c8c",
-          "fee": 10000,
-          "liquidity": 112985518521
+          "liquidity": 112985518521,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
         },
         {
           "address": "0x3d69ea64810300877b938e9ad9916c25912c08f5",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         },
         {
           "address": "0x38fa8bf13a6b2ac49be77babb22c1837d1e505f9",
-          "fee": 500,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 500
         }
       ],
+      "deploy": {
+        "feed": "0x45C3C877C15E6BA2EBB19eA114Ea508d14C1Af2E",
+        "expected_description": "RHMSFT / USD",
+        "pools": [
+          "0xeb60bcd1d920ad6e102690ccfc6fb488899e1510",
+          "0x2ea9292113514ed84fd16aa4ad1e416537e39c8c"
+        ],
+        "stock": "0xe93237C50D904957Cf27E7B1133b510C669c2e74",
+        "min_liquidity": "122159820825653088"
+      },
+      "recommended": true,
+      "notes": []
+    },
+    {
+      "symbol": "QQQ",
+      "stock": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+      "holders": 27151,
+      "decimals": 18,
+      "feed": "0x80901d846d5D7B030F26B480776EE3b29374C2ae",
+      "feed_description": "Robinhood QQQ / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0xd60a5d14db690b7afad71f76b108071d7175597d",
+          "liquidity": 434245378511809775,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 118198,
+          "fee": 500
+        },
+        {
+          "address": "0xebd78dcfc8a6b3a696f1e191ad1ff321f9579f79",
+          "liquidity": 4351377504154322,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 1183,
+          "fee": 3000
+        },
+        {
+          "address": "0x4539019b527211998642fec342c85dcb44c7e5e4",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
+        }
+      ],
+      "deploy": {
+        "feed": "0x80901d846d5D7B030F26B480776EE3b29374C2ae",
+        "expected_description": "Robinhood QQQ / USD",
+        "pools": [
+          "0xd60a5d14db690b7afad71f76b108071d7175597d",
+          "0xebd78dcfc8a6b3a696f1e191ad1ff321f9579f79"
+        ],
+        "stock": "0xD5f3879160bc7c32ebb4dC785F8a4F505888de68",
+        "min_liquidity": "54280672313976221"
+      },
+      "recommended": true,
+      "notes": []
+    },
+    {
+      "symbol": "CRCL",
+      "stock": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+      "holders": 11857,
+      "decimals": 18,
+      "feed": "0x6652eDf64bA3731C4F2D3ce821A0Fb1f1f6b482a",
+      "feed_description": "Robinhood CRCL / USD",
+      "deployable": true,
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x654e4143e82a5824445ade0824351c2a9acd95a8",
+          "liquidity": 1203196765554814323,
+          "cardinality": 1860,
+          "observable": true,
+          "depth_2pct_usd": 117093,
+          "fee": 3000
+        },
+        {
+          "address": "0xa01e08626792d78c65c495b581a50d2156dc860c",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 500
+        },
+        {
+          "address": "0x9324a34abd68e46cd0f62a561a7bb10a2b1fa477",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
+        }
+      ],
+      "deploy": {
+        "feed": "0x6652eDf64bA3731C4F2D3ce821A0Fb1f1f6b482a",
+        "expected_description": "Robinhood CRCL / USD",
+        "pools": [
+          "0x654e4143e82a5824445ade0824351c2a9acd95a8"
+        ],
+        "stock": "0xdF0992E440dD0be65BD8439b609d6D4366bf1CB5",
+        "min_liquidity": "150399595694351790"
+      },
+      "recommended": true,
+      "notes": []
+    },
+    {
+      "symbol": "GME",
+      "stock": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
+      "holders": 54025,
+      "decimals": 18,
+      "feed": "0x27C71df6A64fB476468EdF256CF72c038baB5B67",
+      "feed_description": "Robinhood GME / USD",
+      "deployable": true,
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0xe9713f453adb9245b19559790c96f470a18f2fdf",
+          "liquidity": 2053076877008964712,
+          "cardinality": 1860,
+          "observable": true,
+          "depth_2pct_usd": 100298,
+          "fee": 10000
+        },
+        {
+          "address": "0xe2b46c905e12ab8e2f864e4821a4325884c1b126",
+          "liquidity": 1408154940214805630,
+          "cardinality": 1860,
+          "observable": true,
+          "depth_2pct_usd": 68926,
+          "fee": 500
+        },
+        {
+          "address": "0x0a0675689c2ad2a3ade86539bcbd27b6c0764e9d",
+          "liquidity": 19723441323353247,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 965,
+          "fee": 3000
+        },
+        {
+          "address": "0xb7723619e09e9317b3e538e7531ecbb910aec107",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
+        }
+      ],
+      "deploy": {
+        "feed": "0x27C71df6A64fB476468EdF256CF72c038baB5B67",
+        "expected_description": "Robinhood GME / USD",
+        "pools": [
+          "0xe9713f453adb9245b19559790c96f470a18f2fdf",
+          "0xe2b46c905e12ab8e2f864e4821a4325884c1b126",
+          "0x0a0675689c2ad2a3ade86539bcbd27b6c0764e9d"
+        ],
+        "stock": "0x1b0E319c6A659F002271B69dB8A7df2F911c153E",
+        "min_liquidity": "256634609626120589"
+      },
+      "recommended": true,
+      "notes": []
+    },
+    {
+      "symbol": "SLV",
+      "stock": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+      "holders": 7329,
+      "decimals": 18,
+      "feed": "0x209b73908e92Ae021826eD79609845451Ecba2ce",
+      "feed_description": "Robinhood SLV / USD",
+      "deployable": true,
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x8cb787e6c315d464775289bad00fdd67d53ecb3d",
+          "liquidity": 1167440452960461176,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 90124,
+          "fee": 3000
+        },
+        {
+          "address": "0x0fa7bc480885dcf58ad2ef63ec7289cf2481d51c",
+          "liquidity": 27327942436386089,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 2115,
+          "fee": 10000
+        },
+        {
+          "address": "0x37ed4621d1eb3abc9e551a888e6aaf0a41f7be8e",
+          "liquidity": 986294246703086,
+          "cardinality": 64,
+          "observable": true,
+          "depth_2pct_usd": 76,
+          "fee": 500
+        }
+      ],
+      "deploy": {
+        "feed": "0x209b73908e92Ae021826eD79609845451Ecba2ce",
+        "expected_description": "Robinhood SLV / USD",
+        "pools": [
+          "0x8cb787e6c315d464775289bad00fdd67d53ecb3d",
+          "0x0fa7bc480885dcf58ad2ef63ec7289cf2481d51c",
+          "0x37ed4621d1eb3abc9e551a888e6aaf0a41f7be8e"
+        ],
+        "stock": "0x411eFb0E7f985935DAec3D4C3ebaEa0d0AD7D89f",
+        "min_liquidity": "145930056620057647"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "TSLA",
@@ -375,30 +688,56 @@
       "holders": 67523,
       "decimals": 18,
       "feed": "0x4A1166a659A55625345e9515b32adECea5547C38",
+      "feed_description": "RHTSLA / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xf4acdaeeb7022862a763c9b1b885e11191c889e3",
-          "fee": 3000,
-          "liquidity": 698530058217083789
+          "liquidity": 391291803738564225,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 75801,
+          "fee": 3000
         },
         {
           "address": "0xc4f0172d6ac8dd294dd1137d047d5e1893760236",
-          "fee": 500,
-          "liquidity": 26384152793991179
+          "liquidity": 31197280792767092,
+          "cardinality": 8,
+          "observable": true,
+          "depth_2pct_usd": 6045,
+          "fee": 500
         },
         {
           "address": "0xb349fb08c2712f3a70bad40a4d006b68d67e888b",
-          "fee": 10000,
-          "liquidity": 134194425290370
+          "liquidity": 134194425290370,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 26,
+          "fee": 10000
         },
         {
           "address": "0x7868622ff2c3b1b6c8acb15fe0bdaebf043dda48",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x4A1166a659A55625345e9515b32adECea5547C38",
+        "expected_description": "RHTSLA / USD",
+        "pools": [
+          "0xf4acdaeeb7022862a763c9b1b885e11191c889e3",
+          "0xc4f0172d6ac8dd294dd1137d047d5e1893760236",
+          "0xb349fb08c2712f3a70bad40a4d006b68d67e888b"
+        ],
+        "stock": "0x322F0929c4625eD5bAd873c95208D54E1c003b2d",
+        "min_liquidity": "48911475467320528"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "MU",
@@ -406,125 +745,38 @@
       "holders": 37846,
       "decimals": 18,
       "feed": "0x425EEFdCf05ed6526C3cE61Af99429A228a6d596",
+      "feed_description": "RHMU / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xd057b1bc54917855bbee58ead58647f47cab35e5",
-          "fee": 3000,
-          "liquidity": 504734074879097619
+          "liquidity": 202289033191275660,
+          "cardinality": 1860,
+          "observable": true,
+          "depth_2pct_usd": 66598,
+          "fee": 3000
         },
         {
           "address": "0x6fd0f36320a1e50e42f130ce4a5c530b992a0a14",
-          "fee": 500,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 500
         }
       ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "PLTR",
-      "stock": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
-      "holders": 38166,
-      "decimals": 18,
-      "feed": "0x820ABedFF239034956B7A9d2F0a331f9F075eB4c",
-      "pools": [
-        {
-          "address": "0x851680416a4f4e1c463d45171d61acddbc8554c0",
-          "fee": 3000,
-          "liquidity": 346670980640779158
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "BABA",
-      "stock": "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
-      "holders": 4039,
-      "decimals": 18,
-      "feed": "0x62Cc8F9b5f56a33c9C8A60c8B92779f523c4E984",
-      "pools": [
-        {
-          "address": "0xa57ab582b310dd6f9e934ea1eeea152741545e6a",
-          "fee": 3000,
-          "liquidity": 338965331665815418
-        },
-        {
-          "address": "0x9eda4bcb3ebfede532f3cae3864fc0cefff782aa",
-          "fee": 10000,
-          "liquidity": 2684835415285719
-        },
-        {
-          "address": "0x368ddd38861d31435d764fc54df7d16481e3590b",
-          "fee": 500,
-          "liquidity": 185574682021
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "USAR",
-      "stock": "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
-      "holders": 19646,
-      "decimals": 18,
-      "feed": "0xA994d3684e8400A6c8078226925779FdeE682DD9",
-      "pools": [
-        {
-          "address": "0x04391780f519b7d3ba59c9590459d76e23d225c4",
-          "fee": 3000,
-          "liquidity": 320744406594425196
-        },
-        {
-          "address": "0x2b307a1bf7a16d20c577cda78c3447c72ff3694f",
-          "fee": 500,
-          "liquidity": 0
-        },
-        {
-          "address": "0x21cf29b6406d966a81ca48fb3e99c8def01f3ad5",
-          "fee": 10000,
-          "liquidity": 0
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "INTC",
-      "stock": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
-      "holders": 28065,
-      "decimals": 18,
-      "feed": "0x3f390C5C24628Ac7C489515402235FeAD71D1913",
-      "pools": [
-        {
-          "address": "0x2e5a92f5013a64661a49312111be2e8abd33f56a",
-          "fee": 3000,
-          "liquidity": 317105360248157000
-        }
-      ],
-      "deployable": true,
-      "why_not": []
-    },
-    {
-      "symbol": "MSTR",
-      "stock": "0xec262a75e413fAfD0dF80480274532C79D42da09",
-      "holders": 12271,
-      "decimals": 18,
-      "feed": "0x396118bdFB181e6240E74D243F266B061c0edc3D",
-      "pools": [
-        {
-          "address": "0x17578c0e0d15da44f31677263114f71ae76653ea",
-          "fee": 10000,
-          "liquidity": 222217064280897524
-        },
-        {
-          "address": "0x2c08bcef714bc8124972b7181494fc598e8ed111",
-          "fee": 3000,
-          "liquidity": 523689525543469
-        }
-      ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x425EEFdCf05ed6526C3cE61Af99429A228a6d596",
+        "expected_description": "RHMU / USD",
+        "pools": [
+          "0xd057b1bc54917855bbee58ead58647f47cab35e5"
+        ],
+        "stock": "0xfF080c8ce2E5feadaCa0Da81314Ae59D232d4afD",
+        "min_liquidity": "25286129148909457"
+      },
+      "recommended": true,
+      "notes": []
     },
     {
       "symbol": "META",
@@ -532,25 +784,92 @@
       "holders": 41733,
       "decimals": 18,
       "feed": "0x7C38C00C30BEe9378381E7B6135d7283356D71b1",
+      "feed_description": "Robinhood META / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0x107a7cb40d8665360ba10e59471af06150a50922",
-          "fee": 3000,
-          "liquidity": 176535777876669218
+          "liquidity": 118007723554908934,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 32031,
+          "fee": 3000
         },
         {
           "address": "0x6fd62e9843ad2ac2c4fbf2b62647953ea29b3537",
-          "fee": 10000,
-          "liquidity": 376879933379092
+          "liquidity": 264752395601873,
+          "cardinality": 1,
+          "observable": false,
+          "depth_2pct_usd": 72,
+          "fee": 10000
         },
         {
           "address": "0xad6df50832884f3498cd354086cefb0e39070f1b",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         }
       ],
+      "deploy": {
+        "feed": "0x7C38C00C30BEe9378381E7B6135d7283356D71b1",
+        "expected_description": "Robinhood META / USD",
+        "pools": [
+          "0x107a7cb40d8665360ba10e59471af06150a50922",
+          "0x6fd62e9843ad2ac2c4fbf2b62647953ea29b3537"
+        ],
+        "stock": "0xc0D6457C16Cc70d6790Dd43521C899C87ce02f35",
+        "min_liquidity": "14750965444363616"
+      },
+      "recommended": false,
+      "notes": [
+        "primary 2% depth $32031 < $50000"
+      ]
+    },
+    {
+      "symbol": "MSTR",
+      "stock": "0xec262a75e413fAfD0dF80480274532C79D42da09",
+      "holders": 12271,
+      "decimals": 18,
+      "feed": "0x396118bdFB181e6240E74D243F266B061c0edc3D",
+      "feed_description": "Robinhood MSTR / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x17578c0e0d15da44f31677263114f71ae76653ea",
+          "liquidity": 213815772083951604,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 27821,
+          "fee": 10000
+        },
+        {
+          "address": "0x2c08bcef714bc8124972b7181494fc598e8ed111",
+          "liquidity": 3770385025922212,
+          "cardinality": 1,
+          "observable": false,
+          "depth_2pct_usd": 492,
+          "fee": 3000
+        }
+      ],
+      "deploy": {
+        "feed": "0x396118bdFB181e6240E74D243F266B061c0edc3D",
+        "expected_description": "Robinhood MSTR / USD",
+        "pools": [
+          "0x17578c0e0d15da44f31677263114f71ae76653ea",
+          "0x2c08bcef714bc8124972b7181494fc598e8ed111"
+        ],
+        "stock": "0xec262a75e413fAfD0dF80480274532C79D42da09",
+        "min_liquidity": "26726971510493950"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1500 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $27821 < $50000"
+      ]
     },
     {
       "symbol": "DELL",
@@ -558,41 +877,125 @@
       "holders": 5139,
       "decimals": 18,
       "feed": "0x1C6c8cADBe02E19129c39dDB92281cE4c0bf206b",
+      "feed_description": "Robinhood DELL-USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xc30c89cb7815a1488b7998d15eec73961707fc5a",
-          "fee": 10000,
-          "liquidity": 103272778569305238
+          "liquidity": 111894641338166698,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 26209,
+          "fee": 10000
         },
         {
           "address": "0xa0f5ef20f49db62bb20e0f2b51257ca897a01a5f",
-          "fee": 3000,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 3000
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x1C6c8cADBe02E19129c39dDB92281cE4c0bf206b",
+        "expected_description": "Robinhood DELL-USD",
+        "pools": [
+          "0xc30c89cb7815a1488b7998d15eec73961707fc5a"
+        ],
+        "stock": "0x941AE714EC6D8130c7B75d67160Ca08f1e7d11Dd",
+        "min_liquidity": "13986830167270837"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1500 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $26209 < $50000"
+      ]
     },
     {
-      "symbol": "TSM",
-      "stock": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
-      "holders": 9991,
+      "symbol": "PLTR",
+      "stock": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+      "holders": 38166,
       "decimals": 18,
-      "feed": "0x874cF94aa8eC88Fd9560094dD065f2fB3E41Fc2F",
+      "feed": "0x820ABedFF239034956B7A9d2F0a331f9F075eB4c",
+      "feed_description": "Robinhood PLTR / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
-          "address": "0x07e8ea83d4c1340774c8965125e26e12bf943bf1",
-          "fee": 10000,
-          "liquidity": 78747916394888714
-        },
-        {
-          "address": "0xccba175d31198e47968a7033179f512d7b38ead6",
-          "fee": 3000,
-          "liquidity": 0
+          "address": "0x851680416a4f4e1c463d45171d61acddbc8554c0",
+          "liquidity": 188564613706758805,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 25521,
+          "fee": 3000
         }
       ],
+      "deploy": {
+        "feed": "0x820ABedFF239034956B7A9d2F0a331f9F075eB4c",
+        "expected_description": "Robinhood PLTR / USD",
+        "pools": [
+          "0x851680416a4f4e1c463d45171d61acddbc8554c0"
+        ],
+        "stock": "0x894E1EC2D74FFE5AEF8Dc8A9e84686acCB964F2A",
+        "min_liquidity": "23570576713344850"
+      },
+      "recommended": false,
+      "notes": [
+        "primary 2% depth $25521 < $50000"
+      ]
+    },
+    {
+      "symbol": "BABA",
+      "stock": "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
+      "holders": 4039,
+      "decimals": 18,
+      "feed": "0x62Cc8F9b5f56a33c9C8A60c8B92779f523c4E984",
+      "feed_description": "Robinhood BABA / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0xa57ab582b310dd6f9e934ea1eeea152741545e6a",
+          "liquidity": 211144099372161749,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 22402,
+          "fee": 3000
+        },
+        {
+          "address": "0x9eda4bcb3ebfede532f3cae3864fc0cefff782aa",
+          "liquidity": 2116053920646204,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 225,
+          "fee": 10000
+        },
+        {
+          "address": "0x368ddd38861d31435d764fc54df7d16481e3590b",
+          "liquidity": 185574682021,
+          "cardinality": 1,
+          "observable": false,
+          "depth_2pct_usd": 0,
+          "fee": 500
+        }
+      ],
+      "deploy": {
+        "feed": "0x62Cc8F9b5f56a33c9C8A60c8B92779f523c4E984",
+        "expected_description": "Robinhood BABA / USD",
+        "pools": [
+          "0xa57ab582b310dd6f9e934ea1eeea152741545e6a",
+          "0x9eda4bcb3ebfede532f3cae3864fc0cefff782aa",
+          "0x368ddd38861d31435d764fc54df7d16481e3590b"
+        ],
+        "stock": "0xad25Ac6C84D497db898fa1E8387bf6Af3532a1c4",
+        "min_liquidity": "26393012421520218"
+      },
+      "recommended": false,
+      "notes": [
+        "primary 2% depth $22402 < $50000"
+      ]
     },
     {
       "symbol": "AMD",
@@ -600,46 +1003,175 @@
       "holders": 40853,
       "decimals": 18,
       "feed": "0x943A29E7ae51A4798823ca9eEd2ed533B2A22C72",
+      "feed_description": "RHAMD / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0x48d284a2a4d3dc1b3da08231fe44317e7e7aa51f",
-          "fee": 3000,
-          "liquidity": 51345054673762141
+          "liquidity": 62805158589172909,
+          "cardinality": 1400,
+          "observable": true,
+          "depth_2pct_usd": 15606,
+          "fee": 3000
         },
         {
           "address": "0xd6af1dcb75cdae4f2efc403a58ef023a51edc686",
-          "fee": 10000,
-          "liquidity": 5074153843390830
+          "liquidity": 4650342889931294,
+          "cardinality": 1400,
+          "observable": true,
+          "depth_2pct_usd": 1160,
+          "fee": 10000
         },
         {
           "address": "0x4ee16fe614f3a04f1510edf1932a41cbd5c4af9c",
-          "fee": 100,
-          "liquidity": 0
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 100
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x943A29E7ae51A4798823ca9eEd2ed533B2A22C72",
+        "expected_description": "RHAMD / USD",
+        "pools": [
+          "0x48d284a2a4d3dc1b3da08231fe44317e7e7aa51f",
+          "0xd6af1dcb75cdae4f2efc403a58ef023a51edc686"
+        ],
+        "stock": "0x86923f96303D656E4aa86D9d42D1e57ad2023fdC",
+        "min_liquidity": "7850644823646613"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1400 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $15606 < $50000"
+      ]
     },
     {
-      "symbol": "SNDK",
-      "stock": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
-      "holders": 26591,
+      "symbol": "TSM",
+      "stock": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
+      "holders": 9991,
       "decimals": 18,
-      "feed": "0xfb133Fa4B7b385802B693a293606682Df47109A3",
+      "feed": "0x874cF94aa8eC88Fd9560094dD065f2fB3E41Fc2F",
+      "feed_description": "Robinhood TSM / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
-          "address": "0xa1e1c9519cd5ae47e9a935645e1a7b935b944559",
-          "fee": 10000,
-          "liquidity": 14231079348540276
+          "address": "0x07e8ea83d4c1340774c8965125e26e12bf943bf1",
+          "liquidity": 50098450365392067,
+          "cardinality": 1801,
+          "observable": true,
+          "depth_2pct_usd": 10589,
+          "fee": 10000
         },
         {
-          "address": "0xc9f2e2229ef638a7629185c9b222ad2eeec39b74",
-          "fee": 3000,
-          "liquidity": 0
+          "address": "0xccba175d31198e47968a7033179f512d7b38ead6",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 3000
         }
       ],
+      "deploy": {
+        "feed": "0x874cF94aa8eC88Fd9560094dD065f2fB3E41Fc2F",
+        "expected_description": "Robinhood TSM / USD",
+        "pools": [
+          "0x07e8ea83d4c1340774c8965125e26e12bf943bf1"
+        ],
+        "stock": "0x58FfE4a942d3885bAa22D7520691F611EF09e7AA",
+        "min_liquidity": "6262306295674008"
+      },
+      "recommended": false,
+      "notes": [
+        "primary 2% depth $10589 < $50000"
+      ]
+    },
+    {
+      "symbol": "INTC",
+      "stock": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+      "holders": 28065,
+      "decimals": 18,
+      "feed": "0x3f390C5C24628Ac7C489515402235FeAD71D1913",
+      "feed_description": "RHINTC / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x2e5a92f5013a64661a49312111be2e8abd33f56a",
+          "liquidity": 62103152398055094,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 6890,
+          "fee": 3000
+        }
+      ],
+      "deploy": {
+        "feed": "0x3f390C5C24628Ac7C489515402235FeAD71D1913",
+        "expected_description": "RHINTC / USD",
+        "pools": [
+          "0x2e5a92f5013a64661a49312111be2e8abd33f56a"
+        ],
+        "stock": "0xc72b96e0E48ecd4DC75E1e45396e26300BC39681",
+        "min_liquidity": "7762894049756886"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1500 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $6890 < $50000"
+      ]
+    },
+    {
+      "symbol": "USAR",
+      "stock": "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
+      "holders": 19646,
+      "decimals": 18,
+      "feed": "0xA994d3684e8400A6c8078226925779FdeE682DD9",
+      "feed_description": "Robinhood USAR-USD",
+      "deployable": true,
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0x04391780f519b7d3ba59c9590459d76e23d225c4",
+          "liquidity": 157377381797225965,
+          "cardinality": 1400,
+          "observable": true,
+          "depth_2pct_usd": 6454,
+          "fee": 3000
+        },
+        {
+          "address": "0x2b307a1bf7a16d20c577cda78c3447c72ff3694f",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 500
+        },
+        {
+          "address": "0x21cf29b6406d966a81ca48fb3e99c8def01f3ad5",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
+        }
+      ],
+      "deploy": {
+        "feed": "0xA994d3684e8400A6c8078226925779FdeE682DD9",
+        "expected_description": "Robinhood USAR-USD",
+        "pools": [
+          "0x04391780f519b7d3ba59c9590459d76e23d225c4"
+        ],
+        "stock": "0xd917B029C761D264c6A312BBbcDA868658eF86a6",
+        "min_liquidity": "19672172724653245"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1400 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $6454 < $50000"
+      ]
     },
     {
       "symbol": "ASML",
@@ -647,20 +1179,118 @@
       "holders": 2885,
       "decimals": 18,
       "feed": "0xB4106147E8cce40b7d46124090d373A71b70f87D",
+      "feed_description": "Robinhood ASML / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xedb22516b14eb2d1c86927db373b0e8bf70f5cd1",
-          "fee": 10000,
-          "liquidity": 13433373603944206
+          "liquidity": 9493672178986348,
+          "cardinality": 1500,
+          "observable": true,
+          "depth_2pct_usd": 3938,
+          "fee": 10000
         },
         {
           "address": "0xce79c1b7b5f9ae1aab3b1796e7fcd2f5f24cf265",
-          "fee": 3000,
-          "liquidity": 3890093874195927
+          "liquidity": 3140949875439866,
+          "cardinality": 1,
+          "observable": false,
+          "depth_2pct_usd": 1306,
+          "fee": 3000
         }
       ],
+      "deploy": {
+        "feed": "0xB4106147E8cce40b7d46124090d373A71b70f87D",
+        "expected_description": "Robinhood ASML / USD",
+        "pools": [
+          "0xedb22516b14eb2d1c86927db373b0e8bf70f5cd1",
+          "0xce79c1b7b5f9ae1aab3b1796e7fcd2f5f24cf265"
+        ],
+        "stock": "0x47F93d52cBeC7C6D2CfC080e154002370a60dAEA",
+        "min_liquidity": "1186709022373293"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1500 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $3938 < $50000"
+      ]
+    },
+    {
+      "symbol": "SNDK",
+      "stock": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+      "holders": 26591,
+      "decimals": 18,
+      "feed": "0xfb133Fa4B7b385802B693a293606682Df47109A3",
+      "feed_description": "RHSNDK / USD",
       "deployable": true,
-      "why_not": []
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0xa1e1c9519cd5ae47e9a935645e1a7b935b944559",
+          "liquidity": 8502730266147530,
+          "cardinality": 1400,
+          "observable": true,
+          "depth_2pct_usd": 3669,
+          "fee": 10000
+        },
+        {
+          "address": "0xc9f2e2229ef638a7629185c9b222ad2eeec39b74",
+          "liquidity": 0,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 3000
+        }
+      ],
+      "deploy": {
+        "feed": "0xfb133Fa4B7b385802B693a293606682Df47109A3",
+        "expected_description": "RHSNDK / USD",
+        "pools": [
+          "0xa1e1c9519cd5ae47e9a935645e1a7b935b944559"
+        ],
+        "stock": "0xB90A19fF0Af67f7779afF50A882A9CfF42446400",
+        "min_liquidity": "1062841283268441"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1400 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $3669 < $50000"
+      ]
+    },
+    {
+      "symbol": "RKLB",
+      "stock": "0x3b14C39E89D60D627b42a1A4CA45b5bb45Fc12e2",
+      "holders": 703,
+      "decimals": 18,
+      "feed": "0x045477BF65Aef6f4F2386ad0164579e48381CC74",
+      "feed_description": "Robinhood RKLB / USD",
+      "deployable": true,
+      "why_not": [],
+      "pools": [
+        {
+          "address": "0xa9888de1b9d64a93eaeb495a39fe9b3d00654928",
+          "liquidity": 289890822195,
+          "cardinality": 64,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
+        }
+      ],
+      "deploy": {
+        "feed": "0x045477BF65Aef6f4F2386ad0164579e48381CC74",
+        "expected_description": "Robinhood RKLB / USD",
+        "pools": [
+          "0xa9888de1b9d64a93eaeb495a39fe9b3d00654928"
+        ],
+        "stock": "0x3b14C39E89D60D627b42a1A4CA45b5bb45Fc12e2",
+        "min_liquidity": "36236352774"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 64 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $0 < $50000"
+      ]
     },
     {
       "symbol": "IONQ",
@@ -668,15 +1298,33 @@
       "holders": 107,
       "decimals": 18,
       "feed": "0x22EfeC4919baf55F360E0EDee4AbEB26DE4971eb",
+      "feed_description": "Robinhood IONQ / USD",
+      "deployable": true,
+      "why_not": [],
       "pools": [
         {
           "address": "0xbc44b11f569d3feed9b4088f5a3fc569d2e3c77f",
-          "fee": 10000,
-          "liquidity": 369095908455
+          "liquidity": 369095908455,
+          "cardinality": 1,
+          "observable": true,
+          "depth_2pct_usd": 0,
+          "fee": 10000
         }
       ],
-      "deployable": true,
-      "why_not": []
+      "deploy": {
+        "feed": "0x22EfeC4919baf55F360E0EDee4AbEB26DE4971eb",
+        "expected_description": "Robinhood IONQ / USD",
+        "pools": [
+          "0xbc44b11f569d3feed9b4088f5a3fc569d2e3c77f"
+        ],
+        "stock": "0x558378E000D634A36593E338eBacdd6207640EfE",
+        "min_liquidity": "46136988556"
+      },
+      "recommended": false,
+      "notes": [
+        "primary cardinality 1 < 1801: raise with increaseObservationCardinalityNext(1801) before deploying (anyone can; gas only)",
+        "primary 2% depth $0 < $50000"
+      ]
     }
   ],
   "not_deployable": [
@@ -810,7 +1458,7 @@
       "symbol": "CRWV",
       "stock": "0x5f10A1C971B69e47e059e1dC91901B59b3fB49C3",
       "why": [
-        "no USDG pool"
+        "pools empty"
       ]
     },
     {
@@ -1020,13 +1668,6 @@
       ]
     },
     {
-      "symbol": "RKLB",
-      "stock": "0x3b14C39E89D60D627b42a1A4CA45b5bb45Fc12e2",
-      "why": [
-        "pools empty"
-      ]
-    },
-    {
       "symbol": "CRM",
       "stock": "0xd95B44124e475743a7589e68F3D74008A5536D44",
       "why": [
@@ -1203,7 +1844,8 @@
       "symbol": "POET",
       "stock": "0xcf6B2D875361be807EAfa57458c80f28521F9333",
       "why": [
-        "no feed"
+        "no feed",
+        "deepest pool does not answer observe(1800) now"
       ]
     },
     {
@@ -1256,6 +1898,7 @@
       "symbol": "HOODRAT",
       "stock": "0x807A4ECD29a9a7A3Bb27d589e2ef9BA831387C83",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no feed",
         "no USDG pool"
@@ -1265,6 +1908,7 @@
       "symbol": "USAR",
       "stock": "0x38D6254bcEa24cdcD327d99a0D4e50B8403B2Ea1",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1273,6 +1917,7 @@
       "symbol": "NVDA",
       "stock": "0x1076f47f9632D726cF0FF93Ad1616C45Cbb8B94D",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1281,6 +1926,7 @@
       "symbol": "GME",
       "stock": "0x1c8a973a8788C4A57371BEd1611830a83FD580F4",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1289,6 +1935,7 @@
       "symbol": "NVDA",
       "stock": "0x1DC77501A62673114a8C2941ca3a2d5C90209d1B",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1297,6 +1944,7 @@
       "symbol": "NVDA",
       "stock": "0x95d9FD01537D3724E57C54a710863E6124e65E70",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1305,6 +1953,7 @@
       "symbol": "SPCX",
       "stock": "0xd6a1232c3403dCaaE4f65Dc76Ee3C40528A51D2B",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1313,6 +1962,7 @@
       "symbol": "TSLA",
       "stock": "0x066aD1C8BF4EdF5482D6994f18C27216E597f81A",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1321,6 +1971,7 @@
       "symbol": "SNDK",
       "stock": "0x2BBD7874fe57cedcb92d71Fc13fe9f1ba41877d9",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1329,6 +1980,7 @@
       "symbol": "NVDA",
       "stock": "0xfe2Ab6d9F75E174AA84dD614dfE6E084C021B004",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1337,6 +1989,7 @@
       "symbol": "GME",
       "stock": "0x1a27ce5346E873478B0cB337d5Bf7861b14f88E8",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1345,6 +1998,7 @@
       "symbol": "GPRO",
       "stock": "0xbC269b6148bb3166286815bc70e994B85D9A6Ba6",
       "why": [
+        "not on the Robinhood token beacon",
         "no feed",
         "no USDG pool"
       ]
@@ -1353,6 +2007,7 @@
       "symbol": "NVDA",
       "stock": "0x465834D5BA3af2169E49B70A139448e59e3CA492",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1369,6 +2024,7 @@
       "symbol": "TSLA",
       "stock": "0x9881c37f9FCc9fe78e6C263D8B6C965CD0987ED1",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]
@@ -1377,6 +2033,7 @@
       "symbol": "GME",
       "stock": "0xF6A5d9D1e62ad20C8691468500f919C5780F4278",
       "why": [
+        "not on the Robinhood token beacon",
         "no oraclePaused()",
         "no USDG pool"
       ]

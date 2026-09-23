@@ -150,7 +150,7 @@ def slides():
 <div class="boxes">
   <div class="stack">
     <div class="box"><div class="t">Chainlink feed</div>24/5 · last print · pause flag</div>
-    <div class="box"><div class="t">Uniswap v3 pools (up to 3)</div>24/7 · observe() → TWAP + window liquidity · deepest wins</div>
+    <div class="box"><div class="t">Uniswap v3 pool (fixed primary)</div>24/7 · observe() → TWAP + window liquidity · standbys only if it cannot answer</div>
   </div>
   <div class="arrow">→</div>
   <div class="box core"><div class="t">AfterHours</div>Stylus, Rust · immutable · no owner<br><span class="mono" style="color:var(--fog)">LIVE_FEED · ONCHAIN_TWAP · PAUSED · NO_DATA</span></div>
@@ -163,7 +163,7 @@ def slides():
 <div class="rules">
   <div><b>Fresh feed</b> → pass it through, verbatim.</div>
   <div><b>Silent feed</b> → 30-min pool TWAP, <span class="m">clamped ±10%</span> around the last print.</div>
-  <div><b>Every pool thin</b> (window average) → refuse. <b>Corporate action</b> → refuse.</div>
+  <div><b>Primary pool thin</b> (window average) → refuse, never switch venue. <b>Corporate action</b> → refuse.</div>
   <div><b>Print older than 5 days</b> → refuse: the feed is gone, not closed.</div>
 </div>
 <div class="grow"></div>""")
@@ -175,11 +175,11 @@ def slides():
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">49 tests + 45 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session and failover asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">52 tests + 50 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session and the venue rule asserted, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 60-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Two adversarial reviews folded in</div><p>Anchor-age cap, harmonic-mean liquidity over the window, multi-pool failover, observe() exercised at initialize, deploy job that verifies every field. 27 stocks deployable today.</p></div>
+  <div class="col"><div class="t">Three adversarial reviews folded in</div><p>Anchor-age cap, window-average liquidity, a fixed venue an attacker cannot redirect, observation-history preflight, deploy job that verifies every field. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ 31 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">cargo stylus check ✓ 33 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>

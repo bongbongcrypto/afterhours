@@ -23,7 +23,7 @@ see [DESIGN.md](DESIGN.md).
 | session | when | `latestRoundData().answer` | `price()` |
 |---|---|---|---|
 | `LIVE_FEED` (0) | feed no older than `liveMaxAge` | the feed's round, verbatim | feed × Morpho scale |
-| `ONCHAIN_TWAP` (1) | feed older; the deepest of up to 3 pools is deep enough | that pool's TWAP clamped to ±`maxDeviationBps` of the last print | same |
+| `ONCHAIN_TWAP` (1) | feed older; the primary pool is deep enough over the window (a standby only while the primary cannot be observed) | that pool's TWAP clamped to ±`maxDeviationBps` of the last print | same |
 | `PAUSED` (2) | issuer's `oraclePaused()` (corporate action) | reverts `IssuerPaused()` | reverts |
 | `NO_DATA` (3) | feed round invalid / pool too thin over the window / no TWAP / last print older than `maxAnchorAge` | reverts `NoData(reason)` | reverts |
 
@@ -54,10 +54,10 @@ cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
 
-End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 39
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 50
 assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
 against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
-Robinhood Chain runs, and the one a 2-fragment (31 KB) program needs.
+Robinhood Chain runs, and the one a 2-fragment (33 KB) program needs.
 
 Deploy (deploys, activates, then runs the one-shot `initialize`):
 
@@ -66,7 +66,9 @@ cargo stylus deploy --endpoint <rpc> --private-key <key> --no-verify
 cast send <address> "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" \
   <feed> "[<pool 0.05%>,<pool 0.30%>,<pool 1%>]" <stock> 21600 1800 1000 200000000000000000 432000
 # liveMaxAge twapWindow maxDeviationBps minLiquidity(window harmonic mean) maxAnchorAge
-# up to three pools of the stock against one quote token; the deepest over the window answers
+# up to three pools of the stock against one quote token. The first is the primary and
+# prices the asset; the others are standbys, read only while the primary cannot be observed.
+# The deploy workflow refuses a primary whose observation cardinality is below window + 1.
 ```
 
 ## Integrating
@@ -116,14 +118,24 @@ so a split changes nothing here; while the issuer processes one, the token's
 
 ## Every stock, not just AAPL
 
-`scripts/measure/discover_assets.py` asks the chain the same questions
-`initialize` asks — pause flag, decimals, a Chainlink feed named
-`Robinhood <SYMBOL> / USD`, USDG pools and their liquidity — for every token
-the explorer lists as a Robinhood stock token, and writes `assets.json`.
-As of 2026-09-20 **27 assets** pass all of them and can be deployed with the
-same wasm and the `deploy` workflow's inputs: SGOV, NVDA, SPCX, QQQ, GOOGL, USO, AMZN, GME, AAPL, CRCL, SLV, SPY, MSFT, TSLA, MU, PLTR, BABA, USAR, INTC, MSTR, META, DELL, TSM, AMD, SNDK, ASML, IONQ. The rest lack a Chainlink
-feed or a USDG pool today; they become deployable the day those appear,
-with no code change.
+`scripts/measure/discover_assets.py` asks the chain, for every token the
+explorer lists as a Robinhood stock token (122 with 100+ holders), what
+`initialize` and an attacker would check: that it is Robinhood's own (the
+same token beacon as AAPL; 15 imitations are not), the pause flag, 18
+decimals, a Chainlink feed named `Robinhood <SYMBOL> / USD`, and for each
+USDG fee tier the liquidity, the observation cardinality, whether a
+30-minute `observe` answers now and the USDG it takes to move the price 2%.
+It writes the deploy inputs per asset to `assets.json`. On 2026-09-23:
+
+| tier | count | stocks |
+|---|---|---|
+| recommended: primary cardinality >= 1,801 and >= $50k of 2% depth | 14 | NVDA, SPCX, GOOGL, USO, AAPL, SPY, AMZN, MSFT, QQQ, CRCL, GME, SLV, TSLA, MU |
+| the deploy workflow accepts them; 2% depth under $50k | 4 | META, PLTR, BABA, TSM |
+| `initialize` accepts them; the primary's cardinality must be raised first (anyone can, gas only) | 10 | SGOV, MSTR, DELL, AMD, INTC, USAR, ASML, SNDK, RKLB, IONQ |
+| Robinhood's own, but no Chainlink feed or no USDG liquidity today | 79 | |
+
+The same wasm serves all of them. A stock moves up a tier the day its feed
+or pool appears, with no code change.
 
 ## Deployments
 

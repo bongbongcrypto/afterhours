@@ -102,7 +102,7 @@ def main():
     feed_dec, stock_dec, quote_dec = word(cfg, 7), word(cfg, 8), word(cfg, 9)
     live_max_age, twap_window, dev_bps = word(cfg, 10), word(cfg, 11), word(cfg, 12)
     min_liq, max_anchor = word(cfg, 13), word(cfg, 14)
-    print("AfterHours %s  initialized=%s  feed=%s  pool=%s" % (args.oracle, initialized, feed, pool))
+    print("AfterHours %s  initialized=%s  feed=%s  primary pool=%s" % (args.oracle, initialized, feed, pool))
     print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
           % (live_max_age, twap_window, dev_bps / 100, min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
 
@@ -118,9 +118,9 @@ def main():
         print("[%s]" % ts(now))
         print("  Chainlink : $%.4f  printed %s  (%.1f h ago)" % (feed_answer, ts(feed_at), age_h))
         if twap is not None:
-            print("  pool TWAP : $%.4f  (%d s window, computed off-chain)" % (twap / 10 ** feed_dec, twap_window))
+            print("  primary TWAP: $%.4f  (%d s window, computed off-chain from the primary pool)" % (twap / 10 ** feed_dec, twap_window))
         else:
-            print("  pool TWAP : unavailable (%s)" % terr)
+            print("  primary TWAP: unavailable (%s)" % terr)
         if serr or not s:
             print("  AfterHours: state() reverted: %s" % serr)
         else:

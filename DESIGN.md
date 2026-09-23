@@ -7,8 +7,12 @@ measured it says so.
 
 ## 1. The situation
 
-Robinhood Chain (an Arbitrum chain, 0.1 s blocks, ~10M tx/day) trades ~190
-tokenized US stocks against USDG around the clock. The price those tokens'
+Robinhood Chain (an Arbitrum chain; 0.101 s average block time over the
+864,000 blocks before 2026-09-23) trades tokenized US stocks against USDG
+around the clock. The explorer lists 122 tokens named "... • Robinhood
+Token" with 100+ holders; 107 of them are Robinhood's own (the same token
+beacon as AAPL) and 28 have both a Chainlink feed and an observable USDG pool
+(`assets.json`, 2026-09-23). The price those tokens'
 contracts rely on comes from Chainlink feeds that follow US market hours.
 
 **The feed stops every weekend.** AAPL/USD, last 60 rounds (`feed_cadence.py`):
@@ -96,15 +100,20 @@ Decision per read, in this order:
 4. Feed age > `maxAnchorAge` -> **NO_DATA(4)**. No market closure lasts this
    long (5 days covers a holiday weekend); the feed has been deprecated or the
    stock is halted, and a band anchored to that print would only look fresh.
-5. Otherwise the market is closed for this oracle's purposes. Every
-   configured pool (one to three fee tiers of the stock against the quote) is
-   asked `observe([twapWindow, 0])`, which gives both legs; the pool with the
-   most harmonic-mean liquidity over the window is used, so liquidity
-   migrating to another tier does not strand the oracle and a thinned pool
-   is never chosen over a deep one:
-   - no pool answers (not a v3 pool, no history) or every answer has the
-     wrong shape -> **NO_DATA(3)**;
-   - the deepest pool's harmonic-mean in-range liquidity over the window
+5. Otherwise the market is closed for this oracle's purposes, and the price
+   comes from one fixed venue: the **primary** pool (`pools[0]`, the deepest
+   fee tier when the instance is deployed). `observe([twapWindow, 0])` gives
+   both legs, the tick and the liquidity cumulatives. Up to two **standby**
+   pools (other fee tiers of the stock against the same quote) are read, in
+   order, only while every pool before them cannot be observed at all:
+   `observe` reverts (for example "OLD", too little history) or answers
+   something that is not two cumulatives. A primary that answers but is thin
+   does not hand over; it refuses. Picking the deepest pool at read time
+   would let anyone who deepens a shallow tier with a narrow position for
+   one window choose the price source; with a fixed venue a manipulator has
+   to move the pool the market actually trades in.
+   - no configured pool can be observed -> **NO_DATA(3)**, `pool` = 0;
+   - the pool's harmonic-mean in-range liquidity over the window
      (`window * 2^128 / delta(secondsPerLiquidityCumulativeX128)`, Uniswap's
      own `OracleLibrary.consult`) is below `minLiquidity` -> **NO_DATA(2)**.
      A window average, not the spot value: liquidity added in the block
@@ -174,6 +183,17 @@ does two things at once:
 | `minLiquidity` | 2e17 | The 0.05% pool's 30-minute harmonic-mean liquidity measured 1.45e18 against a spot 1.61e18 (`pool_harmonic.py`, 2026-09-19), a 7.3x margin over the floor; refusing below roughly 1/8 of today's depth means a pool most LPs have left is not trusted. This is a sanity floor, not the manipulation defence (that is the band). |
 | `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
+Keeping the primary observable. Uniswap v3 writes at most one observation
+per second (per block timestamp; Robinhood Chain's ten blocks a second share
+one), so a pool that stores fewer than `twapWindow + 1` observations can be
+made to answer "OLD" for a 30-minute window by one small swap a second, and
+the oracle would fall to a standby or refuse. The deploy workflow therefore
+refuses a primary whose observation cardinality is below `twapWindow + 1`
+(1,801); raising it is a permissionless, gas-only call
+(`increaseObservationCardinalityNext`). The AAPL 0.05% pool holds 1,801
+today. A standby may sit below the bound: it only covers a primary that
+cannot answer.
+
 Manipulation cost, order of magnitude (`scripts/measure`, uniform-range model
 which overstates depth away from the current tick; the pool's $355k USDG
 reserve bounds it from below): pushing the current range 10% takes roughly
@@ -189,7 +209,8 @@ liquidity floor.
 Measured: feed silence and cadence; weekend swap counts, volume and fill
 quality on two weekends; the live lending oracle's 5-day tolerance and its use
 of a pool TWAP; Stylus availability on mainnet and testnet (stylusVersion 3);
-pool observation cardinality (1,500-1,801, so a 30-minute TWAP reads today);
+pool observation cardinality per fee tier for every stock (`assets.json`;
+AAPL: 1,801 on the 0.05% primary, 1,500 on the standbys);
 the window harmonic-mean liquidity against spot (`pool_harmonic.py`); the
 feed's `description()` (`Robinhood AAPL / USD`) and the stock's
 `oraclePaused()`; the absence of the StylusDeployer on mainnet.
@@ -203,7 +224,12 @@ AfterHours yet).
 Not handled in v1: a Chainlink L2 sequencer-uptime check (PARE deploys with it
 disabled on this chain too); pools against a token other than the loan token
 (every pool of an asset must share one quote); combining several pools into
-one price (the deepest one is used, the others are fallbacks). Operational: like every Stylus
+one price, or following liquidity to another fee tier. The primary is fixed
+at deployment and a standby only covers a primary that cannot be observed;
+if liquidity leaves the primary for good, the instance refuses (NO_DATA 2)
+and a new instance is deployed with the new primary (one workflow run).
+Following liquidity automatically is exactly the lever a manipulator would
+pull. Operational: like every Stylus
 program, the contract needs re-activation after an ArbOS upgrade (anyone can
 do it; reads revert until then).
 
@@ -211,16 +237,17 @@ do it; reads revert until then).
 
 | layer | what it proves | where |
 |---|---|---|
-| 41 unit tests on a host that serves mocked calls exactly | decision logic, band, scaling, every refusal, exact numbers | `src/tests.rs`, `src/mockvm.rs` |
+| 52 unit and property tests on a host that serves mocked calls exactly | decision logic, band, scaling, the fixed venue, every refusal, exact numbers; property runs over random feed/pool data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
 | tick-math reference vectors | 1.0001^tick and the price conversion against 60-digit decimal arithmetic | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session and revert asserted with exact values through `cast`; 39 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
-| two independent adversarial reviews | 20 findings, all folded in (anchor-age cap, harmonic-mean liquidity, deploy verification, real feed description, ...) | PROGRESS.md |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule and every revert asserted with exact values through `cast`; 50 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| three independent adversarial review rounds | 33 findings, all folded in (anchor-age cap, harmonic-mean liquidity, deploy verification, real feed description, fixed venue, observation-cardinality preflight, ...) | PROGRESS.md |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction
-base): `latestRoundData()` 104,347 in LIVE_FEED, 125,440 in ONCHAIN_TWAP;
-`price()` 106,441 / 127,532. Three external reads (pause flag, feed round,
-pool observe) account for most of it; at Robinhood Chain's gas prices that is
+base; two pools configured, the primary answering): `latestRoundData()`
+103,974 in LIVE_FEED, 134,325 in ONCHAIN_TWAP; `price()` 106,066 / 136,415.
+Three external reads (pause flag, feed round, pool observe) account for most
+of it; at Robinhood Chain's gas prices that is
 a fraction of a cent, and a Morpho borrow or liquidation pays it once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design a

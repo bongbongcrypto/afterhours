@@ -73,8 +73,8 @@
           "피드가 신선하면 그대로 통과."
         ],
         [
-          "Silent feed: the thirty-minute average of the deepest of the token's pools, refused if every pool is thin over the window, bounded to a circuit-breaker band around the last print.",
-          "피드가 멈추면 제일 깊은 풀의 30분 평균값. 풀이 전부 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."
+          "Silent feed: the thirty-minute average of one fixed pool, the stock's main venue, refused if it is thin over the window, bounded to a circuit-breaker band around the last print.",
+          "피드가 멈추면 고정된 주 거래 풀 하나의 30분 평균값. 그 풀이 얕으면 거부하고, 마지막 프린트 기준 밴드 안으로 묶습니다."
         ],
         [
           "Corporate action pause: refuse.",
@@ -113,12 +113,12 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 로빈후드 체인 메인넷 배포, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Forty-nine unit and property tests, forty-five assertions against the real wasm on a local Arbitrum node, tick math checked against sixty-digit reference values, two adversarial reviews folded in.",
-          "단위·속성 테스트 49개, 실제 아비트럼 노드 위 wasm 검증 45항목, 60자리 기준값으로 검증한 틱 수학, 적대적 검수 2회 반영."
+          "Fifty-two unit and property tests, fifty assertions against the real wasm on a local Arbitrum node, tick math checked against sixty-digit reference values, three adversarial review rounds folded in.",
+          "단위·속성 테스트 52개, 실제 아비트럼 노드 위 wasm 검증 50항목, 60자리 기준값으로 검증한 틱 수학, 적대적 검수 3회 반영."
         ],
         [
-          "Twenty-seven stocks can be deployed today with the same contract; every number in the docs comes from a script you can run.",
-          "같은 컨트랙트로 오늘 배포 가능한 종목 27개. 문서의 모든 숫자는 직접 돌려볼 수 있는 스크립트에서 나옵니다."
+          "Fourteen stocks meet our bar for depth today and twenty-eight can be deployed with the same contract; every number in the docs comes from a script you can run.",
+          "오늘 기준 깊이 조건을 채운 종목 14개, 같은 컨트랙트로 배포 가능한 종목 28개. 문서의 모든 숫자는 직접 돌려볼 수 있는 스크립트에서 나옵니다."
         ]
       ]
     },

@@ -48,15 +48,15 @@ on:
         required: true
         default: "1800"
       max_deviation_bps:
-        description: Band around the last feed print once the feed has missed its heartbeat (market closed), basis points
+        description: Band around the last feed print outside the US regular session (weekdays 14:30-20:00 UTC) and once the feed has missed its heartbeat, basis points
         required: true
         default: "1000"
       heartbeat:
-        description: The feed's heartbeat, seconds. A print younger than this may come from a running feed that is only quiet, so the pool is held to quiet_band_bps around it
+        description: The feed's heartbeat, seconds. During the US regular session a print younger than this is near the market (the feed prints every 0.5% move then), so the pool is held to quiet_band_bps around it
         required: true
         default: "86400"
       quiet_band_bps:
-        description: Band around the last feed print while it is younger than the heartbeat, basis points (the feed's deviation threshold is 50)
+        description: Band around the last feed print during the regular session while it is younger than the heartbeat, basis points (the feed's deviation threshold is 50)
         required: true
         default: "100"
       min_liquidity:

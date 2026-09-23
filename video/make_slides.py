@@ -8,6 +8,7 @@ Every number on the slides comes from scripts/measure/ or the CI log.
 
     python video/make_slides.py            # writes video/out/slide-N.html + .png
     python video/make_slides.py --html     # html only (no Edge)
+    python video/make_slides.py --capture-page http://localhost:8745/   # + a capture of the live page for slide 6
 """
 import io
 import os
@@ -67,6 +68,8 @@ pre.code .c { color:var(--fog); } pre.code .k { color:var(--lime); } pre.code .s
 .term { margin-top:36px; margin-bottom:32px; background:#000; border:0.5px solid var(--smoke); border-radius:12px; padding:32px 40px;
   font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; font-size:25px; line-height:1.5; color:var(--mist); white-space:pre; overflow:hidden; flex:1; }
 .term .stale { color:var(--coral); } .term .live { color:var(--lime); } .term .dim { color:var(--ash); }
+.shot { margin-top:32px; border:0.5px solid var(--smoke); border-radius:12px; overflow:hidden; flex:1; min-height:0; }
+.shot img { display:block; width:100%; height:100%; object-fit:cover; object-position:50% 100%; }
 .pill { display:inline-block; border:0.5px solid var(--smoke); border-radius:9999px; padding:8px 18px; font-size:22px; color:var(--mist); margin-right:12px; margin-top:20px; }
 .pill.on { border-color:var(--lime); color:var(--lime); }
 .cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:48px; margin-top:56px; }
@@ -85,17 +88,7 @@ def slide(n, total, body):
 </div></body></html>"""
 
 
-def demo_terminal():
-    p = HERE / "probe.txt"
-    if p.exists():
-        txt = io.open(p, encoding="utf-8").read().rstrip()
-    else:
-        txt = ("[Sat 09-20 03:15:02 UTC]\n"
-               "  Chainlink : $335.3800  printed Fri 09-19 15:11:00 UTC  (36.1 h ago; the band at this age is 10.0%)\n"
-               "  primary pool: $335.4300 per share  (median of three 600 s averages, median liquidity 1.53e+18; computed off-chain)\n"
-               "  AfterHours: ONCHAIN_TWAP  answer $335.4300  (twap $335.4300, inside band, median liquidity 1.53e+18)\n"
-               "  Morpho price(): 335430000000000000000000000  (= answer x 1e16)\n"
-               "\n  (placeholder — replaced by the real capture after deployment)")
+def demo_terminal(txt):
     out = []
     for line in txt.splitlines():
         esc = line.replace("&", "&amp;").replace("<", "&lt;")
@@ -107,6 +100,54 @@ def demo_terminal():
             esc = f'<span class="dim">{esc}</span>'
         out.append(esc)
     return "\n".join(out)
+
+
+def demo_slide():
+    """Slide 6 shows only real reads. With a deployed instance: scripts/probe.py's
+    output saved to video/probe.txt. Before that: a capture of the live page,
+    which runs the contract's rules on mainnet data in the browser (made with
+    --capture-page). With neither, the slide says so and shows no numbers."""
+    probe = HERE / "probe.txt"
+    shot = OUT / "page-capture.png"
+    when = OUT / "page-capture.txt"
+    if probe.exists():
+        txt = io.open(probe, encoding="utf-8").read().rstrip()
+        return f"""<div class="kicker">Robinhood Chain mainnet · <b>scripts/probe.py</b> against the deployed instance · the feed asleep, the oracle awake</div>
+<h2>The print is hours old. AfterHours answers.</h2>
+<div class="term">{demo_terminal(txt)}</div>"""
+    if shot.exists() and when.exists():
+        at = io.open(when, encoding="utf-8").read().strip()
+        return f"""<div class="kicker">Robinhood Chain mainnet, {at} · <b>the live page</b> · the contract's rules run in the browser; not deployed yet</div>
+<h2>The print is hours old. The pool answers.</h2>
+<div class="shot"><img src="page-capture.png" alt="The live page at {at}"></div>"""
+    return """<div class="kicker">Robinhood Chain mainnet · capture pending</div>
+<h2>The live capture goes here.</h2>
+<div class="note">Run <b>python video/make_slides.py --capture-page http://localhost:8745/</b> with the page served, or save scripts/probe.py output to video/probe.txt after deployment.</div>
+<div class="grow"></div>"""
+
+
+def capture_page(url):
+    """Screenshot the live page for slide 6. The page reads Robinhood Chain from
+    the browser, so Edge gets a virtual-time budget to finish its reads."""
+    OUT.mkdir(parents=True, exist_ok=True)
+    png = OUT / "page-capture.png"
+    if png.exists():
+        png.unlink()
+    profile = tempfile.mkdtemp(prefix="afterhours-edge-")
+    cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+           "--user-data-dir=" + profile, "--window-size=1600,1000", "--virtual-time-budget=30000",
+           "--screenshot=" + str(png), url]
+    subprocess.run(cmd, capture_output=True, timeout=180)
+    for _ in range(80):
+        if png.exists() and png.stat().st_size >= 10_000:
+            break
+        time.sleep(0.25)
+    shutil.rmtree(profile, ignore_errors=True)
+    if not png.exists() or png.stat().st_size < 10_000:
+        sys.exit("page capture failed (%s)" % png)
+    at = time.strftime("%a %d %b %Y %H:%M UTC", time.gmtime())
+    io.open(OUT / "page-capture.txt", "w", encoding="utf-8").write(at + "\n")
+    print("page capture %s  %d bytes  %s" % (png, png.stat().st_size, at))
 
 
 def slides():
@@ -169,15 +210,13 @@ def slides():
 </div>
 <div class="grow"></div>""")
 
-    S.append(f"""<div class="kicker">A weekend on Robinhood Chain mainnet · <b>the live page and scripts/probe.py</b> · the feed asleep, the oracle awake</div>
-<h2>A weekend. Chainlink's print is a day old. AfterHours is answering.</h2>
-<div class="term">{demo_terminal()}</div>""")
+    S.append(demo_slide())
 
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
   <div class="col"><div class="t">67 tests + 73 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
-  <div class="col"><div class="t">Tick math vs 60-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
+  <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
   <div class="col"><div class="t">Five review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band while the feed may only be quiet, the share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>
 <div><span class="pill on">cargo stylus check ✓ 37.9 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
@@ -230,4 +269,6 @@ def render(html_only):
 
 
 if __name__ == "__main__":
+    if "--capture-page" in sys.argv:
+        capture_page(sys.argv[sys.argv.index("--capture-page") + 1])
     render(html_only="--html" in sys.argv)

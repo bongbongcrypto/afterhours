@@ -213,7 +213,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
 <main id="top">
   <section class="wrap intro" aria-labelledby="h1">
     <h1 id="h1">A stock price that keeps answering when the exchange is closed.</h1>
-    <p class="lede">AfterHours passes Chainlink's price through while the market is open. When the feed goes quiet, it answers with the Robinhood Chain pool's price (the median of three 10-minute averages), held within 1% of the last print for the feed's 24-hour heartbeat and within 10% after, and refuses when the pool is too thin to trust. <strong>Every price, age and pool figure on this page is read from Robinhood Chain by your browser.</strong></p>
+    <p class="lede">AfterHours passes Chainlink's price through while the market is open. When the feed goes quiet, it answers with the Robinhood Chain pool's price, held within 1% of the last print while the feed may only be quiet and within 10% once the market is closed, and refuses when the pool is too thin to trust. <strong>Every price, age and pool figure on this page is read from Robinhood Chain by your browser.</strong></p>
   </section>
 
   <section class="wrap panel" aria-labelledby="panel-h">
@@ -235,7 +235,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       </div>
       <figure class="gauge">
         <svg id="gauge" role="img" aria-labelledby="gauge-cap"></svg>
-        <figcaption class="gauge__cap" id="gauge-cap">The band: AfterHours answers within 1% of the last Chainlink print for 24 hours, within 10% after.</figcaption>
+        <figcaption class="gauge__cap" id="gauge-cap">The band: within 1% of the last Chainlink print while the feed may only be quiet, within 10% once the market is closed.</figcaption>
       </figure>
       <dl class="facts">
         <div><dt>Pool read</dt><dd id="pool-name">…</dd></div>
@@ -422,7 +422,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     var rebased = r.effectiveAt > round.updatedAt && r.effectiveAt <= nowTs;
     if (age <= BigInt(P.liveMaxAge) && !rebased) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
     if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
-    q.bandBps = bandBps(age);
+    q.bandBps = bandBps(age, nowTs);
     var dev = BigInt(q.bandBps), bps = 10000n;
     var lower = feedAnswer * (bps - dev) / bps, upper = feedAnswer * (bps + dev) / bps;
     var chosen = null;
@@ -446,11 +446,14 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     q.session = "ONCHAIN_TWAP";
     return q;
   }
-  // The band a print `age` seconds old holds the pool to (src/lib.rs, evaluate):
-  // narrow while the print is younger than the feed's heartbeat, wide after.
-  function bandBps(age) {
+  // Saturday or Sunday in UTC: always inside the US closure (src/lib.rs, is_weekend).
+  function isWeekend(ts) { return (ts / 86400n + 3n) % 7n >= 5n; }
+  // The band a print `age` seconds old holds the pool to at time `nowTs` (src/lib.rs,
+  // evaluate): narrow while the print is younger than the feed's heartbeat on a
+  // weekday, wide after the heartbeat and all weekend.
+  function bandBps(age, nowTs) {
     var P = DATA.params;
-    return age <= BigInt(P.heartbeat) ? P.quietBandBps : P.maxDeviationBps;
+    return age <= BigInt(P.heartbeat) && !isWeekend(nowTs) ? P.quietBandBps : P.maxDeviationBps;
   }
   function bandText(bps) { return "±" + (bps / 100) + "%"; }
   // pool price of one raw unit -> price of one share (the feed's unit)
@@ -527,10 +530,22 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
   var nextId = 1;
   var rawLog = [];
   function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+  // The public RPC rate-limits bursts (about 280 calls in two seconds; measured
+  // 2026-09-23), and its rate-limit response carries a doubled CORS header, so
+  // the browser reports a network error instead of a 429. One batch every
+  // 750 ms, shared by every reader on the page, stays under the limit.
+  var paceChain = Promise.resolve(), lastPost = 0;
+  function pace() {
+    paceChain = paceChain.then(function () {
+      return sleep(Math.max(0, lastPost + 750 - Date.now()));
+    }).then(function () { lastPost = Date.now(); });
+    return paceChain;
+  }
   async function postJson(body) {
     var delay = 1500;
     for (var attempt = 0; attempt < 4; attempt++) {
       var resp;
+      await pace();
       try {
         resp = await fetch(DATA.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       } catch (e) {
@@ -840,7 +855,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
   // the band the pool would be held to at this block, by the print's age
   function gaugeBand(r, nowTs) {
     if (!r.round || r.round.updatedAt === 0n || r.round.updatedAt > nowTs) return DATA.params.maxDeviationBps;
-    return bandBps(nowTs - r.round.updatedAt);
+    return bandBps(nowTs - r.round.updatedAt, nowTs);
   }
   function drawGauge(feed, twap, answer, fd, bps) {
     var svg = $("gauge");
@@ -869,8 +884,8 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       kids.push(el("circle", { cx: x(toNum(answer, fd)), cy: y, r: 4, class: "g-answer" }));
     }
     svg.replaceChildren.apply(svg, kids);
-    var cap = "The band: AfterHours answers within " + (DATA.params.quietBandBps / 100) + "% of the last Chainlink print while that print is younger than the feed's " +
-      (DATA.params.heartbeat / 3600) + "-hour heartbeat, within " + (DATA.params.maxDeviationBps / 100) + "% after. Now: " + bandText(bps) + ".";
+    var cap = "The band: on a weekday AfterHours answers within " + (DATA.params.quietBandBps / 100) + "% of the last Chainlink print while that print is younger than the feed's " +
+      (DATA.params.heartbeat / 3600) + "-hour heartbeat; after that, and all weekend, within " + (DATA.params.maxDeviationBps / 100) + "%. Now: " + bandText(bps) + ".";
     if (twap !== null) cap += " Ring: the pool's price, the median of three 10-minute averages (" + pct(toNum(twap, fd) / f - 1) + "). Dot: AfterHours' answer.";
     $("gauge-cap").textContent = cap;
   }

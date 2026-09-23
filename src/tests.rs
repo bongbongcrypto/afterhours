@@ -392,7 +392,7 @@ fn initialize_reads_layout_and_decimals_from_the_contracts() {
         )
     );
     assert_eq!(c.quiet_tier(), (HEARTBEAT, QUIET_BAND_BPS));
-    assert_eq!(c.decimals(), 8);
+    assert_eq!(c.decimals().unwrap(), 8);
     assert_eq!(c.version(), U256::from(1u64));
     assert_eq!(c.description().unwrap(), "AAPL / USD (AfterHours)");
 }
@@ -674,6 +674,15 @@ fn reads_refuse_before_initialize() {
     ));
     assert!(matches!(
         c.latest_answer().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.decimals().expect_err("uninitialized"),
+        AfterHoursError::NotInitialized(_)
+    ));
+    assert!(matches!(
+        c.get_round_data(U80::from(ROUND - 1))
+            .expect_err("uninitialized"),
         AfterHoursError::NotInitialized(_)
     ));
 }
@@ -987,6 +996,30 @@ fn an_empty_quiet_tier_goes_straight_to_the_wide_band() {
     assert_eq!((ans, clamped), (U256::from(DOWN_TWAP), false));
 }
 
+#[test]
+fn a_weekend_read_uses_the_wide_band_from_the_first_hour() {
+    // NOW is Friday 2027-01-15 08:00 UTC. The same seven-hour-old print and the
+    // same -5.3% pool: held to -1% on the Friday, passed through on the
+    // Saturday and the Sunday, when the market is closed whatever the feed's age.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
+    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
+        / U256::from(10_000u64);
+    for (day, now, want, clamped_want) in [
+        ("Friday", NOW, narrow, true),
+        ("Saturday", NOW + 86_400, U256::from(DOWN_TWAP), false),
+        ("Sunday", NOW + 2 * 86_400, U256::from(DOWN_TWAP), false),
+        ("Monday", NOW + 3 * 86_400, narrow, true),
+    ] {
+        w.vm.set_block_timestamp(now);
+        w.mock_feed(FRIDAY_ANSWER as i128, now - 7 * 3600);
+        let (session, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
+        assert_eq!(session, SESSION_ONCHAIN_TWAP, "{day}");
+        assert_eq!((ans, clamped), (want, clamped_want), "{day}");
+    }
+}
+
 // ---- refusals ----------------------------------------------------------------------
 
 #[test]
@@ -1089,6 +1122,20 @@ fn malformed_observations_refuse_to_price() {
 }
 
 #[test]
+fn a_pool_price_that_rounds_to_zero_per_share_is_refused() {
+    // One raw unit at 1e-8 USD (tick 460517) and two shares per raw unit: the
+    // per-share price floors to 0, which is not a price.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_multiplier(2 * ONE_X, NOW - 40 * 86_400);
+    w.mock_feed(1, NOW - 40 * 3600);
+    w.mock_observe(460_517, MIN_LIQUIDITY);
+    let (session, reason, ans, ..) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!(ans, U256::ZERO);
+}
+
+#[test]
 fn issuer_pause_refuses_even_a_fresh_feed() {
     let w = World::new();
     let c = w.deploy();
@@ -1188,12 +1235,13 @@ fn a_print_older_than_any_closure_is_not_an_anchor() {
 fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
     let w = World::new();
     let c = w.deploy();
-    // Largest positive int256. LIVE: price() would overflow the 1e16 Morpho scale.
+    // Largest positive int256. LIVE: price() would overflow the 1e16 Morpho scale,
+    // and says so with its own reason; the Chainlink surfaces still answer.
     w.mock_feed_raw(I256::MAX, NOW - 60);
     assert!(matches!(
         c.price().expect_err("overflow"),
         AfterHoursError::NoData(NoData {
-            reason: REASON_FEED_INVALID
+            reason: REASON_PRICE_OVERFLOW
         })
     ));
     let (_, answer, ..) = c.latest_round_data().unwrap();
@@ -1369,6 +1417,40 @@ fn get_round_data_serves_history_while_refusing_to_price() {
         c.get_round_data(U80::from(ROUND - 2)).expect_err("feed rejected the round"),
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED
     ));
+}
+
+#[test]
+fn history_is_served_even_when_the_stock_token_cannot_be_read() {
+    // If an upgrade of the issuer's token dropped a function this oracle reads,
+    // pricing stops for good; the feed's history does not depend on the token.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let old = (
+        U80::from(ROUND - 1),
+        I256::try_from(31_000_000_000u64).unwrap(),
+        U256::from(NOW - 9000),
+        U256::from(NOW - 9000),
+        U80::from(ROUND - 1),
+    );
+    w.vm.mock_static_call(
+        FEED,
+        getRoundDataCall {
+            roundId: U80::from(ROUND - 1),
+        }
+        .abi_encode(),
+        Ok(old.abi_encode_params()),
+    );
+    w.vm.mock_static_call(STOCK, effectiveAtCall {}.abi_encode(), Err(Vec::new()));
+    assert!(matches!(
+        c.state().expect_err("token read fails"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK
+    ));
+    assert!(matches!(
+        c.get_round_data(U80::from(ROUND)).expect_err("the current round needs the token"),
+        AfterHoursError::CallFailed(CallFailed { target }) if target == STOCK
+    ));
+    assert_eq!(c.get_round_data(U80::from(ROUND - 1)).unwrap(), old);
 }
 
 // ---- share multiplier ---------------------------------------------------------------
@@ -1670,7 +1752,9 @@ mod props {
     use crate::tickmath;
     use proptest::prelude::*;
 
-    /// The band a read with a print `age` seconds old is held to.
+    /// The band a read with a print `age` seconds old is held to. Property
+    /// runs read at NOW, a Friday, so the weekend rule never applies here
+    /// (`a_weekend_read_uses_the_wide_band_from_the_first_hour` covers it).
     fn band_for(age: u64) -> u64 {
         if age <= HEARTBEAT {
             QUIET_BAND_BPS
@@ -1800,6 +1884,7 @@ mod props {
                             let (lower, upper) =
                                 lower_upper(feed_answer, band_for(NOW - updated_at));
                             prop_assert!(ans >= lower && ans <= upper);
+                            prop_assert!(ans > U256::ZERO, "a price is never zero");
                             prop_assert_eq!(clamped, twap < lower || twap > upper);
                             prop_assert_eq!(pool, POOL);
                             prop_assert_eq!(c.latest_answer().unwrap(), I256::from_raw(ans));

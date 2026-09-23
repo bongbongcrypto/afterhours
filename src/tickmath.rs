@@ -7,9 +7,9 @@
 //! below 1e-23 over the whole range; for tick < 0 the result is the inverted
 //! Q96 value truncated to an integer, exact to 1 ulp (2.2e-20 relative at
 //! -218301, the AAPL region; only below about -650000 does truncation bite,
-//! far outside any stock/USDG pool). Reference values in the tests were
-//! computed independently with 60-digit decimal arithmetic
-//! (`scripts/measure/tick_vectors.py`).
+//! far outside any stock/USDG pool). Reference values in the tests are the
+//! verbatim output of `scripts/measure/tick_vectors.py`, which computes them
+//! independently with 80-digit decimal arithmetic and truncates.
 
 use alloy_primitives::{U256, U512};
 
@@ -119,20 +119,20 @@ mod tests {
         U256::from_str_radix(s, 10).unwrap()
     }
 
-    // Reference ratios from 60-digit decimal arithmetic (scripts/measure/tick_vectors.py).
+    // Reference ratios, verbatim from scripts/measure/tick_vectors.py (80-digit decimals, truncated).
     const VECTORS: &[(i32, &str)] = &[
         (0, "79228162514264337593543950336"),
         (1, "79236085330515764027303304731"),
         (-1, "79220240490215316061937756560"),
-        (100, "80024378775772204256025656563"),
-        (-100, "78439868342809377387252074393"),
+        (100, "80024378775772204256025656562"),
+        (-100, "78439868342809377387252074392"),
         (218301, "239385339738159338582485095309052680650"),
-        (-218301, "26221746671089383568"),
-        (443636, "1461446703485210103244672773810124308346321380903"),
+        (-218301, "26221746671089383567"),
+        (443636, "1461446703485210103244672773810124308346321380902"),
         (-443636, "4295128738"),
         (
             887271,
-            "26955224481606593845066778340113370614845985437494375745877200000000",
+            "26955224481606593845066778340113370614845985437494375745877179886964",
         ),
     ];
 
@@ -187,16 +187,16 @@ mod tests {
         // AAPL/USDG 0.05% pool: token0 = USDG (6 dec), token1 = AAPL (18 dec), feed 8 dec.
         let ratio = ratio_q96(218301).unwrap();
         let price = stock_price(ratio, false, 18, 6, 8).unwrap();
-        assert_close(price, u("33096497305"), 10); // $330.96497305
+        assert_close(price, u("33096497304"), 10); // floor of $330.964973046...
         let price = stock_price(ratio_q96(218302).unwrap(), false, 18, 6, 8).unwrap();
-        assert_close(price, u("33093187986"), 10);
+        assert_close(price, u("33093187985"), 10);
     }
 
     #[test]
     fn stock_price_when_stock_is_token0() {
         let ratio = ratio_q96(-218301).unwrap();
         let price = stock_price(ratio, true, 18, 6, 8).unwrap();
-        assert_close(price, u("33096497305"), 10);
+        assert_close(price, u("33096497304"), 10);
         assert_eq!(
             stock_price(ONE_Q96, true, 18, 6, 8),
             Some(u("100000000000000000000"))

@@ -27,7 +27,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 SESSIONS = {0: "LIVE_FEED", 1: "ONCHAIN_TWAP", 2: "PAUSED", 3: "NO_DATA"}
 REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable",
-           4: "last print older than maxAnchorAge", 5: "share multiplier changed since the last print"}
+           4: "last print older than maxAnchorAge", 5: "share multiplier changed since the last print",
+           6: "answer too large for Morpho's scale (price() only)"}
 
 # Function selectors used below, all computed with ethers.id() from the
 # Solidity signatures (AfterHours ones from the `cargo stylus export-abi` output).
@@ -143,7 +144,8 @@ def main():
         twap = pooled[0] if pooled else None
         s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"])
         print("[%s]" % ts(now))
-        band = quiet_bps if heartbeat is not None and now - feed_at <= heartbeat else dev_bps
+        weekend = (now // 86400 + 3) % 7 >= 5    # Saturday or Sunday UTC: the market is closed
+        band = quiet_bps if heartbeat is not None and now - feed_at <= heartbeat and not weekend else dev_bps
         print("  Chainlink : $%.4f  printed %s  (%.1f h ago; the band at this age is %.1f%%)"
               % (feed_answer, ts(feed_at), age_h, band / 100))
         if twap is not None:

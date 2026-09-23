@@ -10,6 +10,7 @@ pragma solidity ^0.8.20;
 ///         stock token's uiMultiplier (one raw unit = uiMultiplier/1e18 shares).
 interface IAfterHours {
     // ---- Chainlink AggregatorV3Interface ----------------------------------
+    /// @dev Reverts NotInitialized before initialize (never a plausible 0).
     function decimals() external view returns (uint8);
     function description() external view returns (string memory);
     function version() external view returns (uint256);
@@ -22,9 +23,9 @@ interface IAfterHours {
         external
         view
         returns (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound);
-    /// @dev Historical rounds are forwarded to the feed (also while the oracle is
-    ///      PAUSED / NO_DATA); the feed's current round is answered exactly like
-    ///      latestRoundData().
+    /// @dev Historical rounds are read straight from the feed (also while the oracle
+    ///      is PAUSED / NO_DATA, and when the stock token cannot be read); the feed's
+    ///      current round is answered exactly like latestRoundData().
     function getRoundData(uint80 roundId)
         external
         view
@@ -38,6 +39,8 @@ interface IAfterHours {
     // ---- Morpho Blue IOracle -----------------------------------------------
     /// @dev Quote-token value of one raw stock unit, scaled by 1e36:
     ///      answer * 10^(36 + quote - stock - feed decimals) * uiMultiplier / 1e18.
+    ///      Reverts like latestRoundData(), and NoData(6) when that product would not
+    ///      fit in 256 bits (only at absurd prices; the other surfaces still answer).
     function price() external view returns (uint256);
 
     // ---- AfterHours ---------------------------------------------------------
@@ -50,8 +53,9 @@ interface IAfterHours {
     ///            time-weighted averages, before the band (0 outside ONCHAIN_TWAP)
     ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
     ///      clamped: the price was pulled back to the edge of the band: quietBandBps
-    ///               while the last print is at most heartbeat seconds old,
-    ///               maxDeviationBps after
+    ///               while the last print is at most heartbeat seconds old on a
+    ///               weekday, maxDeviationBps after that and on Saturdays and
+    ///               Sundays (UTC)
     ///      pool: the pool that was read: the primary, or a standby while the primary
     ///            cannot be observed (zero when the oracle did not reach the pools, or
     ///            when no configured pool could be observed)
@@ -76,9 +80,10 @@ interface IAfterHours {
     ///      A primary that is merely thin refuses (NO_DATA 2) instead of moving venue.
     function pools() external view returns (address[] memory);
 
-    /// @dev While the last print is at most `heartbeat` seconds old the feed may be
-    ///      running and only quiet, so the pool is held to quietBandBps around it;
-    ///      past the heartbeat the market is closed and the band is maxDeviationBps.
+    /// @dev While the last print is at most `heartbeat` seconds old on a weekday the
+    ///      feed may be running and only quiet, so the pool is held to quietBandBps
+    ///      around it; past the heartbeat, and on Saturdays and Sundays (UTC), the
+    ///      market is closed and the band is maxDeviationBps.
     function quietTier() external view returns (uint64 heartbeat, uint64 quietBandBps);
 
     function config()

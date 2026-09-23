@@ -101,16 +101,16 @@
     {
       "lines": [
         [
-          "This is the live page on a weekend.",
-          "주말의 라이브 페이지입니다."
+          "This is the live page, reading Robinhood Chain mainnet.",
+          "로빈후드 체인 메인넷을 읽고 있는 라이브 페이지입니다."
         ],
         [
-          "Chainlink's last print is more than a day old.",
-          "체인링크의 마지막 프린트는 하루도 더 지났습니다."
+          "Chainlink's last print is hours old.",
+          "체인링크의 마지막 프린트는 몇 시간 전 것입니다."
         ],
         [
-          "AfterHours is answering from live trades, inside the band, and says which mode it is in.",
-          "AfterHours는 실제 거래로 답하고, 밴드 안이며, 지금 어떤 모드인지도 알려줍니다."
+          "The contract's rules answer from the pool, inside the band, and say which mode they are in.",
+          "컨트랙트의 규칙이 풀 가격으로 답하고, 밴드 안이며, 지금 어떤 모드인지도 알려줍니다."
         ]
       ]
     },
@@ -125,8 +125,8 @@
           "단위·속성 테스트 67개, 실제 아비트럼 노드 위 wasm 검증 73항목."
         ],
         [
-          "Tick math is checked against sixty-digit reference values, and five review rounds are folded in.",
-          "틱 수학은 60자리 기준값으로 검증했고, 독립 검수 5회를 반영했습니다."
+          "Tick math is checked against eighty-digit reference values, and five review rounds are folded in.",
+          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 5회를 반영했습니다."
         ],
         [
           "Fourteen stocks meet our bar for depth today, and twenty-eight can be deployed with the same contract.",

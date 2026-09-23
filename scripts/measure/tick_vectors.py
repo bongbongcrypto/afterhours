@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
-"""Reference values for src/tickmath.rs, computed with 60-digit decimal
+"""Reference values for src/tickmath.rs, computed with 80-digit decimal
 arithmetic so the Rust fixed-point path is checked against something that
 shares none of its code. Prints 1.0001^tick in Q96 (truncated) for the ticks
 used in the tests, plus the AAPL/USDG price for the pool's layout."""
 from decimal import Decimal, ROUND_FLOOR, getcontext
 
-getcontext().prec = 60
+getcontext().prec = 80
 Q96 = Decimal(2) ** 96
 
 

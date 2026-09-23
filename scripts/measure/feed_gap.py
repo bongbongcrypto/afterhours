@@ -9,6 +9,8 @@ Selectors computed with ethers, not recalled:
 import io
 import json
 import sys
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -28,7 +30,15 @@ def call(to, data):
                        "params": [{"to": to, "data": data}, "latest"]}).encode()
     req = urllib.request.Request(RPC, body, {"content-type": "application/json",
                                              "user-agent": "curl/8"})
-    out = json.load(urllib.request.urlopen(req, timeout=25))
+    for attempt in range(6):
+        try:
+            time.sleep(0.25)
+            out = json.load(urllib.request.urlopen(req, timeout=25))
+            break
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == 5:
+                raise
+            time.sleep(4 * (attempt + 1))   # public RPC rate limit: back off, never hammer
     if "error" in out:
         return None
     return out["result"]

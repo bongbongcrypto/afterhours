@@ -19,15 +19,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = Path(__file__).resolve().parent / "data.json"
 
-# The deploy workflow's defaults, which are the AAPL instance's inputs
-# (DEPLOYMENTS.md). Other stocks use the discovery suggestion from assets.json
-# (primary liquidity / 8 at discovery time) until they are deployed.
-PARAMS = {"liveMaxAge": 21600, "twapWindow": 1800, "maxDeviationBps": 1000, "maxAnchorAge": 432000,
-          "heartbeat": 86400, "quietBandBps": 100}
-MIN_LIQUIDITY_OVERRIDE = {"AAPL": "200000000000000000"}
-# The AAPL instance is configured with its primary pool only (DEPLOYMENTS.md);
-# the page must read exactly the pools the instance reads.
-POOLS_OVERRIDE = {"AAPL": ["0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"]}
+# The oracle's parameters are the manifest's defaults, which are the deploy
+# workflow's defaults. Each stock's pools and floor come from its deploy block
+# in assets.json, which carries the AAPL instance's own inputs (DEPLOYMENTS.md),
+# so the page reads exactly the pools an instance reads.
+PARAM_KEYS = ("liveMaxAge", "twapWindow", "maxDeviationBps", "maxAnchorAge", "heartbeat", "quietBandBps")
 HERO = "AAPL"
 
 
@@ -44,8 +40,7 @@ def main():
         if not a.get("recommended") and a["symbol"].upper() not in deployed:
             continue
         stock = a["stock"]
-        dep = dict(a["deploy"])
-        dep["pools"] = POOLS_OVERRIDE.get(a["symbol"].upper(), dep["pools"])
+        dep = a["deploy"]
         assets.append({
             "symbol": a["symbol"],
             "stock": stock,
@@ -56,7 +51,7 @@ def main():
                          for addr in dep["pools"]],
             "stockIsToken0": stock.lower() < quote,
             "stockDecimals": a["decimals"],
-            "minLiquidity": MIN_LIQUIDITY_OVERRIDE.get(a["symbol"].upper(), dep["min_liquidity"]),
+            "minLiquidity": dep["min_liquidity"],
             "depth2pctUsd": a["pools"][0]["depth_2pct_usd"],
             "oracle": deployed.get(a["symbol"].upper()),
         })
@@ -71,7 +66,7 @@ def main():
         "explorer": "https://robinhoodchain.blockscout.com",
         "repo": "https://github.com/bongbongcrypto/afterhours-oracle",
         "quote": {"symbol": "USDG", "address": manifest["quote"], "decimals": 6},
-        "params": PARAMS,
+        "params": {k: manifest["defaults"][k] for k in PARAM_KEYS},
         "hero": HERO,
         "counts": {
             "explorerTokens": len(manifest["assets"]) + len(manifest["not_deployable"]),

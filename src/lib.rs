@@ -11,8 +11,9 @@
 //!   three 10-minute time-weighted averages of its primary Uniswap v3 pool,
 //!   bounded to a band around the last exchange print and refused when that
 //!   pool is too thin (`ONCHAIN_TWAP`). The band is narrow while the print is
-//!   younger than the feed's heartbeat (a weekday feed that is only quiet
-//!   looks exactly like the first day of a closure) and wide after it. The
+//!   younger than the feed's heartbeat on a weekday (a feed that is only
+//!   quiet looks exactly like one that has just closed) and wide after it
+//!   and all weekend. The
 //!   primary is fixed at deployment; standby pools are read only while the
 //!   primary cannot be observed, so nobody can move the price source to a
 //!   pool they control,
@@ -67,6 +68,9 @@ pub const REASON_ANCHOR_STALE: u8 = 4;
 /// and the pool, read per share, sits outside the band: a split or a merger the
 /// last print knows nothing about. Refuse until the feed prints again.
 pub const REASON_MULTIPLIER_CHANGED: u8 = 5;
+/// Only `price()` raises this: the answer is valid, but Morpho's 1e36 scale
+/// times the share multiplier cannot hold it (an absurd price).
+pub const REASON_PRICE_OVERFLOW: u8 = 6;
 
 /// `InvalidConfig(reason)` codes raised by `initialize`.
 pub const CONFIG_ZERO_LIVE_MAX_AGE: u8 = 1;
@@ -203,10 +207,10 @@ sol_storage! {
         uint64 max_anchor_age;
         /// 10^(36 + quote_decimals - stock_decimals - feed_decimals): Morpho's price scale.
         uint256 morpho_scale;
-        /// The feed's heartbeat (seconds). A print younger than this may come
-        /// from a feed that is running but quiet, so the pool is held to
-        /// `quiet_band_bps` around it; past it the market is closed and the
-        /// band is `max_deviation_bps`.
+        /// The feed's heartbeat (seconds). On a weekday a print younger than
+        /// this may come from a feed that is running but quiet, so the pool is
+        /// held to `quiet_band_bps` around it; past it, and at weekends, the
+        /// market is closed and the band is `max_deviation_bps`.
         uint64 heartbeat;
         /// Band (basis points) while the last print is at most `heartbeat` old.
         uint64 quiet_band_bps;
@@ -228,10 +232,6 @@ pub struct Quote {
     /// The median sub-window's pool average, per share, in feed decimals,
     /// before the band is applied (0 outside ONCHAIN_TWAP).
     pub twap: U256,
-    /// The band chosen for this read, in basis points: `quietBandBps` or
-    /// `maxDeviationBps` by the print's age. 0 when the read ended before it
-    /// (LIVE_FEED, PAUSED, NO_DATA 1 on an invalid round, NO_DATA 4).
-    pub band_bps: u64,
     /// Median of the three sub-windows' harmonic-mean in-range liquidity of
     /// `pool` (0 when no pool was read).
     pub liquidity: u128,
@@ -415,8 +415,13 @@ impl AfterHours {
 
     // ---- Chainlink AggregatorV3Interface -------------------------------------
 
-    pub fn decimals(&self) -> u8 {
-        self.feed_decimals.get().to::<u8>()
+    /// The feed's decimals. Refuses before `initialize`, so an integrator that
+    /// reads it first never sees a plausible 0.
+    pub fn decimals(&self) -> Result<u8, AfterHoursError> {
+        if !self.initialized.get() {
+            return Err(AfterHoursError::NotInitialized(NotInitialized {}));
+        }
+        Ok(self.feed_decimals.get().to::<u8>())
     }
 
     pub fn description(&self) -> Result<String, AfterHoursError> {
@@ -443,19 +448,27 @@ impl AfterHours {
         self.round_tuple(&q)
     }
 
-    /// Historical rounds are the feed's, verbatim, and are served even while
-    /// the oracle refuses to price (PAUSED / NO_DATA). The feed's current round
-    /// is answered exactly like `latestRoundData()` so the two never disagree.
+    /// Historical rounds are the feed's, verbatim, read straight from the feed:
+    /// they are served while the oracle refuses to price (PAUSED / NO_DATA) and
+    /// even when the stock token cannot be read. The feed's current round is
+    /// answered exactly like `latestRoundData()` so the two never disagree.
     pub fn get_round_data(
         &self,
         round_id: U80,
     ) -> Result<(U80, I256, U256, U256, U80), AfterHoursError> {
-        let q = self.evaluate()?;
-        if round_id == q.feed_round_id {
-            return self.round_tuple(&q);
+        if !self.initialized.get() {
+            return Err(AfterHoursError::NotInitialized(NotInitialized {}));
         }
         let feed = self.feed.get();
-        IAggregatorV3::new(feed)
+        let feed_iface = IAggregatorV3::new(feed);
+        let (current, ..) = feed_iface
+            .latest_round_data(self.vm(), Call::new())
+            .map_err(|_| call_failed(feed))?;
+        if round_id == current {
+            let q = self.evaluate()?;
+            return self.round_tuple(&q);
+        }
+        feed_iface
             .get_round_data(self.vm(), Call::new(), round_id)
             .map_err(|_| call_failed(feed))
     }
@@ -486,13 +499,14 @@ impl AfterHours {
     pub fn price(&self) -> Result<U256, AfterHoursError> {
         let q = self.evaluate()?;
         let answer = require_price(&q)?;
-        // An answer too large for Morpho's 1e36 scale is not a price we can stand behind.
+        // An answer too large for Morpho's 1e36 scale is not a price we can stand
+        // behind in raw units; only this surface refuses, with its own reason.
         answer
             .checked_mul(self.morpho_scale.get())
             .and_then(|v| v.checked_mul(q.multiplier))
             .map(|v| v / ONE_SHARE)
             .ok_or(AfterHoursError::NoData(NoData {
-                reason: REASON_FEED_INVALID,
+                reason: REASON_PRICE_OVERFLOW,
             }))
     }
 
@@ -525,8 +539,9 @@ impl AfterHours {
     }
 
     /// The quiet tier: (heartbeat, quietBandBps). While the last print is at
-    /// most `heartbeat` seconds old the pool is held to `quietBandBps` around
-    /// it; after that, to `maxDeviationBps`.
+    /// most `heartbeat` seconds old on a weekday the pool is held to
+    /// `quietBandBps` around it; after that, and on Saturdays and Sundays
+    /// (UTC), to `maxDeviationBps`.
     pub fn quiet_tier(&self) -> (u64, u64) {
         (
             self.heartbeat.get().to::<u64>(),
@@ -658,18 +673,19 @@ impl AfterHours {
             return Ok(q);
         }
 
-        // Within the heartbeat the feed may be running and merely quiet (on a
-        // weekday the price has not moved its deviation threshold), or the
-        // market may have closed within the last day; on-chain the two look
-        // the same, and either way the exchange last traded near this print.
-        // The pool is held close to it. Past the heartbeat the market is
-        // closed and the pool may move up to `max_deviation_bps`.
-        let band_bps = if age <= U256::from(self.heartbeat.get()) {
+        // Within the heartbeat, on a weekday, the feed may be running and merely
+        // quiet (the price has not moved its deviation threshold) or the market
+        // may have closed within the last day; on-chain the two look the same.
+        // The pool is held close to the print. Past the heartbeat, or on a
+        // Saturday or Sunday, the market is closed and the pool may move up to
+        // `max_deviation_bps`.
+        let quiet = age <= U256::from(self.heartbeat.get())
+            && !is_weekend(self.vm().block_timestamp());
+        let band_bps = if quiet {
             self.quiet_band_bps.get().to::<u64>()
         } else {
             self.max_deviation_bps.get().to::<u64>()
         };
-        q.band_bps = band_bps;
         // The band is anchored to the last feed print; a print so large that the
         // arithmetic overflows is not a print to anchor to. Checked before any
         // pool read so a refusal never carries a half-computed TWAP.
@@ -736,10 +752,11 @@ impl AfterHours {
             )
         });
         // The pool prices one raw unit; the band and every Chainlink-shaped
-        // answer are per share.
+        // answer are per share. A price that rounds to zero is not a price.
         let Some(twap) = twap
             .and_then(|raw| raw.checked_mul(ONE_SHARE))
             .map(|v| v / multiplier)
+            .filter(|v| !v.is_zero())
         else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
@@ -788,6 +805,16 @@ impl AfterHours {
             q.feed_answered_in_round,
         ))
     }
+}
+
+/// Saturday or Sunday in UTC. Both days always fall inside the US equity
+/// closure, which runs from Friday 20:00 or 21:00 UTC to Monday 00:00 or
+/// 01:00 UTC depending on daylight saving. Weekdays that are exchange
+/// holidays are left to the heartbeat: a holiday table in an immutable
+/// contract would go stale, the weekend never does. 1970-01-01 was a
+/// Thursday, so with Monday = 0 the weekday is (days + 3) mod 7.
+fn is_weekend(timestamp: u64) -> bool {
+    (timestamp / 86_400 + 3) % 7 >= 5
 }
 
 /// `observe()` points: the window split into three sub-windows, oldest first.

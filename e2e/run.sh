@@ -122,6 +122,7 @@ echo "  AfterHours at $ADDR"
 
 echo "== initialize"
 reverts_with "read before initialize" "NotInitialized()" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)"
+reverts_with "decimals before initialize" "NotInitialized()" "$ADDR" "decimals()(uint8)"
 send "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" "$HEARTBEAT" "$QUIET_BPS"
 mapfile -t c < <(call "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)")
 expect "initialized" "${c[0]}" "true"
@@ -191,15 +192,22 @@ send "$POOL" "$OBS" "$(cum4 $TICK $((TICK + 300)) $((TICK + 300)))" "$SPL_FLOOR"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "answer = the held price (exact)" "$(num "${s[2]}")" "$HELD_TWAP"
 
-echo "== quiet tier: a print younger than the heartbeat holds the pool to +-1%"
+echo "== quiet tier: a print younger than the heartbeat holds the pool to +-1% on a weekday"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 25200))" "$((T - 25200))"
 send "$POOL" "$OBS" "$(cum4 $((TICK + 500)) $((TICK + 500)) $((TICK + 500)))" "$SPL_FLOOR"
 NARROW=$(pyint "$FRIDAY * (10000 - $QUIET_BPS) // 10000")
+# the node's clock is real time: on a Saturday or Sunday (UTC) the market is closed and the wide band applies at once
+WEEKEND=$(pyint "1 if ($(now) // 86400 + 3) % 7 >= 5 else 0")
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
-expect "answer held at -1% (feed 7 h old)" "$(num "${s[2]}")" "$NARROW"
-expect "clamped flag" "${s[7]}" "true"
+if [ "$WEEKEND" = 1 ]; then
+  expect "weekend: the wide band applies at once (feed 7 h old)" "$(num "${s[2]}")" "$DOWN_TWAP"
+  expect "not clamped" "${s[7]}" "false"
+else
+  expect "answer held at -1% (feed 7 h old)" "$(num "${s[2]}")" "$NARROW"
+  expect "clamped flag" "${s[7]}" "true"
+fi
 expect "the pool's own -5.3% is still reported" "$(num "${s[5]}")" "$DOWN_TWAP"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - HEARTBEAT - 60))" "$((T - HEARTBEAT - 60))"

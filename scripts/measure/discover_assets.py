@@ -50,6 +50,12 @@ FEEDS_URL = "https://reference-data-directory.vercel.app/feeds-robinhood-mainnet
 FEES = [100, 500, 3000, 10000]
 WINDOW = 1800
 MIN_DEPTH_USD = 50_000
+# Instances whose inputs were decided after discovery (DEPLOYMENTS.md): the
+# manifest records what they deploy with, so it never disagrees with the docs.
+INSTANCES = {
+    "AAPL": {"pools": ["0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"], "min_liquidity": "200000000000000000",
+             "why": "the AAPL instance: the 0.05% primary only (the other tiers sit below the floor), floor 2e17"},
+}
 HERE = Path(__file__).resolve().parent
 CALLS = 0
 
@@ -181,13 +187,17 @@ def main():
                              "before deploying (anyone can; gas only)" % (primary["cardinality"], WINDOW + 1, WINDOW + 1))
             if primary["depth_2pct_usd"] < MIN_DEPTH_USD:
                 notes.append("primary 2%% depth $%d < $%d" % (primary["depth_2pct_usd"], MIN_DEPTH_USD))
+            deploy = {
+                "feed": feed, "expected_description": description,
+                "pools": [primary["address"]] + [p["address"] for p in standbys],
+                "stock": token, "min_liquidity": str(primary["liquidity"] // 8),
+            }
+            if symbol.upper() in INSTANCES:
+                inst = INSTANCES[symbol.upper()]
+                deploy.update({"pools": inst["pools"], "min_liquidity": inst["min_liquidity"], "instance": inst["why"]})
             rec.update({
                 "pools": pools,
-                "deploy": {
-                    "feed": feed, "expected_description": description,
-                    "pools": [primary["address"]] + [p["address"] for p in standbys],
-                    "stock": token, "min_liquidity": str(primary["liquidity"] // 8),
-                },
+                "deploy": deploy,
                 "recommended": not notes, "notes": notes,
             })
             assets.append(rec)
@@ -206,7 +216,8 @@ def main():
         "generated": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
         "genuine_beacon": genuine_beacon,
         "defaults": {"liveMaxAge": 21600, "twapWindow": WINDOW, "maxDeviationBps": 1000,
-                     "maxAnchorAge": 432000, "min_liquidity": "primary liquidity / 8 at discovery time",
+                     "maxAnchorAge": 432000, "heartbeat": 86400, "quietBandBps": 100,
+                     "min_liquidity": "primary liquidity / 8 at discovery time",
                      "recommended": "primary cardinality >= %d and 2%% depth >= $%d" % (WINDOW + 1, MIN_DEPTH_USD)},
         "assets": assets,
         "not_deployable": [{"symbol": r["symbol"], "stock": r["stock"], "why": r["why_not"]} for r in rejected],

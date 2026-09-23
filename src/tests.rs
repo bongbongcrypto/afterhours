@@ -1385,7 +1385,10 @@ fn price_refuses_only_when_the_result_does_not_fit() {
     // but the price itself, 1e66, fits: formed in 512 bits it is answered.
     let w = World::new();
     let c = w.deploy();
-    w.mock_feed_raw(I256::from_raw(U256::from(10u64).pow(U256::from(50u64))), NOW - 60);
+    w.mock_feed_raw(
+        I256::from_raw(U256::from(10u64).pow(U256::from(50u64))),
+        NOW - 60,
+    );
     assert_eq!(c.price().unwrap(), U256::from(10u64).pow(U256::from(66u64)));
 }
 
@@ -1973,7 +1976,14 @@ fn the_contract_reads_real_mainnet_answers() {
     let num = |k: &str| U256::from_str_radix(want[k], 10).unwrap();
     let (session, reason, answer, _, _, twap, liquidity, clamped, pool) = c.state().unwrap();
     assert_eq!(
-        (session, reason, answer, twap, U256::from(liquidity), clamped),
+        (
+            session,
+            reason,
+            answer,
+            twap,
+            U256::from(liquidity),
+            clamped
+        ),
         (
             want["session"].parse::<u8>().unwrap(),
             want["reason"].parse::<u8>().unwrap(),

@@ -37,7 +37,7 @@ move until the next open. All numbers are measured; see [DESIGN.md](DESIGN.md).
 | `LIVE_FEED` (0) | feed no older than `liveMaxAge`, and no share-multiplier change since its print | the feed's round, verbatim (per share) | answer × `uiMultiplier` × Morpho scale |
 | `ONCHAIN_TWAP` (1) | otherwise, when the primary pool is deep enough (median of three 10-minute windows; a standby only while the primary cannot be observed) | the median of that pool's three 10-minute averages, per share, clamped to ±`quietBandBps` of the last print during the US regular session (Monday to Friday, 14:30-20:00 UTC) while the print is younger than `heartbeat`, ±`maxDeviationBps` at every other hour and past the heartbeat | same |
 | `PAUSED` (2) | issuer's `oraclePaused()` (corporate action) | reverts `IssuerPaused()` | reverts |
-| `NO_DATA` (3) | 1 feed round invalid / 2 pool too thin / 3 no TWAP / 4 last print older than `maxAnchorAge` / 5 a share-multiplier change after the last print moved the pool past the wide band (a split) | reverts `NoData(reason)` | reverts; also `NoData(6)` alone when the answer is too large for Morpho's scale (absurd prices only) |
+| `NO_DATA` (3) | 1 feed round invalid (or a print so large the band arithmetic overflows) / 2 pool too thin / 3 no TWAP / 4 last print older than `maxAnchorAge` / 5 the print and the token's share multiplier may count different shares (a change after the print, or a split still pending while the feed already prints post-split) and the pool per share is past the wide band | reverts `NoData(reason)` | reverts; also `NoData(6)` alone when the answer is too large for Morpho's scale (absurd prices only) |
 
 Units: Chainlink prices one share; a Robinhood stock token is a scaled-UI token
 that keeps balances raw: one token of raw balance is `uiMultiplier / 1e18` shares (1.00057 for AAPL, 1.0051 for SGOV
@@ -56,7 +56,7 @@ prints, and the same rules applied to every recommended stock. It is static:
 every price, age and pool figure is read from Robinhood Chain by the
 visitor's browser, and before an instance is deployed the AfterHours column
 runs the contract's decision rules ported with the same integer math (on
-load the page checks its port against exact prices and four band and
+load the page checks its port against exact prices and five band and
 corporate-action decisions from the contract's tests).
 After deployment it reads the contract's `state()` and compares.
 
@@ -75,14 +75,14 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
 | 75 unit and property tests, 86 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles: a real pool's `observe()` searches its observation buffer and the real feed and token are proxies, so mainnet costs more; re-measured after deployment) |
-| The contract decodes the real feed, pool and token: served the answers they gave at block 70,448,078, it prices AAPL exactly as a separate port of its rules does | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (16 reads, seconds) |
+| The contract decodes the real feed, pool and token: served the answers they gave at block 70,472,250, it prices AAPL exactly as a separate port of its rules does | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (16 reads, seconds) |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
 | Chainlink lists no sequencer-uptime feed for the chain; the stock feeds have a 0.5% threshold and a 24-hour heartbeat | `python scripts/measure/feed_directory.py` (one request) |
 | The price math matches independent 80-digit references: AAPL's prices to the integer, 1.0001^tick within 1e-23 of the reference (one unit below tick 0) | the live page's self-check line, and the vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
 | It keeps answering while the market is closed | the live page on a weekend: the Chainlink print is hours old and AfterHours answers from the pool; after deployment, `python scripts/probe.py --oracle <address>` and the hourly `status/log.md` |
-| Moving AAPL's pool 10% takes $243k up or $305k down; the pool clears the 5e16 depth floor from -10.9% to +8.3%; the cheapest refusal parks $243k at +12% for seven seconds, once every ten minutes (block 70,432,466) | `python scripts/measure/pool_depth.py ` (walks every initialized tick over the pool's whole range at one block; about 900 reads in batches, a minute) |
+| Moving AAPL's pool 10% takes $234k up or $314k down; the pool clears the 5e16 depth floor from -10.9% to +8.3%; the cheapest refusal parks $235k at +12% for eight seconds, once every ten minutes (block 70,474,692) | `python scripts/measure/pool_depth.py ` (walks every initialized tick over the pool's whole range at one block; about 900 reads in batches, a minute) |
 | Robinhood Chain runs ArbOS 61 with Stylus 3, programs expire after 365 days, mainnet has no StylusDeployer, blocks average 0.101 s | `python scripts/measure/stylus_params.py` (the chain's own precompiles, mainnet and testnet; seconds) |
-| 28 stocks can be deployed today, 14 meet the bar | `assets.json`, regenerated by `scripts/measure/discover_assets.py` (about an hour of reads) |
+| 28 stocks have a Chainlink feed and an observable pool; 18 of them pass `initialize` today, 14 meet the bar | `assets.json`, regenerated by `scripts/measure/discover_assets.py` (about an hour of reads) |
 
 ## What it does not do
 
@@ -90,7 +90,8 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 - During the US regular session it moves at most 1% from a print younger than 24 hours: the feed prints each 0.5% move then (`session_prints.py`). The contract reads the session from the block timestamp (Monday to Friday, 14:30-20:00 UTC, inside the session in both daylight-saving regimes) and keeps no holiday calendar, so on an exchange holiday that follows a trading day, and on a half day's afternoon, the 1% band applies until 20:00 UTC although the exchange is closed: a larger move then shows in full up to five and a half hours late.
 - It does not price a move the pool's liquidity has not followed. LPs concentrate around the current price: AAPL's pool clears the 5e16 depth floor from -10.9% to +8.3% of today's price, about as far as the band reaches. A move past that, held for ten minutes, refuses (`NoData(2)`) until LPs re-center or the feed prints, because a pool nobody provides at that price is the pool that is cheap to push. The floor is set per instance: 2e17 would refuse past -4.5% / +3.2%, which also stops a price being held beyond that, but refuses the real moves this oracle exists to price.
 - It does not follow liquidity. The primary pool is fixed at deployment; if liquidity leaves it for good, the instance refuses and a new one is deployed.
-- A share-multiplier change (a reinvested dividend) after the last print moves pricing to the pool even while the feed is fresh, because that print is in pre-dividend shares. If the pool is below its floor at that moment, the instance refuses until the feed prints again, up to a day. AAPL's pool sits about 28 times above its floor; check a thinner asset with `pool_depth.py` before deploying it.
+- It does not check that the pool trades. The depth floor measures liquidity providers, not flow: a deep pool nobody trades still answers with its last price. AAPL's pools cleared a swap every seven seconds over a weekend (`weekend_swaps.py`); check an asset's flow before deploying it.
+- A share-multiplier change (a reinvested dividend) after the last print moves pricing to the pool even while the feed is fresh, because that print is in pre-dividend shares. If the pool is below its floor at that moment, the instance refuses until the feed prints again, up to a day. AAPL's pool sits 28 to 34 times above its floor; check a thinner asset with `pool_depth.py` before deploying it.
 - It treats USDG as one dollar. Chainlink's USDG/USD feed on this chain updates only on 0.5% moves, so reading it would correct only a larger depeg; that is a v2 option.
 - It prices against one quote token per instance (USDG today).
 - No L2 sequencer-uptime check: Chainlink lists none of its 58 feeds on Robinhood Chain as a sequencer-uptime feed (`scripts/measure/feed_directory.py`), so there is nothing to read. After a sequencer outage AfterHours answers at once, like every other oracle on this chain.
@@ -110,6 +111,7 @@ abi/              Solidity interface for integrators
 scripts/measure/  the evidence: feed cadence and session prints, weekend swaps, pool depth, PARE's oracle
 scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdlib only)
 scripts/deploy.sh the deployment steps, run by the deploy workflow and by e2e
+scripts/abi_check.py  CI check that abi/IAfterHours.sol declares what the contract exports
 web/              the live page (static HTML; reads the chain from the browser) and its data builder
 .github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, hourly status, pages
 ```
@@ -200,7 +202,11 @@ stops passing it through and prices from the pool per share until the feed
 prints again. The action is judged against the wide band whatever the print's
 age: a distribution of a few percent is priced like any other move (and held to
 the band that applies), while a split moves the price per share past it and
-AfterHours refuses (`NoData(5)`) instead of clamping to a wrong price.
+AfterHours refuses (`NoData(5)`) instead of clamping to a wrong price. The same
+check runs while a split-sized change is scheduled but not yet in effect
+(`newUIMultiplier()`), because the feed may print the post-split price before
+the token switches: valued with the old multiplier, that print would halve the
+collateral. A print the pool confirms passes through; one it does not, refuses.
 
 ## Every stock, not just AAPL
 

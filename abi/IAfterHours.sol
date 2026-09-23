@@ -49,11 +49,14 @@ interface IAfterHours {
     // ---- AfterHours ---------------------------------------------------------
     /// @dev session: 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA
     ///      reason (NO_DATA only): 1 feed invalid, 2 pool too thin, 3 TWAP unavailable,
-    ///      4 last feed print older than maxAnchorAge, 5 a new share multiplier took
-    ///      effect after the last print and the pool per share is outside the wide band
+    ///      4 last feed print older than maxAnchorAge, 5 the print and the token's share
+    ///      multiplier may count different shares (a change took effect after the print,
+    ///      or a split-sized change is pending) and the pool per share is outside the
+    ///      wide band
     ///      answer: the per-share price the oracle stands behind (0 when it refuses)
     ///      twap: the pool's price per share, the median of three sub-window
-    ///            time-weighted averages, before the band (0 outside ONCHAIN_TWAP)
+    ///            time-weighted averages, before the band (0 unless the pool was
+    ///            priced: ONCHAIN_TWAP, NO_DATA 5, or a pending split it confirmed)
     ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
     ///      clamped: the price was pulled back to the edge of the band: quietBandBps
     ///               during the US regular session (Monday to Friday, 14:30-20:00
@@ -123,8 +126,9 @@ interface IAfterHours {
     ///      quote token, 13 a pool is listed twice, 14 the stock's uiMultiplier() is
     ///      zero, 15 heartbeat not in [liveMaxAge, maxAnchorAge) or quietBandBps not in
     ///      (0, maxDeviationBps], 16 the primary pool keeps fewer than twapWindow + 1
-    ///      observations (slot0). The stock must expose oraclePaused(), uiMultiplier()
-    ///      and effectiveAt() (CallFailed otherwise).
+    ///      observations (slot0). The stock must expose oraclePaused(), uiMultiplier(),
+    ///      effectiveAt() and newUIMultiplier() (CallFailed otherwise). `initializer`
+    ///      in config() records the caller.
     function initialize(
         address feed,
         address[] calldata pools,

@@ -133,7 +133,13 @@ Decision per read, in this order:
    print (`effectiveAt()` is not between the print and now) -> **LIVE_FEED**:
    the feed's round, verbatim. If a multiplier did take effect after the
    print, that print is in pre-action shares and is not passed through, even
-   when it is fresh: the read continues to the pool.
+   when it is fresh: the read continues to the pool. The mirror case is a
+   change scheduled but not yet in effect: until `effectiveAt()` the token
+   keeps the old multiplier, while the feed may already print the post-action
+   price. A pending change the size of a split (outside the wide band of the
+   current multiplier, `newUIMultiplier()`) therefore also sends the read to
+   the pool; a pending dividend-sized change does not, since it moves a raw
+   unit's value by less than the band.
 4. Feed age > `maxAnchorAge` -> **NO_DATA(4)**. No market closure lasts this
    long (5 days covers a holiday weekend); the feed has been deprecated or the
    stock is halted, and a band anchored to that print would only look fresh.
@@ -176,9 +182,13 @@ Decision per read, in this order:
      new multiplier took effect after the last print and the price per share
      is outside the wide band (`maxDeviationBps`, whatever the print's age),
      the print cannot anchor anything (a split or a merger it knows nothing
-     about) -> **NO_DATA(5)**; the feed's next print ends it. A distribution
-     of a few percent stays inside the wide band and is held to the band that
-     applies, like any other move;
+     about) -> **NO_DATA(5)**, with the pool's price per share kept in
+     `state()`; the feed's next print ends it. The same holds while a
+     split-sized change is pending: a print the pool, in the token's current
+     units, puts beyond the wide band is one already in post-action shares.
+     A print the pool confirms passes through as **LIVE_FEED** when it is
+     fresh. A distribution of a few percent stays inside the wide band and is
+     held to the band that applies, like any other move;
    - else **ONCHAIN_TWAP**: the price per share, or the band edge it crossed
      with `clamped = true`.
 
@@ -312,7 +322,7 @@ for ten minutes, well inside the depth floor and far cheaper than a refusal.
 | `heartbeat` | 86,400 s (24 h) | The feed's own heartbeat (`feed_directory.py`). The longest weekday gap measured is 20.8 h; every weekend silence (52-76 h) passes it. Outside the regular session the quiet tier never applies. |
 | `quietBandBps` | 100 (1%) | Twice the feed's 0.5% deviation threshold, and only during the regular session, where the next print landed at most 0.69% (AAPL) and 0.56% (SPY) from the last (`session_prints.py`). |
 | `maxDeviationBps` | 1,000 (10%) | The band outside the regular session and once the heartbeat has passed: the single-stock LULD band for closed-session moves. Measured weekend gaps: AAPL 0.25%, SPY 0.68%, NVDA 1.12% (`feed_gap.py`). |
-| `minLiquidity` | 5e16 | What the contract compares with the floor, the median of the 0.05% pool's three 10-minute harmonic means, read 1.39e18 at block 70,448,078 (2026-09-23 10:39 UTC, `capture_reads.py`), 28 times the floor; the pool's in-range liquidity was 1.68e18 at discovery. Refusing below 1/28 of that depth means a pool its LPs have all but left is not trusted. Liquidity clears it from -10.9% to +8.3% of today's price (`pool_depth.py`), about as far as the 10% band reaches, so a real move the LPs have not followed is priced up to the band. 2e17 (the value before review round 7) cleared only -4.5% / +3.2%: it also stopped a price being held beyond that, but refused the moves this oracle exists to price. |
+| `minLiquidity` | 5e16 | What the contract compares with the floor, the median of the 0.05% pool's three 10-minute harmonic means, moves with the pool: 1.39e18 and 1.68e18 in two captures forty minutes apart (blocks 70,448,078 and 70,472,250, `capture_reads.py`), 28 to 34 times the floor. Refusing below about 1/30 of that depth means a pool its LPs have all but left is not trusted. Liquidity clears it from -10.9% to +8.3% of today's price (`pool_depth.py`), about as far as the 10% band reaches, so a real move the LPs have not followed is priced up to the band. 2e17 (the value before review round 7) cleared only -4.5% / +3.2%: it also stopped a price being held beyond that, but refused the moves this oracle exists to price. |
 | `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
 Keeping the primary observable. Uniswap v3 writes at most one observation
@@ -325,18 +335,22 @@ the primary's `slot0()` and refuses an observation cardinality below
 the same before spending gas; raising it is a permissionless, gas-only call
 (`increaseObservationCardinalityNext`). The AAPL 0.05% pool holds 1,801
 today, exactly the bound, which is enough: at one observation a second at
-most, 1,801 observations always reach at least 1,800 seconds back. A standby
-may sit below the bound: it only covers a primary that cannot answer.
+most, 1,801 observations always reach at least 1,800 seconds back. Right
+after a pool's cardinality grows, the new slots fill one a second, so the
+history can be shorter than the count for a while; `initialize` also calls
+`observe` at the four points, so such a pool is refused until the history is
+there, and it only lengthens after that. A standby may sit below the bound:
+it only covers a primary that cannot answer.
 
 What manipulation can buy, and what it costs. `pool_depth.py` walks the AAPL
 0.05% pool over its whole tick range, every read at one block (block
-70,432,466, 2026-09-23 10:12 UTC; 187 initialized ticks). Liquidity is
+70,474,692, 2026-09-23 11:23 UTC; 187 initialized ticks). Liquidity is
 concentrated around the price: it clears the 5e16 floor from -10.9% to +8.3%
 (the 2e17 floor only from -4.5% to +3.2%), and beyond that only a thin
-full-range position remains. Moving the AAPL price 1% takes about $90k-102k
-of input, 10% about $243k of USDG up or $305k of AAPL down; the figures move
-by a few percent from block to block as liquidity shifts. The fee on that is
-$45-160; the real cost is holding the move while
+full-range position remains. Moving the AAPL price 1% takes about $95k of
+input, 10% about $234k of USDG up or $314k of AAPL down; the figures move by
+several percent from block to block as liquidity shifts. The fee on that is
+$47-165; the real cost is holding the move while
 every trader who can reach another venue sells the premium back. What a move
 buys through this oracle:
 
@@ -350,9 +364,16 @@ buys through this oracle:
   reaching it too. With the 5e16 floor that is about as far as the 10% band,
   which caps it in any case.
 
-At a 62.5% LLTV a 10% push could make positions above 56.25% LTV
+At a 62.5% LLTV a 10% push down could make positions above 56.25% LTV
 liquidatable at Morpho's bonus. The band has to be sized to the market's
 LLTV; a curator who wants no such window uses a tighter band or a lower LLTV.
+The other direction is the one a borrower profits from: holding the pool up
+through two sub-windows (twenty minutes; the pool clears the floor out to
++8.3%) lets them borrow up to that much more against the same collateral.
+When the price returns the position is over the LLTV and liquidatable, but
+the lender is not left with bad debt unless the push exceeds 1/LLTV - 1: an
+upward push inside the 10% band cannot create bad debt in any market whose
+LLTV is 90.9% or less.
 
 Denial instead of manipulation. An attacker who cannot move the price can
 still try to make the oracle refuse, which freezes borrowing, collateral
@@ -361,13 +382,15 @@ The pool's in-range liquidity never reaches zero (a full-range position
 underlies it), so a refusal needs a stay in its thin stretches. Uniswap's
 accumulator counts whole seconds of block time, so one second is the shortest
 stay that counts, and with the 5e16 floor no reachable price refuses in one
-second: the cheapest refusal is a seven-second stay at +12.4% (liquidity
-6.1e14, $243k of USDG to get there) or four seconds at -26.6% ($321k of AAPL).
+second: the cheapest refusal is an eight-second stay at +12.3% (liquidity
+6.1e14, $235k of USDG to get there) or five seconds at -26.6% ($330k of AAPL).
+Stays count in whole seconds: the accumulator advances with block time, so
+the 7.15 s the arithmetic asks for takes eight.
 The median rule makes that necessary in two sub-windows, so a refusal takes
 one such excursion every ten minutes for as long as it lasts. Each is a round
-trip that pays about $243 in fees and leaves $243k parked 12% above the market
-for seven seconds (seventy blocks), where anyone holding AAPL can sell into
-it; the fees alone come to about $1.5k an hour, or about $88k to hold a
+trip that pays about $235 in fees and leaves $235k parked 12% above the market
+for eight seconds (eighty blocks), where anyone holding AAPL can sell into
+it; the fees alone come to about $1.4k an hour, or about $84k to hold a
 60-hour weekend closure, which is the figure to size a market against. With
 the 2e17 floor one
 second at +17.4% was enough, or ten seconds at +8.6%; before the median rule,
@@ -437,7 +460,9 @@ issuer scheduled another one before the feed printed again, the first change
 would pass unseen until the next print. For a dividend that is a fraction of
 a percent; for a split the issuer's `oraclePaused()` flag, which Robinhood
 sets while it processes a corporate action, is the primary protection and
-the guard is the second.
+the guard is the second. The guard covers both orderings: a change that took
+effect after the print, and a split-sized change still pending while the
+feed may already print the post-action price.
 
 Operational risks, both fail closed: every price read calls the issuer's
 upgradeable token for `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`;
@@ -462,10 +487,11 @@ re-activate it, and reads revert until someone does.
 | layer | what it proves | where |
 |---|---|---|
 | 75 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
-| real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives | `fixtures/aapl_mainnet.txt` (block 70,448,078), `scripts/measure/capture_reads.py`, `src/tests.rs` |
+| real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives | `fixtures/aapl_mainnet.txt` (block 70,472,250), `scripts/measure/capture_reads.py`, `src/tests.rs` |
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
+| `abi/IAfterHours.sol` against `cargo stylus export-abi` | the interface integrators are pointed at declares exactly the functions, return types and errors the contract exports | `scripts/abi_check.py`, `.github/workflows/ci.yml` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session, which a scheduled run hits every weekday at 15:00 UTC; `result.txt` says which ran), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 86 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one only on runs inside the regular session: a scheduled run every weekday at 15:00 UTC, the first due on 2026-09-23; `result.txt` says which ran), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 86 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
 | nine independent review rounds, from round 4 against a fixed rubric; rounds 6 to 9 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction

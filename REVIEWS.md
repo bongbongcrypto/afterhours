@@ -93,7 +93,7 @@ open with the reason.
 | The 1% band's premise (the exchange traded within 0.5% of the print) does not hold after Friday's close; NVDA moved 1.12% across a measured weekend | Saturdays and Sundays (UTC) always get the wide band, a fixed property of the block timestamp with no calendar to maintain; the remaining delay (Friday evening, weekday holidays) is documented with the measured gaps | f6c31b5 |
 | The answer's unit is USD in LIVE_FEED and USDG in ONCHAIN_TWAP, so a USDG depeg shows as a step at each change of session | documented | f6c31b5 |
 | `feed_gap.py` crashed on the public RPC's rate limit | backs off like its siblings | f6c31b5 |
-| The contract size, quoted to 0.1 KB, drifted with the lockfile | "about 38 KB" | f6c31b5 |
+| The contract size, quoted to 0.1 KB, drifted with the lockfile | quoted rounded to the kilobyte | f6c31b5 |
 | PROGRESS and `assets.json` disagreed with DEPLOYMENTS about AAPL's pools and floor | the manifest records a deployed instance's own inputs (`discover_assets.py`), and the live page reads them from it | f6c31b5 |
 | ArbOS 61, Stylus 3, the 365-day expiry and the block time were listed as measured with no script | `scripts/measure/stylus_params.py` reads them from the chain's precompiles on mainnet and testnet | f6c31b5 |
 | `Quote.band_bps` was written and never read | removed | f6c31b5 |
@@ -105,4 +105,19 @@ open with the reason.
 | The tick reference vectors differed by 1 ulp from their generator | the generator's 80-digit output, pasted verbatim | f6c31b5 |
 | Found while re-checking the page: the public RPC rate-limits bursts (about 280 calls in two seconds) and its limit response carries a doubled CORS header, so the first load logged network errors and waited on retries | one RPC batch every 750 ms across the whole page, measured to stay under the limit | f6c31b5 |
 | `initialize` can be front-run between deployment and configuration | kept: the deploy workflow fails on a reverted `initialize` and reads every field back, so a front-run costs a redeploy | |
+| Not deployed, no public repo, no live URL, no final video | carried to round 7 | |
+
+## Round 7 (2026-09-23): second review from a clean copy of the repository as published
+
+| finding | resolution | commit |
+|---|---|---|
+| On a weekday the 1% band also judged corporate actions, so a 0.6% distribution became `NoData(5)`; the docs said a dividend stays inside the band | a corporate action is judged against the wide band whatever the print's age; a distribution is priced and held to the band that applies, only a split refuses | be241af |
+| The 2e17 floor refused a real move past -4.5% / +3.2%, the moment a lending market most needs a price | AAPL's floor is 5e16: the pool clears it from -10.9% to +8.3%, about as far as the band; no reachable price refuses in one second any more | be241af |
+| The quieter denial (ten seconds at +8.6%) was not documented | both refusal costs are in DESIGN for either floor | be241af |
+| The observation-history guard lived only in the deploy workflow | `initialize` reads the primary's `slot0()` and refuses a cardinality below window + 1 (InvalidConfig 16) | be241af, ee82477 |
+| Nothing called the oracle the way Morpho does | e2e deploys a Solidity consumer: `price()` and `latestRoundData()` through STATICCALL, and a refusal bubbling up unchanged | be241af |
+| "One raw unit is `uiMultiplier / 1e18` shares" is off by 10^18 in five places | one sentence everywhere: a token of raw balance is `uiMultiplier / 1e18` shares | be241af |
+| `weekend_swaps.py` gave up on the RPC's rate limit; `pool_depth.py` had no backoff | both back off for up to about five minutes; `pool_depth.py` reads everything at one block and prints it. The re-run reproduced 44,338 and 26,331 swaps, $5.14M and $4.17M | be241af |
+| The "2% depth" in `assets.json` assumes in-range liquidity holds and is about twice the tick-walked cost | stated where the tiers are described | be241af |
+| A clamped answer in the quiet tier is reported as fresh, hiding a large weekday move from a consumer's staleness check | kept, with the reason in DESIGN: the feeds print weekday moves within minutes in every session, and reporting the old time would let anyone make the oracle look stale by holding the pool 1% off for ten minutes | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

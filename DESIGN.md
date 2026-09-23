@@ -428,15 +428,15 @@ re-activate it, and reads revert until someone does.
 
 | layer | what it proves | where |
 |---|---|---|
-| 70 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
+| 72 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
 | tick-math reference vectors | 1.0001^tick and the price conversion against 80-digit decimal arithmetic | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands, the multiplier and a split, and every revert's exact data asserted through `cast`; 74 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands, the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does; 78 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
 | seven independent review rounds, from round 4 against a fixed rubric; rounds 6 and 7 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction
 base; two pools configured, the primary answering): `latestRoundData()`
-112,999 in LIVE_FEED, 153,762 in ONCHAIN_TWAP; `price()` 115,158 / 155,909.
+113,925 in LIVE_FEED, 154,858 in ONCHAIN_TWAP; `price()` 116,083 / 157,005.
 These are against Solidity test doubles; the real feed, pool and beacon-proxy
 token cost more per call and the figure will be re-measured on mainnet. Five
 external reads (pause flag, multiplier, its effective time, feed round, pool

@@ -49,16 +49,16 @@
     {
       "lines": [
         [
-          "The one live lending market copes by accepting a five-day-old price.",
-          "유일한 대출 시장은 5일 묵은 가격을 받아들이는 걸로 버팁니다."
+          "Lending against these tokens has started: eighty-three Morpho markets, but six thousand dollars borrowed against eight hundred and eighty thousand supplied.",
+          "이 토큰을 담보로 한 대출은 이미 있습니다. Morpho 시장 83개, 그런데 공급 88만 달러에 대출은 6천 달러뿐입니다."
         ],
         [
-          "Its own verified code says why.",
-          "검증된 소스 코드에 그 이유가 그대로 적혀 있습니다."
+          "Their oracles keep Friday's price all weekend, read a raw pool price, or accept a five-day-old print.",
+          "그 오라클들은 금요일 가격을 주말 내내 쓰거나, 풀 가격을 그대로 읽거나, 5일 묵은 가격을 받아들입니다."
         ],
         [
-          "The pool's time-weighted price is already a trusted component there; nobody points it at the stock.",
-          "풀의 시간가중 가격은 이미 거기서 신뢰받는 부품인데, 아무도 그걸 주식에 쓰지 않습니다."
+          "One of them already trusts the pool's thirty-minute average for another leg; nobody bounds it and points it at the stock.",
+          "그중 하나는 이미 풀의 30분 평균을 다른 용도로 신뢰합니다. 그걸 안전장치와 함께 주식 가격에 쓰는 곳은 없습니다."
         ]
       ]
     },
@@ -113,8 +113,8 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 로빈후드 체인 메인넷 배포, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Fifty-two unit and property tests, fifty assertions against the real wasm on a local Arbitrum node, tick math checked against sixty-digit reference values, three adversarial review rounds folded in.",
-          "단위·속성 테스트 52개, 실제 아비트럼 노드 위 wasm 검증 50항목, 60자리 기준값으로 검증한 틱 수학, 적대적 검수 3회 반영."
+          "Sixty unit and property tests, sixty-two assertions against the real wasm on a local Arbitrum node, tick math checked against sixty-digit reference values, four review rounds folded in.",
+          "단위·속성 테스트 60개, 실제 아비트럼 노드 위 wasm 검증 62항목, 60자리 기준값으로 검증한 틱 수학, 독립 검수 4회 반영."
         ],
         [
           "Fourteen stocks meet our bar for depth today and twenty-eight can be deployed with the same contract; every number in the docs comes from a script you can run.",

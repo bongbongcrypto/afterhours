@@ -118,9 +118,10 @@ def slides():
 
     S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed, last 60 rounds · <b>scripts/measure/feed_cadence.py</b></div>
 <h2>The feed stops every weekend.</h2>
-<div class="big">52<small>hours silent, every weekend</small></div>
+<div class="big">52–57<small>hours silent, every weekend</small></div>
 <table><tr><th>window</th><th>last print → first print</th><th>silence</th></tr>
 <tr><td class="k">Ordinary weekend</td><td>Fri 09-11 19:51 → Mon 09-14 00:00 UTC</td><td class="num">52.2 h</td></tr>
+<tr><td class="k">Ordinary weekend</td><td>Fri 09-18 15:11 → Mon 09-21 00:00 UTC</td><td class="num">56.8 h</td></tr>
 <tr><td class="k">Labor Day weekend</td><td>Fri 09-04 19:51 → Tue 09-08 00:00 UTC</td><td class="num">76.2 h</td></tr>
 <tr><td class="k">Weeknights</td><td>prints at 02:24, 03:55, 08:05, 10:32 UTC — not closed, just no 0.5% move</td><td class="num">—</td></tr></table>
 <div class="note">The 24 h heartbeat is not honoured during the closure. That is by design: <b>us_equities_24/5</b>.</div>
@@ -135,14 +136,14 @@ def slides():
 <div class="note">The pool price moved through the weekend (+0.56% → −0.23% against the open). <b>Nobody can read it from a contract.</b></div>
 <div class="grow"></div>""")
 
-    S.append("""<div class="kicker">The one live lending market on the chain · PARE pSPY/USDG on Morpho · verified source, 2026-09-18</div>
-<h2>Lending copes by accepting a five-day-old price.</h2>
-<pre class="code"><span class="c">/// @dev Shortest `maxFeedAge` that outlasts a Monday-holiday closure plus the feed's early stop.</span>
-<span class="k">uint256</span> <span class="s">public constant</span> MIN_FEED_AGE = <span class="s">5 days</span>;
-
-<span class="c">// stock leg: Chainlink, up to five days stale</span>
-<span class="c">// PT leg:    30-minute Uniswap v3 observe() TWAP of the same chain's pool</span></pre>
-<div class="note">For 30% of every week, every price-dependent contract here either trusts a dead print or stops. <b>The pool TWAP is already a trusted component — nobody points it at the stock.</b></div>
+    S.append("""<div class="kicker">Every Morpho market on the chain · <b>scripts/measure/morpho_markets.py</b> · 2026-09-23</div>
+<h2>Lending against stocks exists, and lives with the stale price.</h2>
+<div class="big">$6.4k<small>borrowed against $0.88M supplied, 83 markets</small></div>
+<table><tr><th>oracle behind the market</th><th>markets</th><th>supplied</th><th>on a weekend it answers</th></tr>
+<tr><td class="k">custom, reads the Chainlink feed</td><td class="num">16</td><td class="num">$852k</td><td>Friday's print</td></tr>
+<tr><td class="k">Morpho ChainlinkOracleV2</td><td class="num">52</td><td class="num">$27.1k</td><td>Friday's print, no staleness check</td></tr>
+<tr><td class="k">raw Uniswap pool price</td><td class="num">15</td><td class="num">$2.0k</td><td>the pool, no band</td></tr></table>
+<div class="note">The one oracle with a written policy (PARE) accepts a <b>five-day-old</b> print, and already trusts a 30-minute pool TWAP for its other leg.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">The product · one contract per asset · <b>drop-in</b> for a Chainlink address</div>
@@ -175,11 +176,11 @@ def slides():
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">52 tests + 50 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session and the venue rule asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">60 tests + 62 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, the venue rule and a stock split asserted, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 60-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Three adversarial reviews folded in</div><p>Anchor-age cap, window-average liquidity, a fixed venue an attacker cannot redirect, observation-history preflight, deploy job that verifies every field. 14 stocks meet the bar today, 28 deployable.</p></div>
+  <div class="col"><div class="t">Four review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, liquidity judged over three sub-windows, the token's share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ 33 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">cargo stylus check ✓ 36 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>

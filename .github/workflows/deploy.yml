@@ -21,9 +21,9 @@ on:
         description: Chainlink feed address for the stock
         required: true
       pools:
-        description: Uniswap v3 pool addresses of the stock against the quote, comma-separated (1-3). The first is the primary and prices the asset (give the deepest tier, see assets.json); the others are standbys used only while the primary cannot be observed
+        description: Uniswap v3 pool addresses of the stock against the quote, comma-separated (1-3). The first is the primary and prices the asset (give the deepest tier, see assets.json); optional standbys are used only while the primary cannot be observed, and only help if they clear min_liquidity themselves
         required: true
-        default: "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d,0x783c9bbb765047cfdd2b84b92b2ca9f11d34b7ed,0x3714aa8105de1f384481b425788af413748c1837"
+        default: "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"
       stock:
         description: Stock token address
         required: true

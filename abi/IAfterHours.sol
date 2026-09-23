@@ -5,6 +5,9 @@ pragma solidity ^0.8.20;
 /// @notice Drop-in replacement for a Chainlink stock feed that keeps answering
 ///         while the US market is closed. Implements Chainlink's
 ///         AggregatorV3Interface and Morpho Blue's IOracle.
+///         Units: every Chainlink-shaped answer is per share, like the feed.
+///         price() values one raw token unit: the per-share answer times the
+///         stock token's uiMultiplier (one raw unit = uiMultiplier/1e18 shares).
 interface IAfterHours {
     // ---- Chainlink AggregatorV3Interface ----------------------------------
     function decimals() external view returns (uint8);
@@ -32,16 +35,18 @@ interface IAfterHours {
     function latestRound() external view returns (uint256);
 
     // ---- Morpho Blue IOracle -----------------------------------------------
-    /// @dev Quote-token value of one raw stock unit, scaled by 1e36.
+    /// @dev Quote-token value of one raw stock unit, scaled by 1e36:
+    ///      answer * 10^(36 + quote - stock - feed decimals) * uiMultiplier / 1e18.
     function price() external view returns (uint256);
 
     // ---- AfterHours ---------------------------------------------------------
     /// @dev session: 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA
     ///      reason (NO_DATA only): 1 feed invalid, 2 pool too thin, 3 TWAP unavailable,
-    ///      4 last feed print older than maxAnchorAge
-    ///      answer: the price the oracle stands behind (0 when it refuses)
-    ///      twap: raw pool TWAP before the band (0 outside ONCHAIN_TWAP)
-    ///      liquidity: harmonic-mean in-range liquidity over the TWAP window of the pool used
+    ///      4 last feed print older than maxAnchorAge, 5 a new share multiplier took
+    ///      effect after the last print and the pool per share is outside the band
+    ///      answer: the per-share price the oracle stands behind (0 when it refuses)
+    ///      twap: pool TWAP per share before the band (0 outside ONCHAIN_TWAP)
+    ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
     ///      clamped: the TWAP was pulled back to the edge of the band
     ///      pool: the pool that was read: the primary, or a standby while the primary
     ///            cannot be observed (zero when the oracle did not reach the pools, or
@@ -89,11 +94,13 @@ interface IAfterHours {
         );
 
     /// @dev One-shot configuration, run by the deployment script right after activation.
-    ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow 0, 3 band not in
+    ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow under 3 s, 3 band not in
     ///      (0, 10000), 4 minLiquidity 0, 5 stock not in pool, 6 Morpho scale underflow,
     ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 1 day,
     ///      10 a pool does not answer observe([twapWindow, 0]), 11 not 1-3 pools,
-    ///      12 the pools do not share one quote token, 13 a pool is listed twice.
+    ///      12 the pools do not share one quote token, 13 a pool is listed twice,
+    ///      14 the stock's uiMultiplier() is zero. The stock must expose oraclePaused(),
+    ///      uiMultiplier() and effectiveAt() (CallFailed otherwise).
     function initialize(
         address feed,
         address[] calldata pools,

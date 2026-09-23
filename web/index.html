@@ -289,7 +289,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     <ul class="evidence">
       <li><span class="fig">52.2 h</span><p>The AAPL/USD feed went without a print over an ordinary weekend, and 76.2 h over Labor Day. <code>scripts/measure/feed_cadence.py</code></p></li>
       <li><span class="fig">$4.2M</span><p>AAPL changed hands in the chain's Uniswap pools during that one weekend, in 26,331 swaps, at prices that moved. <code>scripts/measure/weekend_swaps.py</code></p></li>
-      <li><span class="fig">5 days</span><p>The stale-price tolerance hard-coded into the chain's only live lending market, because nothing prices the stock while the exchange is closed. <code>scripts/measure/pare_oracle.py</code></p></li>
+      <li><span class="fig">$6.4k</span><p>Borrowed against $0.88M supplied in the 83 Morpho markets that take these stock tokens as collateral. Their oracles keep Friday's price through the weekend, read a raw pool price, or accept a five-day-old print. <code>scripts/measure/morpho_markets.py</code></p></li>
     </ul>
   </section>
 

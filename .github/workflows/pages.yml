@@ -32,7 +32,7 @@ jobs:
       - name: the page and its data are all that ship
         run: |
           mkdir -p _site
-          cp web/index.html web/data.json _site/
+          cp web/index.html web/data.json web/logo.svg _site/
           ls -la _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3

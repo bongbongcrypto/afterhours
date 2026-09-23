@@ -3,7 +3,7 @@
 Each round was an independent reviewer (a separate agent, given the repository
 and, from round 4, a fixed scoring rubric, but no self-assessment) reading
 the code, running the read-only measurement scripts and reporting defects.
-Rounds 6 to 9 ran from an empty folder with a clean copy of the repository
+Rounds 6 to 10 ran from an empty folder with a clean copy of the repository
 as it will be published, the rubric and the form text; they saw the findings
 below, not any score.
 Every finding below was either fixed in the commit shown or is listed as
@@ -157,4 +157,22 @@ open with the reason.
 | Suspected: the multiplier could change before `effectiveAt()` | the token's verified implementation returns a scheduled multiplier only once `block.timestamp >= effectiveAt()` and refuses a schedule in the past; cited in DESIGN | 84b8921 |
 | Suspected: the AAPL pool's cardinality (1,801) leaves no margin | DESIGN says why exactly 1,801 suffices at one observation a second | 84b8921 |
 | `initialize` can be front-run; other entries are described, not named | kept as documented | |
+| Not deployed, no public repo, no live URL, no final video | carried to round 10 | |
+
+## Round 10 (2026-09-23): fifth review from a clean copy of the repository as published
+
+| finding | resolution | commit |
+|---|---|---|
+| The corporate-action guard covered one ordering only: a split scheduled but not yet in effect, with the feed already printing the post-split price, passed through, and `price()` valued it with the old multiplier (half the collateral) | while a split-sized change is pending, every read goes to the pool, which must put the print within the wide band, else `NoData(5)`; a fresh print the pool confirms passes through; dividend-sized pending changes do not read the pool | 9c2e4fe |
+| The submission said 28 stocks could be deployed today, but 10 of them keep too little history and `initialize` refuses them | 28 have a feed and an observable pool, 18 pass `initialize` today, 14 meet the bar: in the submission text, the page, the progress notes and the narration | 9c2e4fe, 835a039 |
+| The deploy preflight skipped the decimals, the multiplier and its schedule, all read by `initialize` | the preflight reads every value `initialize` reads | 9c2e4fe |
+| The cheapest refusal was quoted as 7 seconds; 7.15 s of exposure takes eight whole seconds | `pool_depth.py` reports whole seconds; eight and five seconds, re-measured at block 70,474,692 | 9c2e4fe, 835a039 |
+| DESIGN presented the scheduled narrow-band run as done; it had not run yet | it says the run is due; `result.txt` says whether a run asserted the narrow band | 835a039 |
+| Nothing checks that the pool trades | stated in "What it does not do" | 835a039 |
+| The upward push, the direction a borrower profits from, was not sized | DESIGN: up to about 8% more borrowing; inside the band it cannot leave bad debt at an LLTV of 90.9% or less | 835a039 |
+| `abi/IAfterHours.sol` was never checked against the contract | CI compares it with `cargo stylus export-abi` (`scripts/abi_check.py`) | 9c2e4fe |
+| `initializer` was recorded from `tx.origin` | `msg.sender` | 9c2e4fe |
+| `NoData(1)` also covers a band overflow; `state()` zeroed the pool price on `NoData(5)`; the progress stamp was stale | the README row says so; the price is kept; restamped | 9c2e4fe, 835a039 |
+| Suspected: a pool whose cardinality has just grown holds less history than its count | `initialize` calls `observe` at the four points, so such a pool is refused until the history is there; DESIGN says so | 835a039 |
+| Other entries are described, not named or measured; no live market | kept unnamed; a live market needs the deployment | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

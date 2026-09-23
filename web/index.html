@@ -425,7 +425,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     // the post-action price while the token keeps the old multiplier, so the pool has
     // to confirm the print (an unreadable schedule is treated the same way)
     var B = 10000n, W = BigInt(P.maxDeviationBps), next = r.nextMultiplier;
-    var splitPending = r.effectiveAt > nowTs && (next === null || next === undefined ||
+    var splitPending = r.effectiveAt > nowTs && (next == null || r.multiplier == null ||
       next * B < r.multiplier * (B - W) || next * B > r.multiplier * (B + W));
     var unconfirmed = rebased || splitPending;
     if (age <= BigInt(P.liveMaxAge) && !unconfirmed) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }

@@ -461,16 +461,16 @@ re-activate it, and reads revert until someone does.
 
 | layer | what it proves | where |
 |---|---|---|
-| 73 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
+| 75 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
 | real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives | `fixtures/aapl_mainnet.txt` (block 70,448,078), `scripts/measure/capture_reads.py`, `src/tests.rs` |
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
 | end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session, which a scheduled run hits every weekday at 15:00 UTC; `result.txt` says which ran), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 86 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
-| eight independent review rounds, from round 4 against a fixed rubric; rounds 6 to 8 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
+| nine independent review rounds, from round 4 against a fixed rubric; rounds 6 to 9 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction
 base; two pools configured, the primary answering): `latestRoundData()`
-113,940 in LIVE_FEED, 154,874 in ONCHAIN_TWAP; `price()` 116,099 / 157,020.
+114,161 in LIVE_FEED, 155,094 in ONCHAIN_TWAP; `price()` 116,383 / 157,306.
 These are against Solidity test doubles; the real feed, pool and beacon-proxy
 token cost more per call and the figure will be re-measured on mainnet. Five
 external reads (pause flag, multiplier, its effective time, feed round, pool

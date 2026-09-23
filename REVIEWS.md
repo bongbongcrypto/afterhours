@@ -3,7 +3,7 @@
 Each round was an independent reviewer (a separate agent, given the repository
 and, from round 4, a fixed scoring rubric, but no self-assessment) reading
 the code, running the read-only measurement scripts and reporting defects.
-Rounds 6 and 7 ran from an empty folder with a clean copy of the repository
+Rounds 6 to 9 ran from an empty folder with a clean copy of the repository
 as it will be published, the rubric and the form text; they saw the findings
 below, not any score.
 Every finding below was either fixed in the commit shown or is listed as
@@ -139,4 +139,22 @@ open with the reason.
 | Suspected: mainnet gas is higher than the figures measured on test doubles | README says the gas is measured on Solidity doubles and will be re-measured on mainnet | db352cc |
 | Suspected: the deploy workflow, the one that must work on the day, had never run | its steps moved into `scripts/deploy.sh`, which e2e runs against a second instance on every push: a preflight that must refuse a primary one observation short, then preflight, deploy, initialize and a read-back that pass, and a read-back that must fail on a mismatched field | ab2fe8f |
 | USD feed against a USDG pool; `initialize` can be front-run | kept, as documented | |
+| Not deployed, no public repo, no live URL, no final video | carried to round 9 | |
+
+## Round 9 (2026-09-23): fourth review from a clean copy of the repository as published
+
+| finding | resolution | commit |
+|---|---|---|
+| The e2e asserted the narrow band only when CI happened to run inside the regular session, and the run a judge downloads had not | `result.txt` says which band ran; a scheduled run every weekday at 15:00 UTC asserts the narrow band on chain; the unit test covers every hour | 46330c3 |
+| Nothing had read a real Uniswap v3 pool, the real feed or the real token; the contract's decoding of `observe` and `slot0` was tested only against doubles | a unit test serves the exact answers the real feed, the AAPL 0.05% pool and the stock and quote tokens gave at block 70,448,078 and checks the contract's answer against a separate Python port of the rules; `capture_reads.py` re-captures them at any block | 46330c3 |
+| `price()` could refuse on an intermediate overflow where the result fits | the product is formed in 512 bits; tested at 1e50 per share | 46330c3 |
+| README said `initialize` accepts the low-cardinality tier; it refuses it (InvalidConfig 16) | the tier says `initialize` refuses until someone raises the cardinality | 84b8921 |
+| The floor margin (1.68e18, 34x) was stale and not pinned to a block | the quantity the contract compares, the median of three harmonic means, at block 70,448,078: 1.39e18, 28 times the floor | 84b8921 |
+| The floor ratio was quoted as 34 rounded down to 32 | 33.6, rounded to 32 | 84b8921 |
+| PARE's 5-day tolerance was listed as measured, but `pare_oracle.py` could not read it | the script reads PARE's own getters: `MIN_FEED_AGE` and `maxFeedAge` 5 days, `twapWindow` 1,800 s, no sequencer feed | 84b8921 |
+| The narration said the feed goes silent for 52 hours every weekend | 52 to 57 hours | 84b8921 |
+| A dividend after the last print moves pricing to the pool while the feed is fresh, and a thin pool then refuses | stated in README's "What it does not do", with the AAPL margin | 84b8921 |
+| Suspected: the multiplier could change before `effectiveAt()` | the token's verified implementation returns a scheduled multiplier only once `block.timestamp >= effectiveAt()` and refuses a schedule in the past; cited in DESIGN | 84b8921 |
+| Suspected: the AAPL pool's cardinality (1,801) leaves no margin | DESIGN says why exactly 1,801 suffices at one observation a second | 84b8921 |
+| `initialize` can be front-run; other entries are described, not named | kept as documented | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

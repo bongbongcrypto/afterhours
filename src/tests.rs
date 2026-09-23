@@ -40,6 +40,10 @@ const ROUND: u64 = 645;
 /// the contract truncates (integer fixed point), so it must answer ...304.
 const AAPL_TICK: i64 = 218_301;
 const AAPL_TWAP: u64 = 33_096_497_304;
+/// POOL2 in the multi-pool tests: stock as token0, mean tick -(218301 + 500).
+/// Exact 31482440784.887..., floor ...784 (80-digit decimal reference).
+const POOL2_TICK: i64 = -(AAPL_TICK + 500);
+const POOL2_TWAP: u64 = 31_482_440_784;
 
 struct World {
     vm: MockVM,
@@ -140,6 +144,45 @@ impl World {
             .abi_encode(),
             Ok((vec![then, now], vec![spl_then, spl_now]).abi_encode_params()),
         );
+    }
+
+    fn mock_pool2_reverts(&self) {
+        self.vm.mock_static_call(
+            POOL2,
+            observeCall {
+                secondsAgos: vec![TWAP_WINDOW, 0],
+            }
+            .abi_encode(),
+            Err(b"OLD".to_vec()),
+        );
+    }
+
+    fn mock_pool2_wrong_shape(&self) {
+        self.vm.mock_static_call(
+            POOL2,
+            observeCall {
+                secondsAgos: vec![TWAP_WINDOW, 0],
+            }
+            .abi_encode(),
+            Ok((vec![I56::ZERO], vec![U160::ZERO]).abi_encode_params()),
+        );
+    }
+
+    /// POOL first (primary), POOL2 second (standby).
+    fn deploy_two_pools(&self) -> AfterHours {
+        let mut c = AfterHours::from(&self.vm);
+        c.initialize(
+            FEED,
+            vec![POOL, POOL2],
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+        )
+        .expect("two pools");
+        c
     }
 
     fn mock_observe_raw(&self, ticks: Vec<I56>, spl: Vec<U160>) {
@@ -881,10 +924,20 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
     ));
     let (_, answer, ..) = c.latest_round_data().unwrap();
     assert_eq!(answer, I256::MAX, "the feed itself still passes through");
-    // Stale: the band arithmetic would overflow, so the oracle refuses.
+    // Stale: the band arithmetic would overflow, so the oracle refuses before
+    // reading any pool; the refusal carries no TWAP and names no pool.
     w.mock_feed_raw(I256::MAX, NOW - 40 * 3600);
-    let (session, reason, ..) = c.state().unwrap();
+    let before = w.vm.call_log().len();
+    let (session, reason, _, _, _, twap, liq, _, pool) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_FEED_INVALID));
+    assert_eq!((twap, liq, pool), (U256::ZERO, 0, Address::ZERO));
+    assert!(
+        w.vm.call_log()
+            .split_off(before)
+            .iter()
+            .all(|(to, _)| *to != POOL),
+        "no pool read when the anchor itself is unusable"
+    );
     assert!(matches!(
         c.latest_round_data().expect_err("overflow"),
         AfterHoursError::NoData(NoData {
@@ -1001,67 +1054,103 @@ fn get_round_data_serves_history_while_refusing_to_price() {
 // ---- several pools ------------------------------------------------------------------
 
 #[test]
-fn the_deepest_pool_over_the_window_answers() {
+fn the_primary_prices_and_a_deeper_standby_cannot_take_over() {
     let w = World::new();
-    // POOL: tick 218301 at MIN_LIQUIDITY; POOL2 (stock as token0): mirrored tick
-    // 500 lower (a different price) at 3x the liquidity.
-    w.mock_pool2(-(AAPL_TICK + 500), MIN_LIQUIDITY * 3);
-    let mut c = AfterHours::from(&w.vm);
-    c.initialize(
-        FEED,
-        vec![POOL, POOL2],
-        STOCK,
-        LIVE_MAX_AGE,
-        TWAP_WINDOW,
-        MAX_DEV_BPS,
-        MIN_LIQUIDITY,
-        MAX_ANCHOR_AGE,
-    )
-    .expect("two pools");
+    // POOL2 (stock as token0) quotes 500 ticks away with 3x the primary's depth:
+    // exactly what someone deepening a shallow tier would set up.
+    w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY * 3);
+    let c = w.deploy_two_pools();
     assert_eq!(c.pools(), vec![POOL, POOL2]);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
 
-    let (session, _, ans, _, _, _, liq, _, pool) = c.state().unwrap();
-    assert_eq!(session, SESSION_ONCHAIN_TWAP);
-    assert_eq!(pool, POOL2, "the deeper pool wins");
-    assert_eq!(liq, MIN_LIQUIDITY * 3);
-    let (_, _, twap_pool1, ..) = {
-        // what POOL alone would have said
-        let w1 = World::new();
-        let c1 = w1.deploy();
-        w1.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
-        c1.state().unwrap()
-    };
-    assert_ne!(ans, twap_pool1, "a different pool gives a different price");
-    assert!(ans < twap_pool1, "tick +500 (mirrored) is a lower price");
-
-    // POOL2 thins out below POOL: the answer moves back to POOL, same block, no config change.
-    w.mock_pool2(-(AAPL_TICK + 500), MIN_LIQUIDITY / 2);
+    let before = w.vm.call_log().len();
     let (session, _, ans, _, _, _, liq, _, pool) = c.state().unwrap();
     assert_eq!(
         (session, pool, liq),
-        (SESSION_ONCHAIN_TWAP, POOL, MIN_LIQUIDITY)
+        (SESSION_ONCHAIN_TWAP, POOL, MIN_LIQUIDITY),
+        "the venue is fixed: the primary prices even when a standby looks deeper"
     );
     assert_eq!(ans, U256::from(AAPL_TWAP));
-
-    // POOL2 reverting (no history) is skipped, not fatal.
-    w.vm.mock_static_call(
-        POOL2,
-        observeCall {
-            secondsAgos: vec![TWAP_WINDOW, 0],
-        }
-        .abi_encode(),
-        Err(b"OLD".to_vec()),
+    assert!(
+        w.vm.call_log()
+            .split_off(before)
+            .iter()
+            .all(|(to, _)| *to != POOL2),
+        "a standby is not even read while the primary can be observed"
     );
-    let (session, _, _, _, _, _, _, _, pool) = c.state().unwrap();
-    assert_eq!((session, pool), (SESSION_ONCHAIN_TWAP, POOL));
 
-    // Both below the floor: the deepest is reported, and refused.
-    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY / 4);
-    w.mock_pool2(-(AAPL_TICK + 500), MIN_LIQUIDITY / 3);
+    // The primary thins below the floor: refuse; never move to the deep standby.
+    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY / 2);
+    let (session, reason, ans, _, _, twap, liq, _, pool) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
+    assert_eq!(
+        (pool, liq),
+        (POOL, MIN_LIQUIDITY / 2),
+        "the refusal names the primary"
+    );
+    assert_eq!((ans, twap), (U256::ZERO, U256::ZERO));
+}
+
+#[test]
+fn a_standby_prices_only_while_the_primary_cannot_be_observed() {
+    let w = World::new();
+    w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY);
+    let c = w.deploy_two_pools();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+
+    // Primary reverts "OLD": the standby answers with its own price.
+    w.mock_observe_reverts();
+    let (session, _, ans, _, _, twap, liq, clamped, pool) = c.state().unwrap();
+    assert_eq!(
+        (session, pool, liq),
+        (SESSION_ONCHAIN_TWAP, POOL2, MIN_LIQUIDITY)
+    );
+    assert_eq!(twap, U256::from(POOL2_TWAP), "stock-as-token0 conversion");
+    assert_eq!(ans, U256::from(POOL2_TWAP));
+    assert!(!clamped);
+
+    // Primary answers with the wrong shape: same.
+    w.mock_observe_raw(vec![I56::ZERO], vec![U160::ZERO]);
+    let (_, _, _, _, _, _, _, _, pool) = c.state().unwrap();
+    assert_eq!(pool, POOL2);
+
+    // Standby thin while it is the only observable pool: refuse, naming it.
+    w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY - 1);
     let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_NO_DATA, REASON_POOL_TOO_THIN));
-    assert_eq!((pool, liq), (POOL2, MIN_LIQUIDITY / 3));
+    assert_eq!((pool, liq), (POOL2, MIN_LIQUIDITY - 1));
+
+    // Nothing observable: refuse, naming no pool.
+    w.mock_pool2_reverts();
+    let (session, reason, _, _, _, _, liq, _, pool) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE));
+    assert_eq!((pool, liq), (Address::ZERO, 0));
+
+    // The primary comes back: it prices again, whatever the standby does.
+    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
+    w.mock_pool2_wrong_shape();
+    let (session, _, ans, _, _, _, _, _, pool) = c.state().unwrap();
+    assert_eq!(
+        (session, pool, ans),
+        (SESSION_ONCHAIN_TWAP, POOL, U256::from(AAPL_TWAP))
+    );
+}
+
+#[test]
+fn initialize_rejects_duplicate_pools() {
+    let w = World::new();
+    assert_eq!(
+        config_reason(w.try_deploy_with(vec![POOL, POOL]).expect_err("dup")),
+        CONFIG_DUPLICATE_POOL
+    );
+    w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY);
+    assert_eq!(
+        config_reason(
+            w.try_deploy_with(vec![POOL, POOL2, POOL])
+                .expect_err("dup at the end")
+        ),
+        CONFIG_DUPLICATE_POOL
+    );
 }
 
 #[test]
@@ -1149,6 +1238,110 @@ mod props {
         )
     }
 
+    /// Garbage and near-valid inputs from the feed and the pool never panic, every
+    /// session is consistent with its price surfaces, and the run proves it reached
+    /// every session and every refusal reason instead of stopping at the first gate.
+    #[test]
+    fn garbage_never_panics_and_every_session_is_reached() {
+        use proptest::test_runner::{Config, TestRunner};
+        use std::cell::RefCell;
+
+        let spl_for =
+            |liq: u128| ((U256::from(TWAP_WINDOW) << 128usize) / U256::from(liq)).to::<u128>();
+        // pools between 1e14 and 1e20 of liquidity, around the 1e15 floor
+        let healthy_spl = spl_for(100_000_000_000_000_000_000)..=spl_for(100_000_000_000_000);
+        let strategy = (
+            prop_oneof![
+                4 => 1i128..=1_000_000_000_000i128,
+                1 => any::<i128>(),
+                1 => -1_000_000i128..=0i128,
+            ],
+            prop_oneof![
+                6 => (NOW - 500_000)..=(NOW + 10),
+                1 => Just(0u64),
+                1 => any::<u64>(),
+            ],
+            prop::bool::weighted(0.1),
+            -(1i64 << 50)..=(1i64 << 50),
+            prop_oneof![
+                4 => (-400_000i64..=400_000).prop_map(|t| t * i64::from(TWAP_WINDOW)),
+                1 => any::<i64>(),
+            ],
+            any::<u128>(),
+            prop_oneof![4 => healthy_spl, 1 => any::<u128>(), 1 => Just(0u128)],
+        );
+        let sessions = RefCell::new([0usize; 4]);
+        let reasons = RefCell::new([0usize; 5]);
+        let mut runner = TestRunner::new(Config {
+            cases: 3000,
+            ..Config::default()
+        });
+        runner
+            .run(
+                &strategy,
+                |(answer, updated_at, paused, cum_then, cum_delta, spl_then, spl_delta)| {
+                    let w = World::new();
+                    let c = w.deploy();
+                    w.mock_paused(paused);
+                    w.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
+                    let clamp56 = |v: i64| v.clamp(-(1i64 << 55) + 1, (1i64 << 55) - 1);
+                    let then = I56::try_from(clamp56(cum_then)).unwrap();
+                    let now = I56::try_from(clamp56(cum_then.saturating_add(cum_delta))).unwrap();
+                    let spl_a = U160::from(spl_then);
+                    let spl_b = spl_a.wrapping_add(U160::from(spl_delta));
+                    w.mock_observe_raw(vec![then, now], vec![spl_a, spl_b]);
+
+                    let (session, reason, ans, feed_answer, _, twap, _, clamped, pool) =
+                        c.state().unwrap();
+                    prop_assert!(session <= SESSION_NO_DATA && reason <= REASON_ANCHOR_STALE);
+                    match session {
+                        SESSION_LIVE_FEED => {
+                            prop_assert!(answer > 0);
+                            prop_assert_eq!(ans, U256::from(answer as u128));
+                            prop_assert_eq!(c.latest_answer().unwrap(), I256::try_from(answer).unwrap());
+                        }
+                        SESSION_ONCHAIN_TWAP => {
+                            let lower = feed_answer * U256::from(9000u64) / U256::from(10_000u64);
+                            let upper = feed_answer * U256::from(11_000u64) / U256::from(10_000u64);
+                            prop_assert!(ans >= lower && ans <= upper);
+                            prop_assert_eq!(clamped, twap < lower || twap > upper);
+                            prop_assert_eq!(pool, POOL);
+                            prop_assert_eq!(c.latest_answer().unwrap(), I256::from_raw(ans));
+                        }
+                        SESSION_PAUSED => {
+                            prop_assert_eq!(ans, U256::ZERO);
+                            prop_assert!(matches!(
+                                c.latest_round_data(),
+                                Err(AfterHoursError::IssuerPaused(_))
+                            ));
+                        }
+                        _ => {
+                            prop_assert_eq!(ans, U256::ZERO);
+                            prop_assert!(matches!(
+                                c.price(),
+                                Err(AfterHoursError::NoData(NoData { reason: r })) if r == reason
+                            ));
+                        }
+                    }
+                    sessions.borrow_mut()[session as usize] += 1;
+                    if session == SESSION_NO_DATA {
+                        reasons.borrow_mut()[reason as usize] += 1;
+                    }
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let s = sessions.into_inner();
+        let r = reasons.into_inner();
+        println!("sessions reached {s:?} (LIVE, TWAP, PAUSED, NO_DATA); NO_DATA reasons {r:?}");
+        for (i, n) in s.iter().enumerate() {
+            assert!(*n >= 20, "session {i} reached only {n} times: {s:?}");
+        }
+        for (code, n) in r.iter().enumerate().skip(1) {
+            assert!(*n >= 5, "NO_DATA reason {code} reached only {n} times: {r:?}");
+        }
+    }
+
     proptest! {
         #![proptest_config(ProptestConfig::with_cases(256))]
 
@@ -1173,7 +1366,7 @@ mod props {
         }
 
         #[test]
-        fn closed_market_answer_stays_inside_the_band(
+        fn closed_market_answer_is_the_pinned_twap_or_the_exact_band_edge(
             tick_offset in -6_000i64..6_000,
             feed in 20_000_000_000u64..50_000_000_000,
             liq_mult in 1u128..50,
@@ -1182,15 +1375,25 @@ mod props {
             let w = World::new();
             let c = w.deploy();
             w.mock_feed(feed as i128, NOW - age);
-            w.mock_observe(AAPL_TICK + tick_offset, MIN_LIQUIDITY * liq_mult);
-            let (session, reason, ans, _, _, twap, liq, clamped, _) = c.state().unwrap();
+            let tick = AAPL_TICK + tick_offset;
+            w.mock_observe(tick, MIN_LIQUIDITY * liq_mult);
+            let (session, reason, ans, _, _, twap, liq, clamped, pool) = c.state().unwrap();
             prop_assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
-            prop_assert_eq!(liq, MIN_LIQUIDITY * liq_mult);
+            prop_assert_eq!((liq, pool), (MIN_LIQUIDITY * liq_mult, POOL));
+            // the TWAP is the pool's price, cross-checked in floating point
+            let exact = tickmath::stock_price(tickmath::ratio_q96(tick as i32).unwrap(), false, 18, 6, 8).unwrap();
+            prop_assert_eq!(twap, exact);
+            let approx = 1e20_f64 / 1.0001_f64.powi(tick as i32);
+            let got = twap.to::<u128>() as f64;
+            prop_assert!(((got - approx) / approx).abs() < 1e-9, "twap {got} vs float {approx}");
+            // the answer is the TWAP inside the band, else exactly the edge it crossed
             let (lower, upper) = lower_upper(feed);
-            prop_assert!(ans >= lower && ans <= upper, "answer {ans} outside [{lower}, {upper}]");
-            prop_assert_eq!(clamped, twap < lower || twap > upper);
-            if !clamped {
-                prop_assert_eq!(ans, twap);
+            if twap < lower {
+                prop_assert_eq!((ans, clamped), (lower, true));
+            } else if twap > upper {
+                prop_assert_eq!((ans, clamped), (upper, true));
+            } else {
+                prop_assert_eq!((ans, clamped), (twap, false));
             }
             // every price surface agrees with state()
             let (_, rd_answer, ..) = c.latest_round_data().unwrap();
@@ -1199,47 +1402,43 @@ mod props {
         }
 
         #[test]
-        fn garbage_from_the_feed_and_the_pool_never_panics(
-            answer in any::<i128>(),
-            updated_at in any::<u64>(),
-            cum_then in any::<i64>(),
-            cum_delta in any::<i64>(),
-            spl_then in any::<u128>(),
-            spl_delta in any::<u128>(),
-            paused in any::<bool>(),
+        fn the_venue_is_the_first_observable_pool_never_the_deepest(
+            primary_mode in 0u8..3,
+            primary_liq in (MIN_LIQUIDITY / 4)..(MIN_LIQUIDITY * 4),
+            standby_mode in 0u8..3,
+            standby_liq in (MIN_LIQUIDITY / 4)..(MIN_LIQUIDITY * 40),
         ) {
+            // mode 0 = observable with the given depth, 1 = reverts "OLD", 2 = wrong shape
             let w = World::new();
-            let c = w.deploy();
-            w.mock_paused(paused);
-            w.mock_feed_raw(I256::try_from(answer).unwrap(), updated_at);
-            let clamp56 = |v: i64| v.clamp(-(1i64 << 55) + 1, (1i64 << 55) - 1);
-            let then = I56::try_from(clamp56(cum_then)).unwrap();
-            let now = I56::try_from(clamp56(cum_then.wrapping_add(cum_delta))).unwrap();
-            let spl_a = U160::from(spl_then);
-            let spl_b = spl_a.wrapping_add(U160::from(spl_delta));
-            w.mock_observe_raw(vec![then, now], vec![spl_a, spl_b]);
-
-            let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
-            prop_assert!(session <= SESSION_NO_DATA);
-            prop_assert!(reason <= REASON_ANCHOR_STALE);
-            match session {
-                SESSION_LIVE_FEED => {
-                    prop_assert!(answer > 0);
-                    prop_assert_eq!(ans, U256::from(answer as u128));
-                }
-                SESSION_ONCHAIN_TWAP => {
-                    let feed = U256::from(answer as u128);
-                    let lower = feed * U256::from(9000u64) / U256::from(10_000u64);
-                    let upper = feed * U256::from(11_000u64) / U256::from(10_000u64);
-                    prop_assert!(ans >= lower && ans <= upper);
-                    prop_assert_eq!(clamped, twap < lower || twap > upper);
-                }
-                _ => {
-                    prop_assert_eq!(ans, U256::ZERO);
-                    prop_assert!(c.latest_round_data().is_err());
-                    prop_assert!(c.price().is_err());
-                }
+            w.mock_pool2(POOL2_TICK, MIN_LIQUIDITY);
+            let c = w.deploy_two_pools();
+            w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+            match primary_mode {
+                0 => w.mock_observe(AAPL_TICK, primary_liq),
+                1 => w.mock_observe_reverts(),
+                _ => w.mock_observe_raw(vec![I56::ZERO], vec![U160::ZERO]),
             }
+            match standby_mode {
+                0 => w.mock_pool2(POOL2_TICK, standby_liq),
+                1 => w.mock_pool2_reverts(),
+                _ => w.mock_pool2_wrong_shape(),
+            }
+            let (session, reason, ans, _, _, _, liq, _, pool) = c.state().unwrap();
+            let expect = |p: Address, l: u128, price: u64| -> (u8, u8, U256, u128, Address) {
+                if l >= MIN_LIQUIDITY {
+                    (SESSION_ONCHAIN_TWAP, REASON_NONE, U256::from(price), l, p)
+                } else {
+                    (SESSION_NO_DATA, REASON_POOL_TOO_THIN, U256::ZERO, l, p)
+                }
+            };
+            let want = if primary_mode == 0 {
+                expect(POOL, primary_liq, AAPL_TWAP)
+            } else if standby_mode == 0 {
+                expect(POOL2, standby_liq, POOL2_TWAP)
+            } else {
+                (SESSION_NO_DATA, REASON_TWAP_UNAVAILABLE, U256::ZERO, 0, Address::ZERO)
+            };
+            prop_assert_eq!((session, reason, ans, liq, pool), want);
         }
     }
 }

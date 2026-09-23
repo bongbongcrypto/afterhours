@@ -8,9 +8,11 @@
 //!
 //! * passes the Chainlink answer through while it is fresh (`LIVE_FEED`),
 //! * otherwise prices the token from where it actually trades: a time-weighted
-//!   average of the deepest of its Uniswap v3 pools, bounded to a per-asset
-//!   band around the last exchange print and refused when every pool is too
-//!   thin (`ONCHAIN_TWAP`),
+//!   average of its primary Uniswap v3 pool, bounded to a per-asset band
+//!   around the last exchange print and refused when that pool is too thin
+//!   (`ONCHAIN_TWAP`). The primary is fixed at deployment; standby pools are
+//!   read only while the primary cannot be observed, so nobody can move the
+//!   price source to a pool they control,
 //! * refuses to price while the issuer has paused the token's oracle for a
 //!   corporate action (`PAUSED`), when neither source is usable, or when the
 //!   last exchange print is older than any market closure can explain
@@ -70,13 +72,16 @@ pub const CONFIG_POOL_NOT_OBSERVABLE: u8 = 10;
 pub const CONFIG_POOL_COUNT: u8 = 11;
 /// Every pool must pair the stock with the same quote token.
 pub const CONFIG_POOL_QUOTE_MISMATCH: u8 = 12;
+/// The same pool was given twice.
+pub const CONFIG_DUPLICATE_POOL: u8 = 13;
 
 const BPS: u64 = 10_000;
 /// Longest TWAP window accepted (one day); longer windows are always unavailable.
 const MAX_TWAP_WINDOW: u32 = 86_400;
 /// Token/feed decimals above this would overflow the fixed-point scales.
 const MAX_DECIMALS: u8 = 36;
-/// Pools read per evaluation; the deepest over the window is used.
+/// Primary plus standby pools. Standbys are read only while the primary
+/// cannot be observed.
 const MAX_POOLS: usize = 3;
 
 sol_interface! {
@@ -143,7 +148,8 @@ sol_storage! {
         /// Chainlink-style feed for the stock (8 decimals on Robinhood Chain).
         address feed;
         /// Uniswap v3 pools where the stock trades against the quote token (1-3).
-        /// Every read observes all of them and prices from the deepest over the window.
+        /// pools[0] is the primary and prices the asset; the others are standbys,
+        /// read in order only while every earlier pool cannot be observed.
         address[] pools;
         /// Per pool: true when the stock is token0 (the pool's tick is quote per stock).
         bool[] pool_stock_is_token0;
@@ -183,11 +189,12 @@ pub struct Quote {
     pub feed_answered_in_round: U80,
     /// Raw pool TWAP in feed decimals before the band is applied (0 outside ONCHAIN_TWAP).
     pub twap: U256,
-    /// Harmonic-mean in-range liquidity over the TWAP window of the pool that was used.
+    /// Harmonic-mean in-range liquidity over the TWAP window of `pool` (0 when no pool was read).
     pub liquidity: u128,
     /// True when the TWAP was pulled back to the edge of the allowed band.
     pub clamped: bool,
-    /// The pool the answer came from (zero outside ONCHAIN_TWAP / pool refusals).
+    /// The pool that was observed to price (or to refuse: NO_DATA 2 and the tick
+    /// conversion case of 3). Zero when no pool was needed or none could be observed.
     pub pool: Address,
 }
 
@@ -200,7 +207,8 @@ impl AfterHours {
     /// read on the price path (feed round, every pool's observe, pause flag) is
     /// exercised once, so a wrong pool or a token without the pause flag fails
     /// here rather than at the first weekend. `pools` holds one to three
-    /// Uniswap v3 pools of the stock against one quote token.
+    /// distinct Uniswap v3 pools of the stock against one quote token; the
+    /// first is the primary (give the deepest fee tier), the rest are standbys.
     pub fn initialize(
         &mut self,
         feed: Address,
@@ -235,6 +243,11 @@ impl AfterHours {
         }
         if pools.is_empty() || pools.len() > MAX_POOLS {
             return Err(invalid(CONFIG_POOL_COUNT));
+        }
+        for (i, pool) in pools.iter().enumerate() {
+            if pools[..i].contains(pool) {
+                return Err(invalid(CONFIG_DUPLICATE_POOL));
+            }
         }
 
         let mut quote = Address::ZERO;
@@ -538,18 +551,33 @@ impl AfterHours {
             return Ok(q);
         }
 
-        // Closed market: price from the deepest pool, guarded by depth and the band.
-        // Every configured pool is observed; the one with the most harmonic-mean
-        // liquidity over the window wins, so liquidity migrating to another fee
-        // tier does not strand the oracle and a thinned pool cannot be chosen.
+        // The band is anchored to the last feed print; a print so large that the
+        // arithmetic overflows is not a print to anchor to. Checked before any
+        // pool read so a refusal never carries a half-computed TWAP.
+        let dev = U256::from(self.max_deviation_bps.get());
+        let bps = U256::from(BPS);
+        let (Some(lower), Some(upper)) = (
+            feed_answer.checked_mul(bps - dev).map(|v| v / bps),
+            feed_answer.checked_mul(bps + dev).map(|v| v / bps),
+        ) else {
+            q.session = SESSION_NO_DATA;
+            q.reason = REASON_FEED_INVALID;
+            return Ok(q);
+        };
+
+        // Closed market: price from the primary pool, guarded by depth and the band.
+        // The venue is fixed: a standby is read only while every earlier pool
+        // cannot be observed at all (history too short, wrong shape). A primary
+        // that is merely thin refuses; switching to whichever pool looks deepest
+        // would let anyone who deepens a shallow tier choose the price source.
         let window = self.twap_window.get().to::<u32>();
-        let mut best: Option<(Address, bool, u128, i64, i64)> = None;
+        let mut chosen: Option<(Address, bool, u128, i64, i64)> = None;
         for i in 0..self.pools.len() {
             let Some(pool) = self.pools.get(i) else {
                 continue;
             };
             let is_token0 = self.pool_stock_is_token0.get(i).unwrap_or(false);
-            // A pool with too little history reverts with "OLD"; skip it.
+            // A pool with too little history reverts with "OLD": not observable.
             let observed = IUniswapV3PoolMinimal::new(pool)
                 .observe(self.vm(), Call::new(), vec![window, 0])
                 .ok()
@@ -563,17 +591,16 @@ impl AfterHours {
             let Some(liquidity) = harmonic_liquidity(window, spl_delta) else {
                 continue;
             };
-            if best.is_none_or(|b| liquidity > b.2) {
-                best = Some((
-                    pool,
-                    is_token0,
-                    liquidity,
-                    cumulatives[0].as_i64(),
-                    cumulatives[1].as_i64(),
-                ));
-            }
+            chosen = Some((
+                pool,
+                is_token0,
+                liquidity,
+                cumulatives[0].as_i64(),
+                cumulatives[1].as_i64(),
+            ));
+            break;
         }
-        let Some((pool, stock_is_token0, liquidity, cum_then, cum_now)) = best else {
+        let Some((pool, stock_is_token0, liquidity, cum_then, cum_now)) = chosen else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
             return Ok(q);
@@ -603,19 +630,6 @@ impl AfterHours {
             return Ok(q);
         };
         q.twap = twap;
-
-        let dev = U256::from(self.max_deviation_bps.get());
-        let bps = U256::from(BPS);
-        // The band is anchored to the last feed print; a print so large that the
-        // arithmetic overflows is not a print to anchor to.
-        let (Some(lower), Some(upper)) = (
-            feed_answer.checked_mul(bps - dev).map(|v| v / bps),
-            feed_answer.checked_mul(bps + dev).map(|v| v / bps),
-        ) else {
-            q.session = SESSION_NO_DATA;
-            q.reason = REASON_FEED_INVALID;
-            return Ok(q);
-        };
         let (answer, clamped) = if twap < lower {
             (lower, true)
         } else if twap > upper {

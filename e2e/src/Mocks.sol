@@ -57,7 +57,8 @@ contract MockPool {
         external view returns (int56[] memory tickCumulatives, uint160[] memory secondsPerLiquidityCumulativeX128s)
     {
         require(!revertObserve, "OLD");
-        require(secondsAgos.length == 2, "two samples");
+        // AfterHours must ask for [window, 0]; a reversed or extra request fails here.
+        require(secondsAgos.length == 2 && secondsAgos[0] > 0 && secondsAgos[1] == 0, "shape");
         tickCumulatives = new int56[](2);
         secondsPerLiquidityCumulativeX128s = new uint160[](2);
         tickCumulatives[0] = cumThen; tickCumulatives[1] = cumNow;

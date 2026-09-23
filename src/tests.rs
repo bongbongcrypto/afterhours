@@ -1323,10 +1323,13 @@ mod props {
                         }
                         _ => {
                             prop_assert_eq!(ans, U256::ZERO);
-                            prop_assert!(matches!(
+                            // prop_assert! turns its expression into a format string,
+                            // so the struct pattern's braces stay outside it.
+                            let refused_with_reason = matches!(
                                 c.price(),
                                 Err(AfterHoursError::NoData(NoData { reason: r })) if r == reason
-                            ));
+                            );
+                            prop_assert!(refused_with_reason, "price() must refuse with NoData({})", reason);
                         }
                     }
                     sessions.borrow_mut()[session as usize] += 1;

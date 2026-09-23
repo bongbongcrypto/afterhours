@@ -20,6 +20,7 @@ MIN_LIQ=1000000000000000      # 1e15
 ANCHOR=432000
 TICK=218301
 EXPECT_TWAP=33096497304       # floor of the exact 33096497304.69 (scripts/measure/tick_vectors.py)
+POOL2_TWAP=31482440784        # standby, stock as token0, tick -218801: floor of 31482440784.887
 MORPHO_SCALE=10000000000000000  # 10^(36 + 6 - 18 - 8)
 
 pass=0; fail=0
@@ -121,7 +122,7 @@ expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "twap reported" "$(num "${s[5]}")" "$EXPECT_TWAP"
 expect "window liquidity" "$(num "${s[6]}")" "$MIN_LIQ"
 expect "not clamped" "${s[7]}" "false"
-expect "answered by the deeper pool" "$(echo "${s[8]}" | tr A-Z a-z)" "$(echo "$POOL" | tr A-Z a-z)"
+expect "answered by the primary" "$(echo "${s[8]}" | tr A-Z a-z)" "$(echo "$POOL" | tr A-Z a-z)"
 GAS_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "latestRoundData()")
 GAS_PRICE_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "price()")
 
@@ -133,29 +134,40 @@ expect "answer clamped to lower band" "$(num "${s[2]}")" "$LOWER"
 expect "clamped flag" "${s[7]}" "true"
 expect "price() clamped" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$LOWER * $MORPHO_SCALE")"
 
-echo "== failover: POOL thins out, POOL2 (shallower, but now the deepest) answers"
-send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ / 4)))")"
-send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$((CUM_THEN - (TICK + 500) * WINDOW))" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $MIN_LIQ)")"
-mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
-expect "session still ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
-expect "answered by POOL2" "$(echo "${s[8]}" | tr A-Z a-z)" "$(echo "$POOL2" | tr A-Z a-z)"
-expect "POOL2 liquidity" "$(num "${s[6]}")" "$MIN_LIQ"
-if [ "$(num "${s[2]}")" -lt "$EXPECT_TWAP" ]; then pass=$((pass + 1)); echo "  ok   POOL2's lower price is used ($(num "${s[2]}") < $EXPECT_TWAP)"; else fail=$((fail + 1)); echo "  FAIL price did not move to POOL2"; fi
-send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$((CUM_THEN - (TICK + 500) * WINDOW))" "$SPL_THEN" "$SPL2_NOW"
+lower() { echo "$1" | tr A-Z a-z; }
+POOL2_OBS_THEN="$CUM_THEN"
+POOL2_OBS_NOW="$((CUM_THEN - (TICK + 500) * WINDOW))"
 
-echo "== every pool thin over the window"
+echo "== the venue is fixed: a standby three times deeper does not take over"
+send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$SPL_NOW"
+send "$POOL2" "setObservation(int56,int56,uint160,uint160)" "$POOL2_OBS_THEN" "$POOL2_OBS_NOW" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ * 3)))")"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
+expect "the primary still answers" "$(lower "${s[8]}")" "$(lower "$POOL")"
+expect "at the primary's price" "$(num "${s[2]}")" "$EXPECT_TWAP"
+
+echo "== a thin primary refuses instead of moving venue"
 send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$(pyint "$SPL_THEN + $(spl_delta $((MIN_LIQ - 1)))")"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
-expect "deepest (POOL) liquidity reported" "$(num "${s[6]}")" "$((MIN_LIQ - 1))"
+expect "the refusal names the primary" "$(lower "${s[8]}")" "$(lower "$POOL")"
+expect "primary liquidity reported" "$(num "${s[6]}")" "$((MIN_LIQ - 1))"
 reverts_with "latestRoundData while thin" "NoData(uint8)" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
 reverts_with "price while thin" "NoData(uint8)" "$ADDR" "price()(uint256)"
 
-echo "== no pool with history"
+echo "== the primary cannot be observed: the standby prices"
 send "$POOL" "setRevert(bool)" true
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
+expect "answered by the standby" "$(lower "${s[8]}")" "$(lower "$POOL2")"
+expect "standby price, stock as token0 (exact)" "$(num "${s[2]}")" "$POOL2_TWAP"
+expect "standby liquidity" "$(num "${s[6]}")" "$((MIN_LIQ * 3))"
+
+echo "== no pool can be observed"
 send "$POOL2" "setRevert(bool)" true
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/twap unavailable" "${s[0]}/${s[1]}" "3/3"
+expect "no pool named" "$(lower "${s[8]}")" "0x0000000000000000000000000000000000000000"
 send "$POOL" "setRevert(bool)" false
 send "$POOL2" "setRevert(bool)" false
 send "$POOL" "setObservation(int56,int56,uint160,uint160)" "$CUM_THEN" "$CUM_NOW" "$SPL_THEN" "$SPL_NOW"

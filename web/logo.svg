@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="AfterHours">
+  <!-- The page's print tape in one mark: the chain rail never stops, the feed's prints do, and the lime dot is the answer that keeps coming. -->
+  <rect width="512" height="512" fill="#08090a"/>
+  <line x1="84" y1="196" x2="428" y2="196" stroke="#d0d6e0" stroke-width="16" stroke-linecap="round"/>
+  <g stroke="#8a8f98" stroke-width="16" stroke-linecap="round">
+    <line x1="92" y1="282" x2="92" y2="346"/>
+    <line x1="140" y1="282" x2="140" y2="346"/>
+    <line x1="172" y1="282" x2="172" y2="346"/>
+    <line x1="236" y1="282" x2="236" y2="346"/>
+  </g>
+  <circle cx="394" cy="314" r="42" fill="#e4f222"/>
+</svg>

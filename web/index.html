@@ -238,8 +238,8 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       </figure>
       <dl class="facts">
         <div><dt>Pool read</dt><dd id="pool-name">…</dd></div>
-        <div><dt>Pool 30-minute average</dt><dd class="num" id="pool-twap">…</dd></div>
-        <div><dt>Pool liquidity over the window</dt><dd class="num" id="pool-liq">…</dd></div>
+        <div><dt>Pool 30-minute average, per share</dt><dd class="num" id="pool-twap">…</dd></div>
+        <div><dt>Pool liquidity, median of three 10-minute windows</dt><dd class="num" id="pool-liq">…</dd></div>
         <div><dt>Read at block</dt><dd class="num" id="read-at">…</dd></div>
       </dl>
       <div class="panel__foot">
@@ -273,7 +273,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
             <th scope="col">Stock</th>
             <th scope="col" class="r">Chainlink</th>
             <th scope="col" class="r">Last print</th>
-            <th scope="col" class="r">Pool 30-min average</th>
+            <th scope="col" class="r">Pool 30-min average, per share</th>
             <th scope="col" class="r">Pool vs print</th>
             <th scope="col">AfterHours now</th>
           </tr>
@@ -342,9 +342,12 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     getRoundData: "0x9a6fc8f5",
     decimals: "0x313ce567",
     oraclePaused: "0x7706ba52",
+    uiMultiplier: "0xa60bf13d",
+    effectiveAt: "0x97a4064f",
     observe: "0x883bdbfd",
     state: "0xc19d93fb"
   };
+  var ONE_SHARE = 10n ** 18n;
   var DATA = null;
   var $ = function (id) { return document.getElementById(id); };
   var SVGNS = "http://www.w3.org/2000/svg";
@@ -394,16 +397,29 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     return liq > U128_MAX ? U128_MAX : liq;
   }
 
+  // Median of the three sub-windows' harmonic-mean liquidity (src/lib.rs, median_liquidity).
+  function medianLiquidity(o) {
+    var pts = observePoints(DATA.params.twapWindow), l = [];
+    for (var k = 0; k < 3; k++) {
+      var v = harmonicLiquidity(pts[k] - pts[k + 1], o.spl[k], o.spl[k + 1]);
+      l.push(v === null ? 0n : v);
+    }
+    l.sort(function (x, y) { return x < y ? -1 : x > y ? 1 : 0; });
+    return l[1];
+  }
+
   // The contract's decision, in its order (src/lib.rs, evaluate).
   function evaluate(a, r, feedDecimals, nowTs) {
     var P = DATA.params;
-    var q = { session: "", reason: 0, answer: 0n, twap: null, liquidity: null, clamped: false, poolIndex: -1 };
+    var q = { session: "", reason: 0, answer: 0n, twap: null, liquidity: null, clamped: false, poolIndex: -1, multiplier: r.multiplier };
     var round = r.round;
     var valid = !!round && round.answer > 0n && round.updatedAt !== 0n && round.updatedAt <= nowTs;
     if (r.paused) { q.session = "PAUSED"; return q; }
     if (!valid) { q.session = "NO_DATA"; q.reason = 1; return q; }
     var feedAnswer = round.answer, age = nowTs - round.updatedAt;
-    if (age <= BigInt(P.liveMaxAge)) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
+    // a new share multiplier took effect after the last print: the print is pre-action
+    var rebased = r.effectiveAt > round.updatedAt && r.effectiveAt <= nowTs;
+    if (age <= BigInt(P.liveMaxAge) && !rebased) { q.session = "LIVE_FEED"; q.answer = feedAnswer; return q; }
     if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
     var dev = BigInt(P.maxDeviationBps), bps = 10000n;
     var lower = feedAnswer * (bps - dev) / bps, upper = feedAnswer * (bps + dev) / bps;
@@ -411,26 +427,29 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     for (var i = 0; i < r.obs.length; i++) {
       var o = r.obs[i];
       if (!o) continue;
-      var liq = harmonicLiquidity(P.twapWindow, o.spl[0], o.spl[1]);
-      if (liq === null) continue;
-      chosen = { i: i, o: o, liq: liq };
+      chosen = { i: i, o: o, liq: medianLiquidity(o) };
       break;
     }
     if (!chosen) { q.session = "NO_DATA"; q.reason = 3; return q; }
     q.poolIndex = chosen.i;
     q.liquidity = chosen.liq;
     if (chosen.liq < BigInt(a.minLiquidity)) { q.session = "NO_DATA"; q.reason = 2; return q; }
-    var twap = twapOf(chosen.o, a, feedDecimals);
+    var twap = perShare(twapOf(chosen.o, a, feedDecimals), r.multiplier);
     if (twap === null) { q.session = "NO_DATA"; q.reason = 3; return q; }
     q.twap = twap;
+    if (rebased && (twap < lower || twap > upper)) { q.session = "NO_DATA"; q.reason = 5; q.twap = null; return q; }
     if (twap < lower) { q.answer = lower; q.clamped = true; }
     else if (twap > upper) { q.answer = upper; q.clamped = true; }
     else { q.answer = twap; }
     q.session = "ONCHAIN_TWAP";
     return q;
   }
+  // pool price of one raw unit -> price of one share (the feed's unit)
+  function perShare(raw, multiplier) {
+    return raw === null || !multiplier ? null : raw * ONE_SHARE / multiplier;
+  }
   function twapOf(o, a, feedDecimals) {
-    var mt = meanTick(o.ticks[0], o.ticks[1], DATA.params.twapWindow);
+    var mt = meanTick(o.ticks[0], o.ticks[3], DATA.params.twapWindow);
     var ratio = mt === null ? null : ratioQ96(mt);
     return ratio === null ? null : stockPrice(ratio, a.stockIsToken0, a.stockDecimals, DATA.quote.decimals, feedDecimals);
   }
@@ -460,9 +479,9 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     var w = words(hex);
     if (w.length < 2) return null;
     var a = Number(w[0] / 32n), b = Number(w[1] / 32n);
-    if (!(a + 2 < w.length) || !(b + 2 < w.length)) return null;
-    if (w[a] !== 2n || w[b] !== 2n) return null;
-    return { ticks: [signed(w[a + 1]), signed(w[a + 2])], spl: [w[b + 1], w[b + 2]] };
+    if (!(a + 4 < w.length) || !(b + 4 < w.length)) return null;
+    if (w[a] !== 4n || w[b] !== 4n) return null;
+    return { ticks: [1, 2, 3, 4].map(function (k) { return signed(w[a + k]); }), spl: [1, 2, 3, 4].map(function (k) { return w[b + k]; }) };
   }
   function decodeState(hex) {
     var w = words(hex);
@@ -473,7 +492,11 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       twap: w[5], liquidity: w[6], clamped: w[7] !== 0n, pool: "0x" + w[8].toString(16).padStart(40, "0")
     };
   }
-  function observeData(window) { return SEL.observe + pad(32) + pad(2) + pad(window) + pad(0); }
+  // the contract's observe() points: the window in three sub-windows, oldest first
+  function observePoints(window) { var sub = Math.floor(window / 3); return [window, 2 * sub, sub, 0]; }
+  function observeData(window) {
+    return SEL.observe + pad(32) + pad(4) + observePoints(window).map(pad).join("");
+  }
 
   // ---- JSON-RPC, batched, every call logged for the "raw calls" view ----
   var nextId = 1;
@@ -546,8 +569,10 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     if (q.session === "LIVE_FEED") return { text: "Market open: passing Chainlink's print through", dot: "feed", short: "Chainlink print" };
     if (q.session === "ONCHAIN_TWAP") return { text: q.clamped ? "Feed silent: pool average, held at the band edge" : "Feed silent: answering from the pool", dot: "pool", short: q.clamped ? "pool average, clamped" : "pool average" };
     if (q.session === "PAUSED") return { text: "Refusing: the issuer paused the token's oracle", dot: "refuse", short: "refuses: issuer pause" };
-    var why = { 1: "the feed's round is invalid", 2: "the pool is too thin over the last 30 minutes", 3: "no pool history to average", 4: "the last print is more than 5 days old" }[q.reason] || "no data";
-    var shortWhy = { 1: "refuses: feed invalid", 2: "refuses: pool too thin", 3: "refuses: no pool history", 4: "refuses: print too old" }[q.reason] || "refuses";
+    var why = { 1: "the feed's round is invalid", 2: "the pool is too thin over the last 30 minutes", 3: "no pool history to average", 4: "the last print is more than 5 days old",
+      5: "a corporate action changed the share count after the last print" }[q.reason] || "no data";
+    var shortWhy = { 1: "refuses: feed invalid", 2: "refuses: pool too thin", 3: "refuses: no pool history", 4: "refuses: print too old",
+      5: "refuses: shares changed" }[q.reason] || "refuses";
     return { text: "Refusing: " + why, dot: "refuse", short: shortWhy };
   }
 
@@ -572,8 +597,10 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       assets.forEach(function (a) {
         if (S.feedDecimals[a.symbol] === undefined) calls.push(ethCall(a.feed, SEL.decimals, blockHex, a.symbol + " feed decimals()"));
         calls.push(ethCall(a.stock, SEL.oraclePaused, blockHex, a.symbol + " oraclePaused()"));
+        calls.push(ethCall(a.stock, SEL.uiMultiplier, blockHex, a.symbol + " uiMultiplier()"));
+        calls.push(ethCall(a.stock, SEL.effectiveAt, blockHex, a.symbol + " effectiveAt()"));
         calls.push(ethCall(a.feed, SEL.latestRoundData, blockHex, a.symbol + " feed latestRoundData()"));
-        calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,0])"));
+        calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,1200,600,0])"));
         if (a.oracle) calls.push(ethCall(a.oracle, SEL.state, blockHex, a.symbol + " AfterHours state()"));
       });
       // A load-balanced RPC node can lag a block behind the one that served the head: retry once.
@@ -586,11 +613,13 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
           var d = res[k++];
           if (d.result) S.feedDecimals[a.symbol] = Number(words(d.result)[0]);
         }
-        var paused = res[k++], round = res[k++], obs = res[k++];
+        var paused = res[k++], mult = res[k++], eff = res[k++], round = res[k++], obs = res[k++];
         var st = a.oracle ? res[k++] : null;
         reads[a.symbol] = {
           pausedOk: !!paused.result,
           paused: paused.result ? words(paused.result)[0] !== 0n : false,
+          multiplier: mult.result && mult.result !== "0x" ? words(mult.result)[0] : null,
+          effectiveAt: eff.result && eff.result !== "0x" ? words(eff.result)[0] : 0n,
           round: round.result ? decodeRound(round.result) : null,
           obs: [obs.result ? decodeObserve(obs.result) : null],
           state: st && st.result ? decodeState(st.result) : null,
@@ -603,7 +632,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         assets.forEach(function (a) {
           var r = reads[a.symbol];
           if (a.pools.length > tier && r.obs.length === tier && r.obs.every(function (o) { return !o; })) {
-            more.push(ethCall(a.pools[tier], observeData(DATA.params.twapWindow), blockHex, a.symbol + " standby pool " + tier + " observe([1800,0])"));
+            more.push(ethCall(a.pools[tier], observeData(DATA.params.twapWindow), blockHex, a.symbol + " standby pool " + tier + " observe([1800,1200,600,0])"));
             who.push(a.symbol);
           }
         });
@@ -636,8 +665,8 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     var hero = DATA.assets[0];
     var r = S.reads[hero.symbol];
     var fd = S.feedDecimals[hero.symbol];
-    if (fd === undefined) {
-      setStatus("Could not read the AAPL feed's decimals; trying again in 30 s.", true);
+    if (fd === undefined || !r.multiplier) {
+      setStatus("Could not read the AAPL feed's decimals or the token's share multiplier; trying again in 30 s.", true);
       return;
     }
     var q = evaluate(hero, r, fd, nowTs);
@@ -676,13 +705,13 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     var usedIdx = 0;
     while (usedIdx < r.obs.length - 1 && !r.obs[usedIdx]) usedIdx++;
     var usedObs = r.obs[usedIdx] || null;
-    var poolTwap = usedObs ? twapOf(usedObs, hero, fd) : null;
+    var poolTwap = usedObs ? perShare(twapOf(usedObs, hero, fd), r.multiplier) : null;
     drawGauge(r.round ? r.round.answer : null, poolTwap, refusing ? null : shown.answer, fd);
 
     $("pool-name").textContent = (usedIdx === 0 ? "primary, " : "standby, ") + (hero.poolFees[usedIdx] || "") + " AAPL/USDG " + shortAddr(hero.pools[usedIdx]) +
       (usedObs ? "" : " (cannot be observed)");
     $("pool-twap").textContent = poolTwap === null ? "unavailable" : money(poolTwap, fd) + (r.round && r.round.answer > 0n ? "  (" + pct(toNum(poolTwap, fd) / toNum(r.round.answer, fd) - 1) + " vs print)" : "");
-    var liq = usedObs ? harmonicLiquidity(DATA.params.twapWindow, usedObs.spl[0], usedObs.spl[1]) : null;
+    var liq = usedObs ? medianLiquidity(usedObs) : null;
     $("pool-liq").textContent = liq === null ? "unavailable" : sci(liq) + ", floor " + sci(BigInt(hero.minLiquidity));
     $("read-at").textContent = Number(S.head.number).toLocaleString("en-US") + " · " + utc(S.head.timestamp).slice(-9);
 
@@ -721,12 +750,12 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       th.className = "sym";
       th.textContent = a.symbol;
       tr.appendChild(th);
-      if (!r || fd === undefined || !r.round) {
+      if (!r || fd === undefined || !r.round || !r.multiplier) {
         td("—", "num r"); td("—", "num r"); td("—", "num r"); td("—", "num r"); td("feed unreadable", "muted");
         rows.push(tr); return;
       }
       var q = evaluate(a, r, fd, nowTs);
-      var twap = r.obs[0] ? twapOf(r.obs[0], a, fd) : null;
+      var twap = r.obs[0] ? perShare(twapOf(r.obs[0], a, fd), r.multiplier) : null;
       td(money(r.round.answer, fd), "num r");
       var ageCell = td(dur(Number(nowTs - r.round.updatedAt), false), "num r");
       ageCell.dataset.updated = r.round.updatedAt.toString();
@@ -942,7 +971,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       var q = evaluate(hero, r, fd, S.head.timestamp);
       var shown = hero.oracle && r.state ? r.state : q;
       var refusing = shown.session === "PAUSED" || shown.session === "NO_DATA";
-      drawGauge(r.round ? r.round.answer : null, r.obs[0] ? twapOf(r.obs[0], hero, fd) : null, refusing ? null : shown.answer, fd);
+      drawGauge(r.round ? r.round.answer : null, r.obs[0] ? perShare(twapOf(r.obs[0], hero, fd), r.multiplier) : null, refusing ? null : shown.answer, fd);
       drawTape();
     });
     ro.observe($("tape"));

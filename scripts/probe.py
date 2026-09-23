@@ -3,14 +3,15 @@
 
     python scripts/probe.py --oracle 0x... [--rpc URL] [--watch 300]
 
-Prints, side by side: the Chainlink feed's last print and age, the pool's
-30-minute TWAP (computed here from observe()), and what AfterHours returns
-(session, answer, band clamping). During a weekend the feed line goes stale
-while the AfterHours line keeps moving; that is the demo.
+Prints, side by side: the Chainlink feed's last print and age, the primary
+pool's 30-minute TWAP per share (computed here from observe() and the token's
+uiMultiplier), and what AfterHours returns (session, answer, band clamping).
+During a weekend the feed line goes stale while the AfterHours line keeps
+moving; that is the demo.
 
-Selectors computed with ethers, not recalled:
+Selectors computed with keccak (scripts/measure/keccak.py checks itself), not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
-  observe(uint32[]) 0x883bdbfd
+  observe(uint32[]) 0x883bdbfd   uiMultiplier() 0xa60bf13d
   price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55
 """
 import argparse
@@ -25,7 +26,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 SESSIONS = {0: "LIVE_FEED", 1: "ONCHAIN_TWAP", 2: "PAUSED", 3: "NO_DATA"}
 REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable",
-           4: "last print older than maxAnchorAge"}
+           4: "last print older than maxAnchorAge", 5: "share multiplier changed since the last print"}
 
 # Function selectors used below, all computed with ethers.id() from the
 # Solidity signatures (AfterHours ones from the `cargo stylus export-abi` output).
@@ -34,6 +35,7 @@ SELECTORS = {
     "decimals()": "0x313ce567",
     "description()": "0x7284e416",
     "observe(uint32[])": "0x883bdbfd",
+    "uiMultiplier()": "0xa60bf13d",
     "price()": "0xa035b1fe",
     # AfterHours (ethers.id on the ABI exported by `cargo stylus export-abi`)
     "state()": "0xc19d93fb",
@@ -64,24 +66,36 @@ def ts(t):
     return datetime.fromtimestamp(t, timezone.utc).strftime("%a %m-%d %H:%M:%S UTC")
 
 
-def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, feed_dec):
-    data = ("0x883bdbfd" + format(32, "064x") + format(2, "064x")
-            + format(window, "064x") + format(0, "064x"))
+def points(window):
+    """The contract's observe() points: three sub-windows, oldest first."""
+    sub = window // 3
+    return [window, 2 * sub, sub, 0]
+
+
+def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, feed_dec, multiplier):
+    """(TWAP per share in feed decimals, median sub-window liquidity) or (None, error)."""
+    pts = points(window)
+    data = ("0x883bdbfd" + format(32, "064x") + format(len(pts), "064x")
+            + "".join(format(s, "064x") for s in pts))
     res, err = rpc_call(rpc, pool, data)
     if err or not res:
         return None, err
-    # returns (int56[] tickCumulatives, uint160[] ...): offsets then arrays
-    off0 = word(res, 0) // 32
+    # returns (int56[] tickCumulatives, uint160[] secondsPerLiquidity): offsets then arrays
+    off0, off1 = word(res, 0) // 32, word(res, 1) // 32
     n = word(res, off0)
     cum = [signed(word(res, off0 + 1 + i)) for i in range(n)]
-    delta = cum[1] - cum[0]
-    mean = delta // window          # Python floors toward -inf already
-    ratio = 1.0001 ** mean          # token1 per token0, raw
+    spl = [word(res, off1 + 1 + i) for i in range(n)]
+    mean = (cum[-1] - cum[0]) // window   # Python floors toward -inf already
+    ratio = 1.0001 ** mean                # token1 per token0, raw
     if stock_is_token0:
-        price = ratio * 10 ** (stock_dec + feed_dec) / 10 ** quote_dec
+        raw = ratio * 10 ** (stock_dec + feed_dec) / 10 ** quote_dec
     else:
-        price = 10 ** (stock_dec + feed_dec) / (ratio * 10 ** quote_dec)
-    return int(price), None
+        raw = 10 ** (stock_dec + feed_dec) / (ratio * 10 ** quote_dec)
+    liq = []
+    for k in range(3):
+        d = (spl[k + 1] - spl[k]) % (1 << 160)
+        liq.append(((pts[k] - pts[k + 1]) << 128) // d if d else 0)
+    return (int(raw * 10 ** 18 / multiplier), sorted(liq)[1]), None
 
 
 def main():
@@ -102,6 +116,7 @@ def main():
     feed_dec, stock_dec, quote_dec = word(cfg, 7), word(cfg, 8), word(cfg, 9)
     live_max_age, twap_window, dev_bps = word(cfg, 10), word(cfg, 11), word(cfg, 12)
     min_liq, max_anchor = word(cfg, 13), word(cfg, 14)
+    stock = "0x" + cfg[2 + 64 * 4 + 24: 2 + 64 * 5]
     print("AfterHours %s  initialized=%s  feed=%s  primary pool=%s" % (args.oracle, initialized, feed, pool))
     print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
           % (live_max_age, twap_window, dev_bps / 100, min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
@@ -112,13 +127,17 @@ def main():
         feed_answer = word(r, 1) / 10 ** feed_dec
         feed_at = word(r, 3)
         age_h = (now - feed_at) / 3600
-        twap, terr = twap_from_pool(args.rpc, pool, twap_window, stock_is_token0,
-                                    stock_dec, quote_dec, feed_dec)
+        m, merr = rpc_call(args.rpc, stock, SELECTORS["uiMultiplier()"])
+        multiplier = word(m, 0) if m and not merr else 10 ** 18
+        pooled, terr = twap_from_pool(args.rpc, pool, twap_window, stock_is_token0,
+                                      stock_dec, quote_dec, feed_dec, multiplier)
+        twap = pooled[0] if pooled else None
         s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"])
         print("[%s]" % ts(now))
         print("  Chainlink : $%.4f  printed %s  (%.1f h ago)" % (feed_answer, ts(feed_at), age_h))
         if twap is not None:
-            print("  primary TWAP: $%.4f  (%d s window, computed off-chain from the primary pool)" % (twap / 10 ** feed_dec, twap_window))
+            print("  primary TWAP: $%.4f per share  (%d s window, median liquidity %.3g, share multiplier %.8f; computed off-chain)"
+                  % (twap / 10 ** feed_dec, twap_window, pooled[1], multiplier / 1e18))
         else:
             print("  primary TWAP: unavailable (%s)" % terr)
         if serr or not s:
@@ -132,7 +151,7 @@ def main():
             if session in (0, 1):
                 line += "  answer $%.4f" % (answer / 10 ** feed_dec)
             if session == 1:
-                line += "  (twap $%.4f, %s, window liquidity %.3g, pool %s)" % (
+                line += "  (twap $%.4f, %s, median liquidity %.3g, pool %s)" % (
                     tw / 10 ** feed_dec, "CLAMPED to band" if clamped else "inside band", liq, used_pool[:10])
             if session == 3:
                 line += "  (%s)" % REASONS.get(reason, reason)
@@ -142,7 +161,7 @@ def main():
                 print("  Morpho price(): reverted (%s)" % perr[:60])
             else:
                 scale = 36 + quote_dec - stock_dec - feed_dec
-                print("  Morpho price(): %d  (= answer x 1e%d)" % (word(p, 0), scale))
+                print("  Morpho price(): %d  (= answer x 1e%d x share multiplier %.8f)" % (word(p, 0), scale, multiplier / 1e18))
         if args.json:
             if serr or not s:
                 rec = {"session": "read failed", "answer": "", "feed_answer": "%.4f" % feed_answer,

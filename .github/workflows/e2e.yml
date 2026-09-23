@@ -32,6 +32,8 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable
       - name: cache cargo-stylus
         id: stylus-cache
         uses: actions/cache@v4

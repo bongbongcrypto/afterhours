@@ -21,7 +21,7 @@ on:
         description: Chainlink feed address for the stock
         required: true
       pools:
-        description: Uniswap v3 pool addresses of the stock against the quote, comma-separated (1-3; the deepest over the window answers)
+        description: Uniswap v3 pool addresses of the stock against the quote, comma-separated (1-3). The first is the primary and prices the asset (give the deepest tier, see assets.json); the others are standbys used only while the primary cannot be observed
         required: true
         default: "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d,0x783c9bbb765047cfdd2b84b92b2ca9f11d34b7ed,0x3714aa8105de1f384481b425788af413748c1837"
       stock:
@@ -99,6 +99,8 @@ jobs:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
       - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: stable   # the read-back parses cast output; no nightly format drift
       - name: cache cargo-stylus
         id: stylus-cache
         uses: actions/cache@v4
@@ -124,15 +126,30 @@ jobs:
           RPC: ${{ steps.net.outputs.rpc }}
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
         run: |
+          POOLS=$(printf '%s' "$POOLS" | tr -d '[:space:]')   # "a, b" and "a,b" are the same list
           desc=$(cast call --rpc-url "$RPC" "$FEED" "description()(string)")
           echo "feed description: $desc"
           test "$desc" = "\"$EXPECTED_DESCRIPTION\"" || { echo "feed is not $EXPECTED_DESCRIPTION"; exit 1; }
           cast call --rpc-url "$RPC" "$FEED" "latestRoundData()(uint80,int256,uint256,uint256,uint80)"
+          role=primary
           for pool in ${POOLS//,/ }; do
-            echo "pool $pool"
+            echo "$role pool $pool"
             cast call --rpc-url "$RPC" "$pool" "token0()(address)"
             cast call --rpc-url "$RPC" "$pool" "token1()(address)"
             cast call --rpc-url "$RPC" "$pool" "observe(uint32[])(int56[],uint160[])" "[$TWAP_WINDOW,0]"
+            # slot0: sqrtPriceX96, tick, index, cardinality, cardinalityNext, feeProtocol, unlocked
+            card=$(cast call --rpc-url "$RPC" "$pool" "slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)" | sed -n '4p' | sed 's/ .*//')
+            echo "  observation cardinality $card"
+            # Uniswap writes at most one observation per second, so a pool holding
+            # fewer than window + 1 can be made to answer "OLD" by one write a
+            # second. The primary must not be; a standby may (it only covers).
+            if [ "$role" = primary ] && [ "$card" -lt $((TWAP_WINDOW + 1)) ]; then
+              echo "primary cardinality $card < $((TWAP_WINDOW + 1)). Raise it first (anyone can, gas only):"
+              echo "  cast send $pool 'increaseObservationCardinalityNext(uint16)' $((TWAP_WINDOW + 1))"
+              echo "then re-run once slot0 shows the new cardinality."
+              exit 1
+            fi
+            role=standby
           done
           cast call --rpc-url "$RPC" "$STOCK" "oraclePaused()(bool)"
           addr=$(cast wallet address --private-key "$DEPLOYER_KEY")
@@ -161,6 +178,7 @@ jobs:
           DEPLOYER_KEY: ${{ secrets.DEPLOYER_KEY }}
           ADDR: ${{ steps.deploy.outputs.address }}
         run: |
+          POOLS=$(printf '%s' "$POOLS" | tr -d '[:space:]')   # "a, b" and "a,b" are the same list
           receipt=$(cast send --json --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" "$ADDR" \
             "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" \
             "$FEED" "[$POOLS]" "$STOCK" "$LIVE_MAX_AGE" "$TWAP_WINDOW" "$MAX_DEVIATION_BPS" "$MIN_LIQUIDITY" "$MAX_ANCHOR_AGE")
@@ -172,6 +190,7 @@ jobs:
           ADDR: ${{ steps.deploy.outputs.address }}
           DEPLOYER: ${{ steps.pre.outputs.deployer }}
         run: |
+          POOLS=$(printf '%s' "$POOLS" | tr -d '[:space:]')   # "a, b" and "a,b" are the same list
           echo "AfterHours deployed at $ADDR on $NETWORK"
           cast call --rpc-url "$RPC" "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)" > config.txt
           cat config.txt
@@ -180,7 +199,7 @@ jobs:
           mapfile -t c < config.txt
           test "${c[0]}" = "true" || { echo "not initialized"; exit 1; }
           test "$(echo "${c[2]}" | lower)" = "$(echo "$FEED" | lower)" || { echo "feed mismatch"; exit 1; }
-          test "$(echo "${c[3]}" | lower)" = "$(echo "${POOLS%%,*}" | lower)" || { echo "first pool mismatch"; exit 1; }
+          test "$(echo "${c[3]}" | lower)" = "$(echo "${POOLS%%,*}" | lower)" || { echo "primary pool mismatch"; exit 1; }
           got=$(cast call --rpc-url "$RPC" "$ADDR" "pools()(address[])" | tr -d ' ' | lower)
           test "$got" = "$(echo "[$POOLS]" | lower)" || { echo "pools mismatch: $got"; exit 1; }
           test "$(echo "${c[4]}" | lower)" = "$(echo "$STOCK" | lower)" || { echo "stock mismatch"; exit 1; }

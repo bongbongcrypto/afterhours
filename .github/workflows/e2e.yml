@@ -9,6 +9,10 @@ name: e2e
 on:
   push:
     branches: [main]
+  schedule:
+    # 15:00 UTC Monday to Friday, inside the regular-session window the contract
+    # reads (14:30-20:00 UTC), so the narrow band is asserted on chain every weekday
+    - cron: "0 15 * * 1-5"
   workflow_dispatch:
     inputs:
       reproducible:

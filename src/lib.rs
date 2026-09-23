@@ -44,7 +44,7 @@ use alloc::{string::String, vec::Vec};
 
 use alloy_primitives::{
     aliases::{I56, U128, U160, U32, U64, U8, U80},
-    Address, I256, U256,
+    Address, I256, U256, U512,
 };
 use alloy_sol_types::sol;
 use stylus_sdk::prelude::*;
@@ -524,10 +524,14 @@ impl AfterHours {
         let answer = require_price(&q)?;
         // An answer too large for Morpho's 1e36 scale is not a price we can stand
         // behind in raw units; only this surface refuses, with its own reason.
-        answer
-            .checked_mul(self.morpho_scale.get())
-            .and_then(|v| v.checked_mul(q.multiplier))
-            .map(|v| v / ONE_SHARE)
+        // The product is formed in 512 bits, so only a result that does not fit
+        // in 256 refuses, never an intermediate.
+        U512::from(answer)
+            .checked_mul(U512::from(self.morpho_scale.get()))
+            .and_then(|v| v.checked_mul(U512::from(q.multiplier)))
+            .map(|v| v / U512::from(ONE_SHARE))
+            .filter(|v| *v <= U512::from(U256::MAX))
+            .map(|v| v.to::<U256>())
             .ok_or(AfterHoursError::NoData(NoData {
                 reason: REASON_PRICE_OVERFLOW,
             }))

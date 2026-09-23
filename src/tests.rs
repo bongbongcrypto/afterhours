@@ -1380,6 +1380,16 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
 }
 
 #[test]
+fn price_refuses_only_when_the_result_does_not_fit() {
+    // At 1e50 per share, answer x scale x multiplier is 1e84, past 256 bits,
+    // but the price itself, 1e66, fits: formed in 512 bits it is answered.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed_raw(I256::from_raw(U256::from(10u64).pow(U256::from(50u64))), NOW - 60);
+    assert_eq!(c.price().unwrap(), U256::from(10u64).pow(U256::from(66u64)));
+}
+
+#[test]
 fn initialize_requires_a_readable_feed_round() {
     let w = World::new();
     w.vm.mock_static_call(FEED, latestRoundDataCall {}.abi_encode(), Err(Vec::new()));
@@ -1871,6 +1881,120 @@ fn unreadable_feed_is_a_call_failure_not_a_price() {
         c.state().expect_err("feed reverted"),
         AfterHoursError::CallFailed(CallFailed { target }) if target == FEED
     ));
+}
+
+// ---- real mainnet answers ----------------------------------------------------------
+
+/// Every answer the AAPL instance's reads got from Robinhood Chain mainnet at one
+/// block (`scripts/measure/capture_reads.py`): the real Chainlink feed, the real
+/// 0.05% pool (observe at the four sub-window points, slot0, its tokens) and the
+/// real stock and quote tokens, with the answer that script's own port of the
+/// rules gives on the same bytes.
+const MAINNET_READS: &str = include_str!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/fixtures/aapl_mainnet.txt"
+));
+
+fn unhex(s: &str) -> Vec<u8> {
+    let s = s.trim_start_matches("0x");
+    (0..s.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap())
+        .collect()
+}
+
+#[test]
+fn the_contract_reads_real_mainnet_answers() {
+    let mut at = std::collections::HashMap::new();
+    let mut want = std::collections::HashMap::new();
+    let mut rets = Vec::new();
+    let mut timestamp = 0u64;
+    for line in MAINNET_READS
+        .lines()
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+    {
+        let f: Vec<&str> = line.split_whitespace().collect();
+        match f[0] {
+            "timestamp" => timestamp = f[1].parse().unwrap(),
+            "ret" => rets.push((f[1], f[2], unhex(f[3]))),
+            "want" => {
+                want.insert(f[1], f[2]);
+            }
+            who => {
+                at.insert(who, f[1].parse::<Address>().unwrap());
+            }
+        }
+    }
+    let vm = MockVM::new();
+    vm.set_block_timestamp(timestamp);
+    vm.set_tx_origin(DEPLOYER);
+    for (who, call, ret) in rets {
+        let data = match call {
+            "decimals" => decimalsCall {}.abi_encode(),
+            "description" => descriptionCall {}.abi_encode(),
+            "latestRoundData" => latestRoundDataCall {}.abi_encode(),
+            "token0" => token0Call {}.abi_encode(),
+            "token1" => token1Call {}.abi_encode(),
+            "observe" => observeCall {
+                secondsAgos: points(),
+            }
+            .abi_encode(),
+            "slot0" => slot0Call {}.abi_encode(),
+            "oraclePaused" => oraclePausedCall {}.abi_encode(),
+            "uiMultiplier" => uiMultiplierCall {}.abi_encode(),
+            "effectiveAt" => effectiveAtCall {}.abi_encode(),
+            other => panic!("unexpected read {other}"),
+        };
+        vm.mock_static_call(at[who], data, Ok(ret));
+    }
+    let mut c = AfterHours::from(&vm);
+    c.initialize(
+        at["feed"],
+        vec![at["pool"]],
+        at["stock"],
+        LIVE_MAX_AGE,
+        TWAP_WINDOW,
+        MAX_DEV_BPS,
+        50_000_000_000_000_000, // the AAPL instance's floor
+        MAX_ANCHOR_AGE,
+        HEARTBEAT,
+        QUIET_BAND_BPS,
+    )
+    .expect("initialize against the real feed, pool and tokens");
+    let (_, _, _, _, _, quote, stock_is_token0, fd, sd, qd, ..) = c.config();
+    assert_eq!(
+        (quote, stock_is_token0, fd, sd, qd),
+        (at["quote"], false, 8, 18, 6)
+    );
+    assert_eq!(
+        c.description().unwrap(),
+        "Robinhood AAPL / USD (AfterHours)"
+    );
+    let num = |k: &str| U256::from_str_radix(want[k], 10).unwrap();
+    let (session, reason, answer, _, _, twap, liquidity, clamped, pool) = c.state().unwrap();
+    assert_eq!(
+        (session, reason, answer, twap, U256::from(liquidity), clamped),
+        (
+            want["session"].parse::<u8>().unwrap(),
+            want["reason"].parse::<u8>().unwrap(),
+            num("answer"),
+            num("twap"),
+            num("liquidity"),
+            want["clamped"] == "1"
+        )
+    );
+    if session == SESSION_ONCHAIN_TWAP {
+        assert_eq!(pool, at["pool"]);
+    }
+    if session <= SESSION_ONCHAIN_TWAP {
+        let (round, ans, ..) = c.latest_round_data().unwrap();
+        assert_eq!(round, U80::from_str_radix(want["round"], 10).unwrap());
+        assert_eq!(ans, I256::from_raw(num("answer")));
+    }
+    match want["price"] {
+        "refuse" => assert!(c.price().is_err()),
+        p => assert_eq!(c.price().unwrap(), U256::from_str_radix(p, 10).unwrap()),
+    }
 }
 
 // ---- properties (proptest) ----------------------------------------------------------

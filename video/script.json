@@ -121,8 +121,8 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Seventy-three unit and property tests, and eighty assertions against the real wasm on a local Arbitrum node.",
-          "단위·속성 테스트 73개, 실제 아비트럼 노드 위 wasm 검증 80항목."
+          "Seventy-three unit and property tests, and eighty-six assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 73개, 실제 아비트럼 노드 위 wasm 검증 86항목."
         ],
         [
           "Tick math is checked against eighty-digit reference values, and eight review rounds are folded in.",

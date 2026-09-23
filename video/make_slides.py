@@ -215,7 +215,7 @@ def slides():
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">73 tests + 80 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">73 tests + 86 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
   <div class="col"><div class="t">Eight review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, the share multiplier through dividends and splits. 14 stocks meet the bar today, 28 deployable.</p></div>
 </div>

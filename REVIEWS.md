@@ -137,5 +137,6 @@ open with the reason.
 | `MAX_TWAP_WINDOW` of one day could never pass: a uint16 cardinality holds at most 65,535 observations | 65,534, tested at the bound | ef3d3b1 |
 | The submission text tied three silent windows to two swap figures | each figure names its window (submission text, outside this repository) | |
 | Suspected: mainnet gas is higher than the figures measured on test doubles | README says the gas is measured on Solidity doubles and will be re-measured on mainnet | db352cc |
+| Suspected: the deploy workflow, the one that must work on the day, had never run | its steps moved into `scripts/deploy.sh`, which e2e runs against a second instance on every push: a preflight that must refuse a primary one observation short, then preflight, deploy, initialize and a read-back that pass, and a read-back that must fail on a mismatched field | ab2fe8f |
 | USD feed against a USDG pool; `initialize` can be front-run | kept, as documented | |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

@@ -74,7 +74,7 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | The feed goes silent for 52-57 hours every weekend | the live page's print tape, or `python scripts/measure/feed_cadence.py` (stdlib, about 60 reads, a minute) |
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
-| 73 unit and property tests, 80 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles: a real pool's `observe()` searches its observation buffer and the real feed and token are proxies, so mainnet costs more; re-measured after deployment) |
+| 73 unit and property tests, 86 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles: a real pool's `observe()` searches its observation buffer and the real feed and token are proxies, so mainnet costs more; re-measured after deployment) |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
 | Chainlink lists no sequencer-uptime feed for the chain; the stock feeds have a 0.5% threshold and a 24-hour heartbeat | `python scripts/measure/feed_directory.py` (one request) |
 | The price math matches independent 80-digit references: AAPL's prices to the integer, 1.0001^tick within 1e-23 of the reference (one unit below tick 0) | the live page's self-check line, and the vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
@@ -122,7 +122,7 @@ cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
 
-End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 80
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 86
 assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
 against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
 Robinhood Chain runs, and the one a 2-fragment program (about 39 KB) needs.

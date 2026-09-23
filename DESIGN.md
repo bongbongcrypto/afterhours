@@ -219,9 +219,18 @@ corporate-action surface (the pause flag and the share multiplier, with a
 split after the last print refusing rather than clamping), price and depth
 judged per sub-window so one excursion can neither move the price nor switch
 pricing off, a narrow band while the feed may only be quiet, and a venue
-fixed at deployment so depth elsewhere cannot redirect it. The risk layers other
-teams build for the same weekend (haircuts until the next open, stale-feed
-flags) can sit on top of this price rather than replace it.
+fixed at deployment so depth elsewhere cannot redirect it.
+
+What else addresses this weekend, as of 2026-09-23: the 83 Morpho markets
+above; Chainlink's own documentation for these feeds, which leaves the
+staleness bound to the integrator; and the other public entries of this
+buildathon that take on the same gap. Those take three approaches: a haircut
+on the last print that grows with time since the close, from an exchange
+calendar kept in the contract; a view that reports blocking conditions such
+as a stale feed; and off-chain monitoring of the gap between pool and
+reference prices. Each decides how far to trust Friday's print. None of the
+ones we could read prices the closed session from where the token trades,
+and each can sit on top of this price rather than replace it.
 
 ### The band is a circuit breaker, not a price model
 

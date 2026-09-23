@@ -10,9 +10,11 @@ on:
   push:
     branches: [main]
   schedule:
-    # 15:00 UTC Monday to Friday, inside the regular-session window the contract
-    # reads (14:30-20:00 UTC), so the narrow band is asserted on chain every weekday
-    - cron: "0 15 * * 1-5"
+    # 14:35 UTC Monday to Friday, right after the regular-session window the
+    # contract reads opens (14:30-20:00 UTC), so the narrow band is asserted on
+    # chain every weekday. GitHub can start a scheduled run hours late (the first
+    # one, due at 15:00, started at 18:56), so the run is set as early as it can be.
+    - cron: "35 14 * * 1-5"
   workflow_dispatch:
     inputs:
       reproducible:

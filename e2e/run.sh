@@ -220,7 +220,7 @@ NARROW=$(pyint "$FRIDAY * (10000 - $QUIET_BPS) // 10000")
 T=$(now)
 SESSION=$(pyint "1 if ($T // 86400 + 3) % 7 < 5 and 52200 <= $T % 86400 < 72000 else 0")
 if [ "$SESSION" = 1 ]; then NARROW_RAN=yes; else NARROW_RAN=no; fi
-echo "  block time $(date -u -d "@$T" '+%a %H:%M UTC'): $([ "$SESSION" = 1 ] && echo 'inside the regular session, the narrow band applies' || echo 'outside the regular session, the wide band applies (the scheduled weekday run at 15:00 UTC asserts the narrow one)')"
+echo "  block time $(date -u -d "@$T" '+%a %H:%M UTC'): $([ "$SESSION" = 1 ] && echo 'inside the regular session, the narrow band applies' || echo 'outside the regular session, the wide band applies (the scheduled weekday run asserts the narrow one)')"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 if [ "$SESSION" = 1 ]; then

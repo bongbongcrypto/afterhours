@@ -37,20 +37,19 @@ contract MockFeed {
 contract MockPool {
     address public token0;
     address public token1;
-    int56 private cumThen;
-    int56 private cumNow;
+    int56[4] private cum;
     uint160[4] private spl;
     bool private revertObserve;
 
     constructor(address token0_, address token1_) { token0 = token0_; token1 = token1_; }
 
-    /// The mean tick over the window is (cumNow - cumThen) / window, with the
-    /// tick cumulatives in between on a straight line. `spl_` is the
+    /// `cum_` and `spl_` are the tickCumulative and
     /// secondsPerLiquidityCumulativeX128 at the four points AfterHours asks
-    /// for (oldest first), so each sub-window's harmonic liquidity is
+    /// for (oldest first): each sub-window's mean tick is
+    /// (cum[k+1] - cum[k]) / span and its harmonic liquidity
     /// span * 2^128 / (spl[k+1] - spl[k]).
-    function setObservation(int56 cumThen_, int56 cumNow_, uint160[4] calldata spl_) external {
-        cumThen = cumThen_; cumNow = cumNow_; spl = spl_; revertObserve = false;
+    function setObservation(int56[4] calldata cum_, uint160[4] calldata spl_) external {
+        cum = cum_; spl = spl_; revertObserve = false;
     }
 
     function setRevert(bool on) external { revertObserve = on; }
@@ -65,12 +64,10 @@ contract MockPool {
                 && secondsAgos[1] > secondsAgos[2] && secondsAgos[0] > secondsAgos[1],
             "shape"
         );
-        int56 w = int56(uint56(secondsAgos[0]));
         tickCumulatives = new int56[](4);
         secondsPerLiquidityCumulativeX128s = new uint160[](4);
         for (uint256 i = 0; i < 4; i++) {
-            int56 elapsed = w - int56(uint56(secondsAgos[i]));
-            tickCumulatives[i] = cumThen + (cumNow - cumThen) * elapsed / w;
+            tickCumulatives[i] = cum[i];
             secondsPerLiquidityCumulativeX128s[i] = spl[i];
         }
     }

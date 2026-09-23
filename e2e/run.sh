@@ -18,9 +18,13 @@ WINDOW=1800
 DEV_BPS=1000
 MIN_LIQ=1000000000000000      # 1e15
 ANCHOR=432000
+HEARTBEAT=86400               # the feed's 24 h heartbeat: the quiet tier
+QUIET_BPS=100                 # the narrow band inside it
 TICK=218301
 EXPECT_TWAP=33096497304       # floor of the exact 33096497304.69 (scripts/measure/tick_vectors.py)
 POOL2_TWAP=31482440784        # standby, stock as token0, tick -218801: floor of 31482440784.887
+DOWN_TWAP=31482440784         # primary at tick 218801 (-5.3%): the same exact price, the same floor
+HELD_TWAP=32118396159         # primary at tick 218601 (-3%): floor of 32118396159.78
 MORPHO_SCALE=10000000000000000  # 10^(36 + 6 - 18 - 8)
 ONE=1000000000000000000         # uiMultiplier for one share per raw unit
 AAPL_MULT=1000566080000000000   # AAPL's uiMultiplier on 2026-09-23
@@ -60,6 +64,19 @@ for arg in sys.argv[1:]:
 print("[" + ",".join(str(v) for v in out) + "]")
 PY
 }
+# tickCumulative at [1800, 1200, 600, 0] s ago for three 600 s sub-windows
+# averaging ticks T1 T2 T3 (oldest first)
+cum4() {
+  python3 - "$@" <<'PY'
+import sys
+c = 1000000
+out = [c]
+for t in sys.argv[1:]:
+    c += int(t) * 600
+    out.append(c)
+print("[" + ",".join(str(v) for v in out) + "]")
+PY
+}
 # revert data must be the error's selector followed by the exact reason word
 reverts_nodata() { # label reason cmd...
   local label="$1" reason="$2"; shift 2
@@ -82,12 +99,13 @@ echo "  feed $FEED stock $STOCK usdg $USDG pool $POOL pool2 $POOL2"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" $((ROUND - 1)) 31000000000 $((T - 9000)) $((T - 9000))
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
-CUM_THEN=1000000
-CUM_NOW=$((CUM_THEN + TICK * WINDOW))
+OBS="setObservation(int56[4],uint160[4])"
+FLAT=$(cum4 $TICK $TICK $TICK)
 SPL_FLOOR=$(spl4 $MIN_LIQ $MIN_LIQ $MIN_LIQ)
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
 # POOL2: mirrored tick 500 lower (a lower price), half the liquidity of POOL
-send "$POOL2" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$((CUM_THEN - (TICK + 500) * WINDOW))" "$(spl4 $((MIN_LIQ / 2)) $((MIN_LIQ / 2)) $((MIN_LIQ / 2)))"
+POOL2_FLAT=$(cum4 $((-(TICK + 500))) $((-(TICK + 500))) $((-(TICK + 500))))
+send "$POOL2" "$OBS" "$POOL2_FLAT" "$(spl4 $((MIN_LIQ / 2)) $((MIN_LIQ / 2)) $((MIN_LIQ / 2)))"
 
 echo "== deploy AfterHours (cargo stylus)"
 cd "$ROOT"
@@ -104,17 +122,19 @@ echo "  AfterHours at $ADDR"
 
 echo "== initialize"
 reverts_with "read before initialize" "NotInitialized()" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)"
-send "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR"
+send "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" "$HEARTBEAT" "$QUIET_BPS"
 mapfile -t c < <(call "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)")
 expect "initialized" "${c[0]}" "true"
 expect "quote derived from the pool" "$(echo "${c[5]}" | tr A-Z a-z)" "$(echo "$USDG" | tr A-Z a-z)"
 expect "stockIsToken0" "${c[6]}" "false"
 expect "decimals" "${c[7]}/${c[8]}/${c[9]}" "8/18/6"
 expect "maxAnchorAge" "$(num "${c[14]}")" "$ANCHOR"
+mapfile -t qt < <(call "$ADDR" "quietTier()(uint64,uint64)")
+expect "quietTier() heartbeat/band" "$(num "${qt[0]}")/$(num "${qt[1]}")" "$HEARTBEAT/$QUIET_BPS"
 expect "pools()" "$(call "$ADDR" "pools()(address[])" | tr -d ' ' | tr A-Z a-z)" "$(echo "[$POOL,$POOL2]" | tr A-Z a-z)"
 expect "description" "$(call "$ADDR" "description()(string)")" "\"Robinhood AAPL / USD (AfterHours)\""
 expect "decimals()" "$(call "$ADDR" "decimals()(uint8)")" "8"
-reverts_with "second initialize" "AlreadyInitialized()" "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR"
+reverts_with "second initialize" "AlreadyInitialized()" "$ADDR" "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" "$FEED" "[$POOL,$POOL2]" "$STOCK" "$LIVE_MAX_AGE" "$WINDOW" "$DEV_BPS" "$MIN_LIQ" "$ANCHOR" "$HEARTBEAT" "$QUIET_BPS"
 
 echo "== LIVE_FEED"
 mapfile -t r < <(call "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)")
@@ -150,7 +170,7 @@ GAS_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "latestRoundData()")
 GAS_PRICE_TWAP=$(cast estimate --rpc-url "$RPC" "$ADDR" "price()")
 
 echo "== band clamp (pool 18% below the last print)"
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$((CUM_THEN + (TICK + 2000) * WINDOW))" "$SPL_FLOOR"
+send "$POOL" "$OBS" "$(cum4 $((TICK + 2000)) $((TICK + 2000)) $((TICK + 2000)))" "$SPL_FLOOR"
 LOWER=$(pyint "$FRIDAY * 9000 // 10000")
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "answer clamped to lower band" "$(num "${s[2]}")" "$LOWER"
@@ -159,31 +179,60 @@ expect "price() clamped" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint 
 
 lower() { echo "$1" | tr A-Z a-z; }
 
+echo "== a spike inside one sub-window moves nothing (7.4x for ten minutes)"
+send "$POOL" "$OBS" "$(cum4 $TICK $((TICK - 20000)) $TICK)" "$SPL_FLOOR"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
+expect "answer = the median sub-window" "$(num "${s[2]}")" "$EXPECT_TWAP"
+expect "not clamped" "${s[7]}" "false"
+
+echo "== a move held through two sub-windows is priced"
+send "$POOL" "$OBS" "$(cum4 $TICK $((TICK + 300)) $((TICK + 300)))" "$SPL_FLOOR"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "answer = the held price (exact)" "$(num "${s[2]}")" "$HELD_TWAP"
+
+echo "== quiet tier: a print younger than the heartbeat holds the pool to +-1%"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 25200))" "$((T - 25200))"
+send "$POOL" "$OBS" "$(cum4 $((TICK + 500)) $((TICK + 500)) $((TICK + 500)))" "$SPL_FLOOR"
+NARROW=$(pyint "$FRIDAY * (10000 - $QUIET_BPS) // 10000")
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
+expect "answer held at -1% (feed 7 h old)" "$(num "${s[2]}")" "$NARROW"
+expect "clamped flag" "${s[7]}" "true"
+expect "the pool's own -5.3% is still reported" "$(num "${s[5]}")" "$DOWN_TWAP"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - HEARTBEAT - 60))" "$((T - HEARTBEAT - 60))"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "past the heartbeat the band is +-10%: answer = pool" "$(num "${s[2]}")" "$DOWN_TWAP"
+expect "not clamped" "${s[7]}" "false"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 144000))" "$((T - 144000))"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
+
 echo "== one second out of range in one sub-window: still priced"
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 $DEEP dip:$DEEP $DEEP)"
+send "$POOL" "$OBS" "$FLAT" "$(spl4 $DEEP dip:$DEEP $DEEP)"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "median sub-window is a deep one" "$(num "${s[6]}")" "$DEEP"
 expect "answer = pool TWAP" "$(num "${s[2]}")" "$EXPECT_TWAP"
 
 echo "== out of range in two of three sub-windows: refuses"
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 dip:$DEEP dip:$DEEP $DEEP)"
+send "$POOL" "$OBS" "$FLAT" "$(spl4 dip:$DEEP dip:$DEEP $DEEP)"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
 reverts_nodata "price with two dips" 2 "$ADDR" "price()(uint256)"
-POOL2_OBS_THEN="$CUM_THEN"
-POOL2_OBS_NOW="$((CUM_THEN - (TICK + 500) * WINDOW))"
 
 echo "== the venue is fixed: a standby three times deeper does not take over"
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
-send "$POOL2" "setObservation(int56,int56,uint160[4])" "$POOL2_OBS_THEN" "$POOL2_OBS_NOW" "$(spl4 $((MIN_LIQ * 3)) $((MIN_LIQ * 3)) $((MIN_LIQ * 3)))"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
+send "$POOL2" "$OBS" "$POOL2_FLAT" "$(spl4 $((MIN_LIQ * 3)) $((MIN_LIQ * 3)) $((MIN_LIQ * 3)))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session ONCHAIN_TWAP" "${s[0]}/${s[1]}" "1/0"
 expect "the primary still answers" "$(lower "${s[8]}")" "$(lower "$POOL")"
 expect "at the primary's price" "$(num "${s[2]}")" "$EXPECT_TWAP"
 
 echo "== a thin primary refuses instead of moving venue"
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$(spl4 $((MIN_LIQ - 1)) $((MIN_LIQ - 1)) $((MIN_LIQ - 1)))"
+send "$POOL" "$OBS" "$FLAT" "$(spl4 $((MIN_LIQ - 1)) $((MIN_LIQ - 1)) $((MIN_LIQ - 1)))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "session NO_DATA/pool too thin" "${s[0]}/${s[1]}" "3/2"
 expect "the refusal names the primary" "$(lower "${s[8]}")" "$(lower "$POOL")"
@@ -206,7 +255,7 @@ expect "session NO_DATA/twap unavailable" "${s[0]}/${s[1]}" "3/3"
 expect "no pool named" "$(lower "${s[8]}")" "0x0000000000000000000000000000000000000000"
 send "$POOL" "setRevert(bool)" false
 send "$POOL2" "setRevert(bool)" false
-send "$POOL" "setObservation(int56,int56,uint160[4])" "$CUM_THEN" "$CUM_NOW" "$SPL_FLOOR"
+send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
 
 echo "== issuer pause"
 send "$STOCK" "setPaused(bool)" true

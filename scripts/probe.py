@@ -4,15 +4,16 @@
     python scripts/probe.py --oracle 0x... [--rpc URL] [--watch 300]
 
 Prints, side by side: the Chainlink feed's last print and age, the primary
-pool's 30-minute TWAP per share (computed here from observe() and the token's
-uiMultiplier), and what AfterHours returns (session, answer, band clamping).
+pool's price per share (the median of three 10-minute averages, computed here
+from observe() and the token's uiMultiplier), the band that applies at the
+print's age, and what AfterHours returns (session, answer, band clamping).
 During a weekend the feed line goes stale while the AfterHours line keeps
 moving; that is the demo.
 
 Selectors computed with keccak (scripts/measure/keccak.py checks itself), not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
   observe(uint32[]) 0x883bdbfd   uiMultiplier() 0xa60bf13d
-  price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55
+  price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55   quietTier() 0x41fcfef0
 """
 import argparse
 import io
@@ -40,6 +41,7 @@ SELECTORS = {
     # AfterHours (ethers.id on the ABI exported by `cargo stylus export-abi`)
     "state()": "0xc19d93fb",
     "config()": "0x79502c55",
+    "quietTier()": "0x41fcfef0",
 }
 
 
@@ -73,7 +75,9 @@ def points(window):
 
 
 def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, feed_dec, multiplier):
-    """(TWAP per share in feed decimals, median sub-window liquidity) or (None, error)."""
+    """(median sub-window price per share in feed decimals, median sub-window
+    liquidity) or (None, error). Float arithmetic: a cross-check, not the
+    contract's integer path."""
     pts = points(window)
     data = ("0x883bdbfd" + format(32, "064x") + format(len(pts), "064x")
             + "".join(format(s, "064x") for s in pts))
@@ -85,8 +89,9 @@ def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, fee
     n = word(res, off0)
     cum = [signed(word(res, off0 + 1 + i)) for i in range(n)]
     spl = [word(res, off1 + 1 + i) for i in range(n)]
-    mean = (cum[-1] - cum[0]) // window   # Python floors toward -inf already
-    ratio = 1.0001 ** mean                # token1 per token0, raw
+    # each sub-window's mean tick (Python floors toward -inf, like the contract), then the median
+    means = sorted((cum[k + 1] - cum[k]) // (pts[k] - pts[k + 1]) for k in range(3))
+    ratio = 1.0001 ** means[1]            # token1 per token0, raw
     if stock_is_token0:
         raw = ratio * 10 ** (stock_dec + feed_dec) / 10 ** quote_dec
     else:
@@ -117,9 +122,13 @@ def main():
     live_max_age, twap_window, dev_bps = word(cfg, 10), word(cfg, 11), word(cfg, 12)
     min_liq, max_anchor = word(cfg, 13), word(cfg, 14)
     stock = "0x" + cfg[2 + 64 * 4 + 24: 2 + 64 * 5]
+    qt, qerr = rpc_call(args.rpc, args.oracle, SELECTORS["quietTier()"])
+    heartbeat, quiet_bps = (word(qt, 0), word(qt, 1)) if qt and not qerr else (None, None)
     print("AfterHours %s  initialized=%s  feed=%s  primary pool=%s" % (args.oracle, initialized, feed, pool))
-    print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
-          % (live_max_age, twap_window, dev_bps / 100, min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
+    print("  liveMaxAge=%ds twapWindow=%ds band=%.1f%% (%s) minLiquidity=%.3g maxAnchorAge=%ds  decimals feed/stock/quote=%d/%d/%d\n"
+          % (live_max_age, twap_window, dev_bps / 100,
+             ("%.1f%% while the print is under %ds old" % (quiet_bps / 100, heartbeat)) if heartbeat is not None else "no quiet tier",
+             min_liq, max_anchor, feed_dec, stock_dec, quote_dec))
 
     while True:
         now = int(time.time())
@@ -134,12 +143,14 @@ def main():
         twap = pooled[0] if pooled else None
         s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"])
         print("[%s]" % ts(now))
-        print("  Chainlink : $%.4f  printed %s  (%.1f h ago)" % (feed_answer, ts(feed_at), age_h))
+        band = quiet_bps if heartbeat is not None and now - feed_at <= heartbeat else dev_bps
+        print("  Chainlink : $%.4f  printed %s  (%.1f h ago; the band at this age is %.1f%%)"
+              % (feed_answer, ts(feed_at), age_h, band / 100))
         if twap is not None:
-            print("  primary TWAP: $%.4f per share  (%d s window, median liquidity %.3g, share multiplier %.8f; computed off-chain)"
-                  % (twap / 10 ** feed_dec, twap_window, pooled[1], multiplier / 1e18))
+            print("  primary pool: $%.4f per share  (median of three %d s averages, median liquidity %.3g, share multiplier %.8f; computed off-chain)"
+                  % (twap / 10 ** feed_dec, twap_window // 3, pooled[1], multiplier / 1e18))
         else:
-            print("  primary TWAP: unavailable (%s)" % terr)
+            print("  primary pool: unavailable (%s)" % terr)
         if serr or not s:
             print("  AfterHours: state() reverted: %s" % serr)
         else:

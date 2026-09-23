@@ -22,8 +22,12 @@ OUT = Path(__file__).resolve().parent / "data.json"
 # The deploy workflow's defaults, which are the AAPL instance's inputs
 # (DEPLOYMENTS.md). Other stocks use the discovery suggestion from assets.json
 # (primary liquidity / 8 at discovery time) until they are deployed.
-PARAMS = {"liveMaxAge": 21600, "twapWindow": 1800, "maxDeviationBps": 1000, "maxAnchorAge": 432000}
+PARAMS = {"liveMaxAge": 21600, "twapWindow": 1800, "maxDeviationBps": 1000, "maxAnchorAge": 432000,
+          "heartbeat": 86400, "quietBandBps": 100}
 MIN_LIQUIDITY_OVERRIDE = {"AAPL": "200000000000000000"}
+# The AAPL instance is configured with its primary pool only (DEPLOYMENTS.md);
+# the page must read exactly the pools the instance reads.
+POOLS_OVERRIDE = {"AAPL": ["0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"]}
 HERO = "AAPL"
 
 
@@ -40,7 +44,8 @@ def main():
         if not a.get("recommended") and a["symbol"].upper() not in deployed:
             continue
         stock = a["stock"]
-        dep = a["deploy"]
+        dep = dict(a["deploy"])
+        dep["pools"] = POOLS_OVERRIDE.get(a["symbol"].upper(), dep["pools"])
         assets.append({
             "symbol": a["symbol"],
             "stock": stock,

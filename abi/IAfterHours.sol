@@ -14,7 +14,8 @@ interface IAfterHours {
     function description() external view returns (string memory);
     function version() external view returns (uint256);
     /// @dev LIVE_FEED: the feed's round verbatim.
-    ///      ONCHAIN_TWAP: answer = bounded pool TWAP, startedAt = last exchange
+    ///      ONCHAIN_TWAP: answer = the pool's price (median of three sub-window
+    ///      averages) held to the band, startedAt = last exchange
     ///      print, updatedAt = block.timestamp, roundId = the feed's (it does not
     ///      advance between closed-market reads). Reverts IssuerPaused / NoData.
     function latestRoundData()
@@ -45,9 +46,12 @@ interface IAfterHours {
     ///      4 last feed print older than maxAnchorAge, 5 a new share multiplier took
     ///      effect after the last print and the pool per share is outside the band
     ///      answer: the per-share price the oracle stands behind (0 when it refuses)
-    ///      twap: pool TWAP per share before the band (0 outside ONCHAIN_TWAP)
+    ///      twap: the pool's price per share, the median of three sub-window
+    ///            time-weighted averages, before the band (0 outside ONCHAIN_TWAP)
     ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
-    ///      clamped: the TWAP was pulled back to the edge of the band
+    ///      clamped: the price was pulled back to the edge of the band: quietBandBps
+    ///               while the last print is at most heartbeat seconds old,
+    ///               maxDeviationBps after
     ///      pool: the pool that was read: the primary, or a standby while the primary
     ///            cannot be observed (zero when the oracle did not reach the pools, or
     ///            when no configured pool could be observed)
@@ -71,6 +75,11 @@ interface IAfterHours {
     ///      before it cannot be observed (observe() reverts or answers nothing usable).
     ///      A primary that is merely thin refuses (NO_DATA 2) instead of moving venue.
     function pools() external view returns (address[] memory);
+
+    /// @dev While the last print is at most `heartbeat` seconds old the feed may be
+    ///      running and only quiet, so the pool is held to quietBandBps around it;
+    ///      past the heartbeat the market is closed and the band is maxDeviationBps.
+    function quietTier() external view returns (uint64 heartbeat, uint64 quietBandBps);
 
     function config()
         external
@@ -97,10 +106,12 @@ interface IAfterHours {
     ///      Reverts InvalidConfig(reason): 1 liveMaxAge 0, 2 twapWindow under 3 s, 3 band not in
     ///      (0, 10000), 4 minLiquidity 0, 5 stock not in pool, 6 Morpho scale underflow,
     ///      7 decimals > 36, 8 maxAnchorAge <= liveMaxAge, 9 twapWindow > 1 day,
-    ///      10 a pool does not answer observe([twapWindow, 0]), 11 not 1-3 pools,
-    ///      12 the pools do not share one quote token, 13 a pool is listed twice,
-    ///      14 the stock's uiMultiplier() is zero. The stock must expose oraclePaused(),
-    ///      uiMultiplier() and effectiveAt() (CallFailed otherwise).
+    ///      10 a pool does not answer observe() at the four sub-window boundaries
+    ///      [twapWindow, 2w/3, w/3, 0], 11 not 1-3 pools, 12 the pools do not share one
+    ///      quote token, 13 a pool is listed twice, 14 the stock's uiMultiplier() is
+    ///      zero, 15 heartbeat not in [liveMaxAge, maxAnchorAge) or quietBandBps not in
+    ///      (0, maxDeviationBps]. The stock must expose oraclePaused(), uiMultiplier()
+    ///      and effectiveAt() (CallFailed otherwise).
     function initialize(
         address feed,
         address[] calldata pools,
@@ -109,7 +120,9 @@ interface IAfterHours {
         uint32 twapWindow,
         uint64 maxDeviationBps,
         uint128 minLiquidity,
-        uint64 maxAnchorAge
+        uint64 maxAnchorAge,
+        uint64 heartbeat,
+        uint64 quietBandBps
     ) external;
 
     error IssuerPaused();

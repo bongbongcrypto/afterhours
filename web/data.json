@@ -13,7 +13,9 @@
   "liveMaxAge": 21600,
   "twapWindow": 1800,
   "maxDeviationBps": 1000,
-  "maxAnchorAge": 432000
+  "maxAnchorAge": 432000,
+  "heartbeat": 86400,
+  "quietBandBps": 100
  },
  "hero": "AAPL",
  "counts": {
@@ -28,14 +30,10 @@
    "feed": "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0",
    "description": "Robinhood AAPL / USD",
    "pools": [
-    "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d",
-    "0x783c9bbb765047cfdd2b84b92b2ca9f11d34b7ed",
-    "0x3714aa8105de1f384481b425788af413748c1837"
+    "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"
    ],
    "poolFees": [
-    "0.05%",
-    "0.3%",
-    "1%"
+    "0.05%"
    ],
    "stockIsToken0": false,
    "stockDecimals": 18,

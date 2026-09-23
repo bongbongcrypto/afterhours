@@ -7,12 +7,15 @@
 //! trading on-chain. AfterHours is a drop-in feed that
 //!
 //! * passes the Chainlink answer through while it is fresh (`LIVE_FEED`),
-//! * otherwise prices the token from where it actually trades: a time-weighted
-//!   average of its primary Uniswap v3 pool, bounded to a per-asset band
-//!   around the last exchange print and refused when that pool is too thin
-//!   (`ONCHAIN_TWAP`). The primary is fixed at deployment; standby pools are
-//!   read only while the primary cannot be observed, so nobody can move the
-//!   price source to a pool they control,
+//! * otherwise prices the token from where it actually trades: the median of
+//!   three 10-minute time-weighted averages of its primary Uniswap v3 pool,
+//!   bounded to a band around the last exchange print and refused when that
+//!   pool is too thin (`ONCHAIN_TWAP`). The band is narrow while the print is
+//!   younger than the feed's heartbeat (a weekday feed that is only quiet
+//!   looks exactly like the first day of a closure) and wide after it. The
+//!   primary is fixed at deployment; standby pools are read only while the
+//!   primary cannot be observed, so nobody can move the price source to a
+//!   pool they control,
 //! * refuses to price while the issuer has paused the token's oracle for a
 //!   corporate action (`PAUSED`), when neither source is usable, or when the
 //!   last exchange print is older than any market closure can explain
@@ -38,7 +41,7 @@ extern crate alloc;
 use alloc::{string::String, vec::Vec};
 
 use alloy_primitives::{
-    aliases::{U128, U160, U32, U64, U8, U80},
+    aliases::{I56, U128, U160, U32, U64, U8, U80},
     Address, I256, U256,
 };
 use alloy_sol_types::sol;
@@ -76,7 +79,8 @@ pub const CONFIG_DECIMALS_TOO_LARGE: u8 = 7;
 /// `maxAnchorAge` must exceed `liveMaxAge`, otherwise the TWAP path can never run.
 pub const CONFIG_ANCHOR_AGE: u8 = 8;
 pub const CONFIG_WINDOW_TOO_LONG: u8 = 9;
-/// `observe([twapWindow, 0])` failed at deployment: not a v3 pool, or no history yet.
+/// `observe()` at the four sub-window boundaries failed at deployment: not a v3
+/// pool, or not enough history yet.
 pub const CONFIG_POOL_NOT_OBSERVABLE: u8 = 10;
 /// Between 1 and `MAX_POOLS` pools must be given.
 pub const CONFIG_POOL_COUNT: u8 = 11;
@@ -86,6 +90,9 @@ pub const CONFIG_POOL_QUOTE_MISMATCH: u8 = 12;
 pub const CONFIG_DUPLICATE_POOL: u8 = 13;
 /// The stock's `uiMultiplier()` answered zero.
 pub const CONFIG_BAD_MULTIPLIER: u8 = 14;
+/// `heartbeat` must lie in `[liveMaxAge, maxAnchorAge)` and `quietBandBps` in
+/// `(0, maxDeviationBps]`.
+pub const CONFIG_QUIET_TIER: u8 = 15;
 
 const BPS: u64 = 10_000;
 /// Longest TWAP window accepted (one day); longer windows are always unavailable.
@@ -95,11 +102,13 @@ const MAX_DECIMALS: u8 = 36;
 /// Primary plus standby pools. Standbys are read only while the primary
 /// cannot be observed.
 const MAX_POOLS: usize = 3;
-/// The window's liquidity is judged per sub-window; the median must clear the
-/// floor, so one brief excursion out of range cannot switch pricing off.
-const LIQUIDITY_SUBWINDOWS: u32 = 3;
-/// Shortest TWAP window: each liquidity sub-window must last at least a second.
-const MIN_TWAP_WINDOW: u32 = LIQUIDITY_SUBWINDOWS;
+/// The window is judged in three sub-windows, price and depth alike: the
+/// answer is the median sub-window's average and the median sub-window's
+/// liquidity must clear the floor, so whatever happens inside one sub-window
+/// alone neither moves the price nor switches pricing off.
+const SUBWINDOWS: u32 = 3;
+/// Shortest TWAP window: each sub-window must last at least a second.
+const MIN_TWAP_WINDOW: u32 = SUBWINDOWS;
 /// 1e18, the token's multiplier for "one raw unit is one share".
 const ONE_SHARE: U256 = U256::from_limbs([1_000_000_000_000_000_000, 0, 0, 0]);
 
@@ -194,6 +203,13 @@ sol_storage! {
         uint64 max_anchor_age;
         /// 10^(36 + quote_decimals - stock_decimals - feed_decimals): Morpho's price scale.
         uint256 morpho_scale;
+        /// The feed's heartbeat (seconds). A print younger than this may come
+        /// from a feed that is running but quiet, so the pool is held to
+        /// `quiet_band_bps` around it; past it the market is closed and the
+        /// band is `max_deviation_bps`.
+        uint64 heartbeat;
+        /// Band (basis points) while the last print is at most `heartbeat` old.
+        uint64 quiet_band_bps;
     }
 }
 
@@ -209,8 +225,13 @@ pub struct Quote {
     pub feed_started_at: U256,
     pub feed_updated_at: U256,
     pub feed_answered_in_round: U80,
-    /// Pool TWAP per share, in feed decimals, before the band is applied (0 outside ONCHAIN_TWAP).
+    /// The median sub-window's pool average, per share, in feed decimals,
+    /// before the band is applied (0 outside ONCHAIN_TWAP).
     pub twap: U256,
+    /// The band chosen for this read, in basis points: `quietBandBps` or
+    /// `maxDeviationBps` by the print's age. 0 when the read ended before it
+    /// (LIVE_FEED, PAUSED, NO_DATA 1 on an invalid round, NO_DATA 4).
+    pub band_bps: u64,
     /// Median of the three sub-windows' harmonic-mean in-range liquidity of
     /// `pool` (0 when no pool was read).
     pub liquidity: u128,
@@ -235,6 +256,8 @@ impl AfterHours {
     /// distinct Uniswap v3 pools of the stock against one quote token; the
     /// first is the primary (give the deepest fee tier), the rest are standbys.
     /// The stock must expose `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`.
+    /// `heartbeat` and `quiet_band_bps` set the quiet tier: a print at most
+    /// `heartbeat` seconds old holds the pool to `quiet_band_bps` around it.
     pub fn initialize(
         &mut self,
         feed: Address,
@@ -245,6 +268,8 @@ impl AfterHours {
         max_deviation_bps: u64,
         min_liquidity: u128,
         max_anchor_age: u64,
+        heartbeat: u64,
+        quiet_band_bps: u64,
     ) -> Result<(), AfterHoursError> {
         if self.initialized.get() {
             return Err(AfterHoursError::AlreadyInitialized(AlreadyInitialized {}));
@@ -266,6 +291,16 @@ impl AfterHours {
         }
         if max_anchor_age <= live_max_age {
             return Err(invalid(CONFIG_ANCHOR_AGE));
+        }
+        // The quiet tier sits between the live feed and the anchor limit, and
+        // is never wider than the closed-market band. `heartbeat == liveMaxAge`
+        // leaves it empty.
+        if heartbeat < live_max_age
+            || heartbeat >= max_anchor_age
+            || quiet_band_bps == 0
+            || quiet_band_bps > max_deviation_bps
+        {
+            return Err(invalid(CONFIG_QUIET_TIER));
         }
         if pools.is_empty() || pools.len() > MAX_POOLS {
             return Err(invalid(CONFIG_POOL_COUNT));
@@ -373,6 +408,8 @@ impl AfterHours {
         self.min_liquidity.set(U128::from(min_liquidity));
         self.max_anchor_age.set(U64::from(max_anchor_age));
         self.morpho_scale.set(morpho_scale);
+        self.heartbeat.set(U64::from(heartbeat));
+        self.quiet_band_bps.set(U64::from(quiet_band_bps));
         Ok(())
     }
 
@@ -487,10 +524,21 @@ impl AfterHours {
             .collect()
     }
 
+    /// The quiet tier: (heartbeat, quietBandBps). While the last print is at
+    /// most `heartbeat` seconds old the pool is held to `quietBandBps` around
+    /// it; after that, to `maxDeviationBps`.
+    pub fn quiet_tier(&self) -> (u64, u64) {
+        (
+            self.heartbeat.get().to::<u64>(),
+            self.quiet_band_bps.get().to::<u64>(),
+        )
+    }
+
     /// Deployment parameters:
     /// (initialized, initializer, feed, firstPool, stock, quote, stockIsToken0OfFirstPool,
     ///  feedDecimals, stockDecimals, quoteDecimals, liveMaxAge, twapWindow, maxDeviationBps,
-    ///  minLiquidity, maxAnchorAge). See `pools()` for every pool.
+    ///  minLiquidity, maxAnchorAge). See `pools()` for every pool and
+    ///  `quietTier()` for the narrow band.
     pub fn config(
         &self,
     ) -> (
@@ -610,10 +658,22 @@ impl AfterHours {
             return Ok(q);
         }
 
+        // Within the heartbeat the feed may be running and merely quiet (on a
+        // weekday the price has not moved its deviation threshold), or the
+        // market may have closed within the last day; on-chain the two look
+        // the same, and either way the exchange last traded near this print.
+        // The pool is held close to it. Past the heartbeat the market is
+        // closed and the pool may move up to `max_deviation_bps`.
+        let band_bps = if age <= U256::from(self.heartbeat.get()) {
+            self.quiet_band_bps.get().to::<u64>()
+        } else {
+            self.max_deviation_bps.get().to::<u64>()
+        };
+        q.band_bps = band_bps;
         // The band is anchored to the last feed print; a print so large that the
         // arithmetic overflows is not a print to anchor to. Checked before any
         // pool read so a refusal never carries a half-computed TWAP.
-        let dev = U256::from(self.max_deviation_bps.get());
+        let dev = U256::from(band_bps);
         let bps = U256::from(BPS);
         let (Some(lower), Some(upper)) = (
             feed_answer.checked_mul(bps - dev).map(|v| v / bps),
@@ -624,14 +684,14 @@ impl AfterHours {
             return Ok(q);
         };
 
-        // Closed market: price from the primary pool, guarded by depth and the band.
-        // The venue is fixed: a standby is read only while every earlier pool
+        // The feed is not live: price from the primary pool, guarded by depth and
+        // the band. The venue is fixed: a standby is read only while every earlier pool
         // cannot be observed at all (history too short, wrong shape). A primary
         // that answers is used, thin or not; switching to whichever pool looks
         // deepest would let anyone who deepens a shallow tier choose the source.
         let window = self.twap_window.get().to::<u32>();
         let points = observation_points(window);
-        let mut chosen: Option<(Address, bool, u128, i64, i64)> = None;
+        let mut chosen: Option<(Address, bool, u128, Option<i32>)> = None;
         for i in 0..self.pools.len() {
             let Some(pool) = self.pools.get(i) else {
                 continue;
@@ -645,17 +705,15 @@ impl AfterHours {
             let Some((cumulatives, seconds_per_liquidity)) = observed else {
                 continue;
             };
-            let last = points.len() - 1;
             chosen = Some((
                 pool,
                 is_token0,
                 median_liquidity(&points, &seconds_per_liquidity),
-                cumulatives[0].as_i64(),
-                cumulatives[last].as_i64(),
+                median_tick(&points, &cumulatives),
             ));
             break;
         }
-        let Some((pool, stock_is_token0, liquidity, cum_then, cum_now)) = chosen else {
+        let Some((pool, stock_is_token0, liquidity, tick)) = chosen else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
             return Ok(q);
@@ -668,7 +726,7 @@ impl AfterHours {
             return Ok(q);
         }
 
-        let twap = tickmath::mean_tick(cum_then, cum_now, window)
+        let twap = tick
             .and_then(tickmath::ratio_q96)
             .and_then(|ratio| {
                 tickmath::stock_price(
@@ -737,8 +795,27 @@ impl AfterHours {
 /// `observe()` points: the window split into three sub-windows, oldest first.
 /// With the 30-minute window: 1800, 1200, 600 and 0 seconds ago.
 fn observation_points(window: u32) -> Vec<u32> {
-    let sub = window / LIQUIDITY_SUBWINDOWS;
+    let sub = window / SUBWINDOWS;
     vec![window, 2 * sub, sub, 0]
+}
+
+/// Median of the sub-windows' time-weighted mean ticks (Uniswap's
+/// OracleLibrary.consult per sub-window, rounded toward negative infinity).
+/// A move confined to one sub-window, however far, does not reach the answer:
+/// it has to hold through two of the three. `None` when a sub-window's mean
+/// cannot be formed.
+fn median_tick(points: &[u32], cumulatives: &[I56]) -> Option<i32> {
+    let mut ticks = (0..points.len() - 1)
+        .map(|k| {
+            tickmath::mean_tick(
+                cumulatives[k].as_i64(),
+                cumulatives[k + 1].as_i64(),
+                points[k] - points[k + 1],
+            )
+        })
+        .collect::<Option<Vec<i32>>>()?;
+    ticks.sort_unstable();
+    Some(ticks[ticks.len() / 2])
 }
 
 /// Median of the sub-windows' harmonic-mean liquidity (Uniswap's

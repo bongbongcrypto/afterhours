@@ -48,9 +48,17 @@ on:
         required: true
         default: "1800"
       max_deviation_bps:
-        description: Band around the last feed print, basis points
+        description: Band around the last feed print once the feed has missed its heartbeat (market closed), basis points
         required: true
         default: "1000"
+      heartbeat:
+        description: The feed's heartbeat, seconds. A print younger than this may come from a running feed that is only quiet, so the pool is held to quiet_band_bps around it
+        required: true
+        default: "86400"
+      quiet_band_bps:
+        description: Band around the last feed print while it is younger than the heartbeat, basis points (the feed's deviation threshold is 50)
+        required: true
+        default: "100"
       min_liquidity:
         description: Minimum window-averaged pool liquidity (AAPL 0.05% pool holds ~1.3-1.6e18)
         required: true
@@ -88,6 +96,8 @@ env:
   MAX_DEVIATION_BPS: ${{ inputs.max_deviation_bps }}
   MIN_LIQUIDITY: ${{ inputs.min_liquidity }}
   MAX_ANCHOR_AGE: ${{ inputs.max_anchor_age }}
+  HEARTBEAT: ${{ inputs.heartbeat }}
+  QUIET_BAND_BPS: ${{ inputs.quiet_band_bps }}
 
 jobs:
   deploy:
@@ -136,7 +146,9 @@ jobs:
             echo "$role pool $pool"
             cast call --rpc-url "$RPC" "$pool" "token0()(address)"
             cast call --rpc-url "$RPC" "$pool" "token1()(address)"
-            cast call --rpc-url "$RPC" "$pool" "observe(uint32[])(int56[],uint160[])" "[$TWAP_WINDOW,0]"
+            # the four points every read asks for: three sub-windows of the TWAP window
+            sub=$((TWAP_WINDOW / 3))
+            cast call --rpc-url "$RPC" "$pool" "observe(uint32[])(int56[],uint160[])" "[$TWAP_WINDOW,$((2 * sub)),$sub,0]"
             # slot0: sqrtPriceX96, tick, index, cardinality, cardinalityNext, feeProtocol, unlocked
             card=$(cast call --rpc-url "$RPC" "$pool" "slot0()(uint160,int24,uint16,uint16,uint16,uint8,bool)" | sed -n '4p' | sed 's/ .*//')
             echo "  observation cardinality $card"
@@ -180,8 +192,9 @@ jobs:
         run: |
           POOLS=$(printf '%s' "$POOLS" | tr -d '[:space:]')   # "a, b" and "a,b" are the same list
           receipt=$(cast send --json --rpc-url "$RPC" --private-key "$DEPLOYER_KEY" "$ADDR" \
-            "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64)" \
-            "$FEED" "[$POOLS]" "$STOCK" "$LIVE_MAX_AGE" "$TWAP_WINDOW" "$MAX_DEVIATION_BPS" "$MIN_LIQUIDITY" "$MAX_ANCHOR_AGE")
+            "initialize(address,address[],address,uint64,uint32,uint64,uint128,uint64,uint64,uint64)" \
+            "$FEED" "[$POOLS]" "$STOCK" "$LIVE_MAX_AGE" "$TWAP_WINDOW" "$MAX_DEVIATION_BPS" "$MIN_LIQUIDITY" "$MAX_ANCHOR_AGE" \
+            "$HEARTBEAT" "$QUIET_BAND_BPS")
           echo "$receipt" | jq -r '"initialize tx \(.transactionHash) status \(.status)"'
           echo "$receipt" | jq -e '.status == "0x1"' > /dev/null || { echo "initialize reverted"; exit 1; }
       - name: read back and verify every field
@@ -212,6 +225,9 @@ jobs:
           test "$(num "${c[12]}")" = "$MAX_DEVIATION_BPS" || { echo "maxDeviationBps mismatch"; exit 1; }
           test "$(num "${c[13]}")" = "$MIN_LIQUIDITY" || { echo "minLiquidity mismatch"; exit 1; }
           test "$(num "${c[14]}")" = "$MAX_ANCHOR_AGE" || { echo "maxAnchorAge mismatch"; exit 1; }
+          mapfile -t qt < <(cast call --rpc-url "$RPC" "$ADDR" "quietTier()(uint64,uint64)")
+          test "$(num "${qt[0]}")" = "$HEARTBEAT" || { echo "heartbeat mismatch"; exit 1; }
+          test "$(num "${qt[1]}")" = "$QUIET_BAND_BPS" || { echo "quietBandBps mismatch"; exit 1; }
           desc=$(cast call --rpc-url "$RPC" "$ADDR" "description()(string)")
           test "$desc" = "\"$EXPECTED_DESCRIPTION (AfterHours)\"" || { echo "description mismatch: $desc"; exit 1; }
           cast call --rpc-url "$RPC" "$ADDR" "decimals()(uint8)"

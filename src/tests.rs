@@ -33,6 +33,10 @@ const TWAP_WINDOW: u32 = 1800;
 const MAX_DEV_BPS: u64 = 1000;
 const MIN_LIQUIDITY: u128 = 1_000_000_000_000_000; // 1e15
 const MAX_ANCHOR_AGE: u64 = 5 * 86_400;
+/// The feed's heartbeat: a print younger than this may come from a quiet, running feed.
+const HEARTBEAT: u64 = 86_400;
+/// The narrow band while the print is younger than the heartbeat.
+const QUIET_BAND_BPS: u64 = 100;
 
 const NOW: u64 = 1_800_000_000;
 /// $332.52 with 8 decimals: AAPL's last Friday print on 2026-09-11.
@@ -64,18 +68,28 @@ fn observation(
     spl_start: u64,
     liq: [u128; 3],
 ) -> (Vec<I56>, Vec<U160>) {
+    observation_thirds(start, [mean_tick; 3], spl_start, liq)
+}
+
+/// Cumulatives for a mean tick and a liquidity per 600 s sub-window, oldest first.
+fn observation_thirds(
+    start: i64,
+    mean_ticks: [i64; 3],
+    spl_start: u64,
+    liq: [u128; 3],
+) -> (Vec<I56>, Vec<U160>) {
     let pts = points();
-    let ticks = pts
-        .iter()
-        .map(|s| I56::try_from(start + mean_tick * i64::from(TWAP_WINDOW - s)).unwrap())
-        .collect();
+    let mut cum = vec![start];
     let mut spl = vec![U160::from(spl_start)];
     for k in 0..3 {
-        let span = U256::from(pts[k] - pts[k + 1]);
-        let d = U160::from((span << 128usize) / U256::from(liq[k]));
+        let span = pts[k] - pts[k + 1];
+        let last_cum = cum[k];
+        cum.push(last_cum + mean_ticks[k] * i64::from(span));
+        let d = U160::from((U256::from(span) << 128usize) / U256::from(liq[k]));
         let last = spl[k];
         spl.push(last.wrapping_add(d));
     }
+    let ticks = cum.into_iter().map(|c| I56::try_from(c).unwrap()).collect();
     (ticks, spl)
 }
 
@@ -226,6 +240,8 @@ impl World {
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
+            HEARTBEAT,
+            QUIET_BAND_BPS,
         )
         .expect("two pools");
         c
@@ -265,6 +281,34 @@ impl World {
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
+            HEARTBEAT,
+            QUIET_BAND_BPS,
+        )
+        .expect("initialize");
+        c
+    }
+
+    /// A pool whose three 600 s sub-windows average the given ticks (oldest
+    /// first), each with the same harmonic-mean liquidity.
+    fn mock_observe_ticks(&self, mean_ticks: [i64; 3], liquidity: u128) {
+        let (ticks, spl) = observation_thirds(1_000_000, mean_ticks, 7_777_777, [liquidity; 3]);
+        self.mock_observe_raw(ticks, spl);
+    }
+
+    /// One pool, with its own quiet tier.
+    fn deploy_with_tier(&self, heartbeat: u64, quiet_band_bps: u64) -> AfterHours {
+        let mut c = AfterHours::from(&self.vm);
+        c.initialize(
+            FEED,
+            vec![POOL],
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            heartbeat,
+            quiet_band_bps,
         )
         .expect("initialize");
         c
@@ -285,6 +329,8 @@ impl World {
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
+            HEARTBEAT,
+            QUIET_BAND_BPS,
         )
     }
 }
@@ -345,6 +391,7 @@ fn initialize_reads_layout_and_decimals_from_the_contracts() {
             MAX_ANCHOR_AGE
         )
     );
+    assert_eq!(c.quiet_tier(), (HEARTBEAT, QUIET_BAND_BPS));
     assert_eq!(c.decimals(), 8);
     assert_eq!(c.version(), U256::from(1u64));
     assert_eq!(c.description().unwrap(), "AAPL / USD (AfterHours)");
@@ -448,7 +495,18 @@ fn initialize_rejects_bad_parameters() {
     ];
     for (age, window, dev, min_liq, anchor, expected) in cases {
         let err = c
-            .initialize(FEED, vec![POOL], STOCK, age, window, dev, min_liq, anchor)
+            .initialize(
+                FEED,
+                vec![POOL],
+                STOCK,
+                age,
+                window,
+                dev,
+                min_liq,
+                anchor,
+                HEARTBEAT,
+                QUIET_BAND_BPS,
+            )
             .expect_err("must reject");
         assert_eq!(
             config_reason(err),
@@ -461,6 +519,42 @@ fn initialize_rejects_bad_parameters() {
         !initialized,
         "a rejected initialize leaves the contract untouched"
     );
+}
+
+#[test]
+fn initialize_bounds_the_quiet_tier() {
+    let w = World::new();
+    let mut c = AfterHours::from(&w.vm);
+    let deploy = |c: &mut AfterHours, heartbeat: u64, quiet: u64| {
+        c.initialize(
+            FEED,
+            vec![POOL],
+            STOCK,
+            LIVE_MAX_AGE,
+            TWAP_WINDOW,
+            MAX_DEV_BPS,
+            MIN_LIQUIDITY,
+            MAX_ANCHOR_AGE,
+            heartbeat,
+            quiet,
+        )
+    };
+    for (heartbeat, quiet) in [
+        (LIVE_MAX_AGE - 1, QUIET_BAND_BPS), // shorter than the live feed
+        (MAX_ANCHOR_AGE, QUIET_BAND_BPS),   // the wide band could never apply
+        (HEARTBEAT, 0),                     // a zero band refuses every quiet read
+        (HEARTBEAT, MAX_DEV_BPS + 1),       // wider than the closed-market band
+    ] {
+        let err = deploy(&mut c, heartbeat, quiet).expect_err("must reject");
+        assert_eq!(
+            config_reason(err),
+            CONFIG_QUIET_TIER,
+            "case ({heartbeat},{quiet})"
+        );
+    }
+    // The edges are accepted: an empty quiet tier, and one as wide as the band.
+    deploy(&mut c, LIVE_MAX_AGE, MAX_DEV_BPS).expect("empty tier, full band");
+    assert_eq!(c.quiet_tier(), (LIVE_MAX_AGE, MAX_DEV_BPS));
 }
 
 #[test]
@@ -554,6 +648,8 @@ fn initialize_runs_only_once() {
             MAX_DEV_BPS,
             MIN_LIQUIDITY,
             MAX_ANCHOR_AGE,
+            HEARTBEAT,
+            QUIET_BAND_BPS,
         )
         .expect_err("second initialize");
     assert!(matches!(err, AfterHoursError::AlreadyInitialized(_)));
@@ -773,6 +869,109 @@ fn twap_inside_the_band_is_not_clamped() {
     assert!(!clamped);
     let lower = U256::from(FRIDAY_ANSWER) * U256::from(9000u64) / U256::from(10_000u64);
     assert!(ans > lower && ans < U256::from(FRIDAY_ANSWER));
+}
+
+// ---- the median sub-window ---------------------------------------------------------
+
+/// AAPL_TICK + 500 on the primary (stock as token1), about -5.3% against the
+/// print: the same exact price as POOL2's mirrored tick, so the same floor.
+const DOWN_TWAP: u64 = POOL2_TWAP;
+/// AAPL_TICK + 300: floor of the exact 32118396159.78 (80-digit decimal
+/// reference); the contract's integer path lands on the same integer.
+const HELD_TWAP: u64 = 32_118_396_159;
+
+#[test]
+fn a_spike_inside_one_sub_window_moves_nothing() {
+    // For one 10-minute sub-window the pool trades at 7.4x (20,000 ticks lower:
+    // less stock per USDG). A whole-window average would have moved 6,667 ticks
+    // (+95%) and sat at the +10% band edge; the median sub-window has not moved.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    w.mock_observe_ticks([AAPL_TICK, AAPL_TICK - 20_000, AAPL_TICK], MIN_LIQUIDITY);
+    let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+    assert_eq!((ans, twap, clamped), (U256::from(AAPL_TWAP), U256::from(AAPL_TWAP), false));
+    // the last sub-window, the first, either way
+    w.mock_observe_ticks([AAPL_TICK - 20_000, AAPL_TICK, AAPL_TICK], MIN_LIQUIDITY);
+    let (_, _, ans, ..) = c.state().unwrap();
+    assert_eq!(ans, U256::from(AAPL_TWAP));
+    w.mock_observe_ticks([AAPL_TICK, AAPL_TICK, AAPL_TICK + 20_000], MIN_LIQUIDITY);
+    let (_, _, ans, ..) = c.state().unwrap();
+    assert_eq!(ans, U256::from(AAPL_TWAP));
+}
+
+#[test]
+fn a_move_held_through_two_sub_windows_is_priced() {
+    // The pool fell 300 ticks (-2.96%) twenty minutes ago and stayed there.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+    w.mock_observe_ticks([AAPL_TICK, AAPL_TICK + 300, AAPL_TICK + 300], MIN_LIQUIDITY);
+    let (session, _, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!((ans, twap, clamped), (U256::from(HELD_TWAP), U256::from(HELD_TWAP), false));
+    // ten minutes in, only one sub-window has it: not priced yet
+    w.mock_observe_ticks([AAPL_TICK, AAPL_TICK, AAPL_TICK + 300], MIN_LIQUIDITY);
+    let (_, _, ans, ..) = c.state().unwrap();
+    assert_eq!(ans, U256::from(AAPL_TWAP));
+    // three different sub-windows: the middle one, whatever the order
+    w.mock_observe_ticks([AAPL_TICK + 600, AAPL_TICK - 300, AAPL_TICK + 300], MIN_LIQUIDITY);
+    let (_, _, ans, ..) = c.state().unwrap();
+    assert_eq!(ans, U256::from(HELD_TWAP));
+}
+
+// ---- the quiet tier ----------------------------------------------------------------
+
+#[test]
+fn a_quiet_feed_holds_the_pool_to_the_narrow_band() {
+    // A weekday: the feed last printed seven hours ago because the price has
+    // not moved its 0.5% threshold since. The pool says -5.3%; within the
+    // heartbeat it is held to -1%.
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 7 * 3600);
+    w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
+    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
+        / U256::from(10_000u64);
+    let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
+    assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+    assert_eq!((ans, clamped), (narrow, true));
+    assert_eq!(twap, U256::from(DOWN_TWAP), "the unclamped pool price is reported");
+    assert_eq!(c.price().unwrap(), narrow * u(MORPHO_SCALE));
+    // a pool inside the narrow band passes through
+    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
+    let (_, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
+    assert_eq!((ans, clamped), (U256::from(AAPL_TWAP), false));
+}
+
+#[test]
+fn the_band_widens_only_once_the_heartbeat_has_passed() {
+    let w = World::new();
+    let c = w.deploy();
+    w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
+    let narrow = U256::from(FRIDAY_ANSWER) * U256::from(10_000 - QUIET_BAND_BPS)
+        / U256::from(10_000u64);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - HEARTBEAT);
+    let (_, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
+    assert_eq!((ans, clamped), (narrow, true), "at the heartbeat: narrow");
+    // One second later the feed has missed its heartbeat: the market is closed,
+    // and the pool's -5.3% is inside the wide band.
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - HEARTBEAT - 1);
+    let (session, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!((ans, clamped), (U256::from(DOWN_TWAP), false));
+}
+
+#[test]
+fn an_empty_quiet_tier_goes_straight_to_the_wide_band() {
+    let w = World::new();
+    let c = w.deploy_with_tier(LIVE_MAX_AGE, QUIET_BAND_BPS);
+    w.mock_observe(AAPL_TICK + 500, MIN_LIQUIDITY);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - LIVE_MAX_AGE - 1);
+    let (session, _, ans, _, _, _, _, clamped, _) = c.state().unwrap();
+    assert_eq!(session, SESSION_ONCHAIN_TWAP);
+    assert_eq!((ans, clamped), (U256::from(DOWN_TWAP), false));
 }
 
 // ---- refusals ----------------------------------------------------------------------
@@ -1458,10 +1657,19 @@ mod props {
     use crate::tickmath;
     use proptest::prelude::*;
 
-    fn lower_upper(feed: u64) -> (U256, U256) {
+    /// The band a read with a print `age` seconds old is held to.
+    fn band_for(age: u64) -> u64 {
+        if age <= HEARTBEAT {
+            QUIET_BAND_BPS
+        } else {
+            MAX_DEV_BPS
+        }
+    }
+
+    fn lower_upper(feed: U256, band_bps: u64) -> (U256, U256) {
         (
-            U256::from(feed) * U256::from(9000u64) / U256::from(10_000u64),
-            U256::from(feed) * U256::from(11_000u64) / U256::from(10_000u64),
+            feed * U256::from(10_000 - band_bps) / U256::from(10_000u64),
+            feed * U256::from(10_000 + band_bps) / U256::from(10_000u64),
         )
     }
 
@@ -1575,8 +1783,9 @@ mod props {
                             );
                         }
                         SESSION_ONCHAIN_TWAP => {
-                            let lower = feed_answer * U256::from(9000u64) / U256::from(10_000u64);
-                            let upper = feed_answer * U256::from(11_000u64) / U256::from(10_000u64);
+                            // a valid round is never in the future
+                            let (lower, upper) =
+                                lower_upper(feed_answer, band_for(NOW - updated_at));
                             prop_assert!(ans >= lower && ans <= upper);
                             prop_assert_eq!(clamped, twap < lower || twap > upper);
                             prop_assert_eq!(pool, POOL);
@@ -1670,8 +1879,9 @@ mod props {
             let approx = 1e20_f64 / 1.0001_f64.powi(tick as i32);
             let got = twap.to::<u128>() as f64;
             prop_assert!(((got - approx) / approx).abs() < 1e-9, "twap {got} vs float {approx}");
-            // the answer is the TWAP inside the band, else exactly the edge it crossed
-            let (lower, upper) = lower_upper(feed);
+            // the answer is the TWAP inside the band (narrow within the
+            // heartbeat), else exactly the edge it crossed
+            let (lower, upper) = lower_upper(U256::from(feed), band_for(age));
             if twap < lower {
                 prop_assert_eq!((ans, clamped), (lower, true));
             } else if twap > upper {
@@ -1683,6 +1893,25 @@ mod props {
             let (_, rd_answer, ..) = c.latest_round_data().unwrap();
             prop_assert_eq!(rd_answer, I256::from_raw(ans));
             prop_assert_eq!(c.price().unwrap(), ans * u(MORPHO_SCALE));
+        }
+
+        #[test]
+        fn the_price_is_the_median_sub_window(
+            a in -3_000i64..3_000,
+            b in -3_000i64..3_000,
+            d in -3_000i64..3_000,
+        ) {
+            let w = World::new();
+            let c = w.deploy();
+            w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+            w.mock_observe_ticks([AAPL_TICK + a, AAPL_TICK + b, AAPL_TICK + d], MIN_LIQUIDITY);
+            let mut sorted = [a, b, d];
+            sorted.sort_unstable();
+            let median = i32::try_from(AAPL_TICK + sorted[1]).unwrap();
+            let want = tickmath::stock_price(tickmath::ratio_q96(median).unwrap(), false, 18, 6, 8).unwrap();
+            let (session, reason, _, _, _, twap, ..) = c.state().unwrap();
+            prop_assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
+            prop_assert_eq!(twap, want);
         }
 
         #[test]

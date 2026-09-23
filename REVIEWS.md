@@ -78,5 +78,5 @@ open with the reason.
 | "The one oracle with a closure policy" missed two census oracles with a four-day bound; "a five-day-old print" put PARE among the 83 markets | corrected in DESIGN, README, the live page and the video | e8d2730 |
 | "Change one address" does not hold for Morpho, whose market oracle is fixed at creation | "open a market with AfterHours as its oracle" | e8d2730 |
 | The live page read AAPL's standby pools, which the instance does not configure | the page reads exactly the instance's pools | 112179e |
-| Stale comments and counts (observe points, reasons 1-4, 33 KB, test counts); video lines not yet true ("deployed on mainnet", "This is Saturday", "no contract can read that price") | refreshed; the video says what is true before deployment | e8d2730 |
+| Stale comments and counts (observe points, reasons 1-4, the e2e size comment, test counts); video lines not yet true (a mainnet deployment, a Saturday capture, and a claim that no contract reads the pool, which the raw-pool adapters do) | refreshed; the video says what is true before deployment | e8d2730 |
 | Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |

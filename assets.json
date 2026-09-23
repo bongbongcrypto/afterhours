@@ -11,7 +11,7 @@
     "maxAnchorAge": 432000,
     "heartbeat": 86400,
     "quietBandBps": 100,
-    "min_liquidity": "primary liquidity / 32 at discovery time, the AAPL instance's ratio (1.68e18 / 5e16 = 34, rounded down); check each with pool_depth.py before deploying",
+    "min_liquidity": "primary liquidity / 32 at discovery time, about the AAPL instance's ratio (1.68e18 / 5e16 = 33.6); check each with pool_depth.py before deploying",
     "recommended": "primary cardinality >= 1801 and 2% depth >= $50000"
   },
   "assets": [

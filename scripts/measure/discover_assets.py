@@ -190,7 +190,7 @@ def main():
             deploy = {
                 "feed": feed, "expected_description": description,
                 "pools": [primary["address"]] + [p["address"] for p in standbys],
-                # AAPL's ratio (1.68e18 / 5e16 = 34, rounded down). At / 8 its pool cleared
+                # About AAPL's ratio (1.68e18 / 5e16 = 33.6). At / 8 its pool cleared
                 # the floor only from -4.5% to +3.2% and refused the moves the oracle exists
                 # to price (review round 7); pool_depth.py measures any other pool's range.
                 "stock": token, "min_liquidity": str(primary["liquidity"] // 32),
@@ -220,8 +220,8 @@ def main():
         "genuine_beacon": genuine_beacon,
         "defaults": {"liveMaxAge": 21600, "twapWindow": WINDOW, "maxDeviationBps": 1000,
                      "maxAnchorAge": 432000, "heartbeat": 86400, "quietBandBps": 100,
-                     "min_liquidity": "primary liquidity / 32 at discovery time, the AAPL instance's ratio "
-                                      "(1.68e18 / 5e16 = 34, rounded down); check each with pool_depth.py before deploying",
+                     "min_liquidity": "primary liquidity / 32 at discovery time, about the AAPL instance's ratio "
+                                      "(1.68e18 / 5e16 = 33.6); check each with pool_depth.py before deploying",
                      "recommended": "primary cardinality >= %d and 2%% depth >= $%d" % (WINDOW + 1, MIN_DEPTH_USD)},
         "assets": assets,
         "not_deployable": [{"symbol": r["symbol"], "stock": r["stock"], "why": r["why_not"]} for r in rejected],

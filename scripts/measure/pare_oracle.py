@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""What does the one live lending market on Robinhood Chain (PARE pSPY/USDG on
-Morpho, custom oracle) actually use for a price while the Chainlink SPY feed
-is silent? Read-only, stdlib. Selectors computed with ethers on the server:
-  price() 0xa035b1fe   latestRoundData() 0xfeaf968c   decimals() 0x313ce567
-  description() 0x7284e416   BASE_FEED_1() 0xf50a4718   QUOTE_FEED_1() 0x56095e11
-  SCALE_FACTOR() 0xce4b5bbe   aggregator() 0x245a7bfc   latestAnswer() 0x50d25bcd
+"""What PARE's pSPY/USDG Morpho oracle on Robinhood Chain is configured to
+accept, read from its own public getters (its source is verified on the
+explorer as PareMorphoOracle): the oldest Chainlink print it will use, the
+pool TWAP window of its PT leg and its sequencer-uptime feed. Then its live
+price next to the Chainlink SPY feed. Read-only, stdlib; selectors from
+keccak.py.
 """
 import io
 import json
@@ -12,8 +12,12 @@ import sys
 import time
 import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from keccak import selector  # noqa: E402
+
 RPC = "https://rpc.mainnet.chain.robinhood.com"
 ORACLE = "0xc2414099151326C5d238B9F00609f1a12283B723"
 SPY_FEED = "0x319724394D3A0e3669269846abE664Cd621f9f6A"
@@ -29,35 +33,31 @@ def call(to, data):
     return out.get("result"), out.get("error")
 
 
-def show(label, to, sel):
-    res, err = call(to, sel)
+def word(sig):
+    res, err = call(ORACLE, selector(sig))
     if err or not res or res == "0x":
-        print("  %-14s -> (no answer: %s)" % (label, (err or {}).get("message", "empty")[:50]))
+        print("  %-16s (no answer: %s)" % (sig, (err or {}).get("message", "empty")[:50]))
         return None
-    print("  %-14s -> %s" % (label, res if len(res) <= 66 else res[:66] + "..."))
-    return res
+    return int(res[2:66], 16)
 
 
 print("PARE oracle %s" % ORACLE)
-p = show("price()", ORACLE, "0xa035b1fe")
-show("BASE_FEED_1()", ORACLE, "0xf50a4718")
-show("QUOTE_FEED_1()", ORACLE, "0x56095e11")
-show("SCALE_FACTOR()", ORACLE, "0xce4b5bbe")
-show("aggregator()", ORACLE, "0x245a7bfc")
-show("description()", ORACLE, "0x7284e416")
-show("decimals()", ORACLE, "0x313ce567")
-show("latestAnswer()", ORACLE, "0x50d25bcd")
+for sig in ("MIN_FEED_AGE()", "maxFeedAge()", "twapWindow()", "sequencerGrace()"):
+    v = word(sig)
+    if v is not None:
+        print("  %-16s %d s (%.2f days)" % (sig, v, v / 86400))
+for sig in ("feed()", "pool()", "sequencerFeed()"):
+    v = word(sig)
+    if v is not None:
+        print("  %-16s 0x%040x%s" % (sig, v, "  (none)" if v == 0 else ""))
+p = word("price()")
 
-r, _ = call(SPY_FEED, "0xfeaf968c")
+r, _ = call(SPY_FEED, selector("latestRoundData()"))
 ans = int(r[2 + 64:2 + 128], 16)
 at = int(r[2 + 192:2 + 256], 16)
 now = datetime.now(timezone.utc)
 print("\nChainlink SPY feed: %.2f, last print %s UTC (%.1f h ago)"
       % (ans / 1e8, datetime.fromtimestamp(at, timezone.utc).strftime("%a %H:%M"),
          (now.timestamp() - at) / 3600))
-if p:
-    v = int(p, 16)
-    print("oracle price() raw = %d" % v)
-    for scale in (36, 24, 18, 8):
-        print("  / 1e%d = %.6f" % (scale, v / 10 ** scale))
-    print("  feed / 1e8 = %.6f" % (ans / 1e8))
+if p is not None:
+    print("oracle price() raw = %d  (/1e24 = %.6f USDG per pSPY unit)" % (p, p / 1e24))

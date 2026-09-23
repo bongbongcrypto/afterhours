@@ -312,7 +312,7 @@ for ten minutes, well inside the depth floor and far cheaper than a refusal.
 | `heartbeat` | 86,400 s (24 h) | The feed's own heartbeat (`feed_directory.py`). The longest weekday gap measured is 20.8 h; every weekend silence (52-76 h) passes it. Outside the regular session the quiet tier never applies. |
 | `quietBandBps` | 100 (1%) | Twice the feed's 0.5% deviation threshold, and only during the regular session, where the next print landed at most 0.69% (AAPL) and 0.56% (SPY) from the last (`session_prints.py`). |
 | `maxDeviationBps` | 1,000 (10%) | The band outside the regular session and once the heartbeat has passed: the single-stock LULD band for closed-session moves. Measured weekend gaps: AAPL 0.25%, SPY 0.68%, NVDA 1.12% (`feed_gap.py`). |
-| `minLiquidity` | 5e16 | The 0.05% pool's 30-minute harmonic-mean liquidity measured 1.68e18 (`pool_harmonic.py`, 2026-09-23), a 34x margin; refusing below about 1/34 of today's depth means a pool its LPs have all but left is not trusted. Liquidity clears it from -10.9% to +8.3% of today's price (`pool_depth.py`), about as far as the 10% band reaches, so a real move the LPs have not followed is priced up to the band. 2e17 (the value before review round 7) cleared only -4.5% / +3.2%: it also stopped a price being held beyond that, but refused the moves this oracle exists to price. |
+| `minLiquidity` | 5e16 | What the contract compares with the floor, the median of the 0.05% pool's three 10-minute harmonic means, read 1.39e18 at block 70,448,078 (2026-09-23 10:39 UTC, `capture_reads.py`), 28 times the floor; the pool's in-range liquidity was 1.68e18 at discovery. Refusing below 1/28 of that depth means a pool its LPs have all but left is not trusted. Liquidity clears it from -10.9% to +8.3% of today's price (`pool_depth.py`), about as far as the 10% band reaches, so a real move the LPs have not followed is priced up to the band. 2e17 (the value before review round 7) cleared only -4.5% / +3.2%: it also stopped a price being held beyond that, but refused the moves this oracle exists to price. |
 | `maxAnchorAge` | 432,000 s (5 days) | The same bound PARE hard-codes as `MIN_FEED_AGE`: outlasts a Monday-holiday closure plus the feed's early Friday stop. Beyond it the feed is gone or the stock is halted. |
 
 Keeping the primary observable. Uniswap v3 writes at most one observation
@@ -324,8 +324,9 @@ the primary's `slot0()` and refuses an observation cardinality below
 `twapWindow + 1` (1,801) with InvalidConfig(16), and the deploy workflow checks
 the same before spending gas; raising it is a permissionless, gas-only call
 (`increaseObservationCardinalityNext`). The AAPL 0.05% pool holds 1,801
-today. A standby may sit below the bound: it only covers a primary that
-cannot answer.
+today, exactly the bound, which is enough: at one observation a second at
+most, 1,801 observations always reach at least 1,800 seconds back. A standby
+may sit below the bound: it only covers a primary that cannot answer.
 
 What manipulation can buy, and what it costs. `pool_depth.py` walks the AAPL
 0.05% pool over its whole tick range, every read at one block (block
@@ -377,7 +378,8 @@ the feed's next print, which is where a stale-feed market already is today.
 
 Measured: feed silence and cadence; weekend swap counts, volume and fill
 quality on two weekends; every Morpho market on the chain and its oracle
-(`morpho_markets.py`); PARE's 5-day tolerance and its use of a pool TWAP; the
+(`morpho_markets.py`); PARE's 5-day feed tolerance, its 30-minute pool TWAP
+and its empty sequencer feed, from its own getters (`pare_oracle.py`); the
 share multiplier and its effective time on every deployable stock; the AAPL
 pool's reserves and its liquidity over the whole tick range (`pool_depth.py`);
 how far the stock feeds let a move run inside the regular session and
@@ -392,6 +394,13 @@ feed's `description()` (`Robinhood AAPL / USD`) and the stock's
 `oraclePaused()`; the absence of the StylusDeployer on mainnet
 (`stylus_params.py`).
 
+Read from verified source: the stock token's multiplier schedule. The
+token's implementation (`Stock`,
+`0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2`, verified) returns a scheduled
+multiplier from `uiMultiplier()` only once `block.timestamp >= effectiveAt()`,
+and refuses to schedule one in the past, so the multiplier the oracle reads
+never runs ahead of the time it compares with the last print.
+
 Assumed: that the pool keeps tracking fair value on a *news* weekend (both
 measured weekends were quiet; the band exists precisely because this is not
 guaranteed); that LPs re-center their ranges when the stock moves, because
@@ -403,8 +412,8 @@ $6.4k today, so the demand is a bet, not a measurement).
 
 Not handled in v1: a sequencer-uptime check. Chainlink's feed list for this
 chain has 58 feeds and none of them is an L2 sequencer-uptime feed
-(`feed_directory.py`, 2026-09-23), so there is nothing to read; PARE deploys
-with the check disabled here for the same reason. After a sequencer outage
+(`feed_directory.py`, 2026-09-23), so there is nothing to read; PARE's
+oracle here has no sequencer feed set either (`pare_oracle.py`). After a sequencer outage
 AfterHours answers at once, like every oracle on this chain, and a market that
 wants a grace period cannot get one from the chain today. Also not handled:
 the USDG/USD rate: the feed is in USD, the pool
@@ -453,9 +462,10 @@ re-activate it, and reads revert until someone does.
 | layer | what it proves | where |
 |---|---|---|
 | 73 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
+| real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives | `fixtures/aapl_mainnet.txt` (block 70,448,078), `scripts/measure/capture_reads.py`, `src/tests.rs` |
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands, the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 86 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session, which a scheduled run hits every weekday at 15:00 UTC; `result.txt` says which ran), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 86 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
 | eight independent review rounds, from round 4 against a fixed rubric; rounds 6 to 8 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read on the dev node (`cast estimate`, includes the 21k transaction

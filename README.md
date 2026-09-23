@@ -75,6 +75,7 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
 | 73 unit and property tests, 86 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles: a real pool's `observe()` searches its observation buffer and the real feed and token are proxies, so mainnet costs more; re-measured after deployment) |
+| The contract decodes the real feed, pool and token: served the answers they gave at block 70,448,078, it prices AAPL exactly as a separate port of its rules does | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (16 reads, seconds) |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
 | Chainlink lists no sequencer-uptime feed for the chain; the stock feeds have a 0.5% threshold and a 24-hour heartbeat | `python scripts/measure/feed_directory.py` (one request) |
 | The price math matches independent 80-digit references: AAPL's prices to the integer, 1.0001^tick within 1e-23 of the reference (one unit below tick 0) | the live page's self-check line, and the vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
@@ -89,6 +90,7 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 - During the US regular session it moves at most 1% from a print younger than 24 hours: the feed prints each 0.5% move then (`session_prints.py`). The contract reads the session from the block timestamp (Monday to Friday, 14:30-20:00 UTC, inside the session in both daylight-saving regimes) and keeps no holiday calendar, so on an exchange holiday that follows a trading day, and on a half day's afternoon, the 1% band applies until 20:00 UTC although the exchange is closed: a larger move then shows in full up to five and a half hours late.
 - It does not price a move the pool's liquidity has not followed. LPs concentrate around the current price: AAPL's pool clears the 5e16 depth floor from -10.9% to +8.3% of today's price, about as far as the band reaches. A move past that, held for ten minutes, refuses (`NoData(2)`) until LPs re-center or the feed prints, because a pool nobody provides at that price is the pool that is cheap to push. The floor is set per instance: 2e17 would refuse past -4.5% / +3.2%, which also stops a price being held beyond that, but refuses the real moves this oracle exists to price.
 - It does not follow liquidity. The primary pool is fixed at deployment; if liquidity leaves it for good, the instance refuses and a new one is deployed.
+- A share-multiplier change (a reinvested dividend) after the last print moves pricing to the pool even while the feed is fresh, because that print is in pre-dividend shares. If the pool is below its floor at that moment, the instance refuses until the feed prints again, up to a day. AAPL's pool sits about 28 times above its floor; check a thinner asset with `pool_depth.py` before deploying it.
 - It treats USDG as one dollar. Chainlink's USDG/USD feed on this chain updates only on 0.5% moves, so reading it would correct only a larger depeg; that is a v2 option.
 - It prices against one quote token per instance (USDG today).
 - No L2 sequencer-uptime check: Chainlink lists none of its 58 feeds on Robinhood Chain as a sequencer-uptime feed (`scripts/measure/feed_directory.py`), so there is nothing to read. After a sequencer outage AfterHours answers at once, like every other oracle on this chain.
@@ -212,7 +214,7 @@ USDG fee tier the liquidity, the observation cardinality, whether a
 (assuming the in-range liquidity holds across the move, which overstates it:
 the tick-by-tick walk in `pool_depth.py` gives about half that for AAPL).
 It writes the deploy inputs per asset to `assets.json`, with a floor of the
-primary's liquidity divided by 32, the ratio chosen for AAPL (1.68e18 / 5e16);
+primary's liquidity divided by 32, about the ratio chosen for AAPL (1.68e18 / 5e16 = 33.6);
 before deploying another asset, `pool_depth.py --pool <primary> --stock <token>
 --floor <minLiquidity>` shows the range its pool clears. On 2026-09-23:
 
@@ -220,7 +222,7 @@ before deploying another asset, `pool_depth.py --pool <primary> --stock <token>
 |---|---|---|
 | recommended: primary cardinality >= 1,801 and >= $50k of 2% depth | 14 | NVDA, SPCX, GOOGL, USO, AAPL, SPY, AMZN, MSFT, QQQ, CRCL, GME, SLV, TSLA, MU |
 | the deploy workflow accepts them; 2% depth under $50k | 4 | META, PLTR, BABA, TSM |
-| `initialize` accepts them; the primary's cardinality must be raised first (anyone can, gas only) | 10 | SGOV, MSTR, DELL, AMD, INTC, USAR, ASML, SNDK, RKLB, IONQ |
+| every other check passes, but the primary keeps fewer than 1,801 observations, so `initialize` refuses until someone raises it with `increaseObservationCardinalityNext(1801)` (anyone can, gas only) | 10 | SGOV, MSTR, DELL, AMD, INTC, USAR, ASML, SNDK, RKLB, IONQ |
 | Robinhood's own, but no Chainlink feed or no USDG liquidity today | 79 | |
 
 The same wasm serves all of them. A stock moves up a tier the day its feed

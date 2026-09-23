@@ -394,8 +394,10 @@ it; the fees alone come to about $1.4k an hour, or about $84k to hold a
 60-hour weekend closure, which is the figure to size a market against. With
 the 2e17 floor one
 second at +17.4% was enough, or ten seconds at +8.6%; before the median rule,
-one second at zero liquidity per 30 minutes. A refusal never moves the price; it delays liquidation to
-the feed's next print, which is where a stale-feed market already is today.
+one second at zero liquidity per 30 minutes. A refusal never moves the price; it stops borrowing
+and liquidation until the feed's next print, the behaviour a stale-feed guard
+gives. A market with no guard keeps liquidating at Friday's price instead,
+which is the price this oracle exists to replace.
 
 ## 5. What is measured, what is assumed
 
@@ -422,7 +424,10 @@ token's implementation (`Stock`,
 `0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2`, verified) returns a scheduled
 multiplier from `uiMultiplier()` only once `block.timestamp >= effectiveAt()`,
 and refuses to schedule one in the past, so the multiplier the oracle reads
-never runs ahead of the time it compares with the last print.
+never runs ahead of the time it compares with the last print. A schedule sets
+`newUIMultiplier()` and `effectiveAt()` in the same call, and
+`newUIMultiplier()` answers 1e18 when none is set, so a future `effectiveAt()`
+always comes with the multiplier it schedules.
 
 Assumed: that the pool keeps tracking fair value on a *news* weekend (both
 measured weekends were quiet; the band exists precisely because this is not

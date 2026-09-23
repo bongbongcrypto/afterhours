@@ -20,6 +20,8 @@ proptest = "1"
 
 [features]
 export-abi = ["stylus-sdk/export-abi"]
+# stylus-sdk's #[public] expansion gates code on cfg(feature = "contract-client-gen");
+# declaring the feature keeps that cfg known to the compiler's check-cfg lint.
 contract-client-gen = []
 
 [lib]

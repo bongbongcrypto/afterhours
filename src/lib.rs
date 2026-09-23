@@ -189,7 +189,7 @@ sol_storage! {
     pub struct AfterHours {
         /// Set once by `initialize`; every read refuses until then.
         bool initialized;
-        /// The account (tx.origin) that ran `initialize`, recorded for transparency only.
+        /// The account that called `initialize`, recorded for transparency only.
         address initializer;
         /// Chainlink-style feed for the stock (8 decimals on Robinhood Chain).
         address feed;
@@ -646,7 +646,7 @@ impl AfterHours {
         let paused = stock_iface
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
-        // One raw token unit is `multiplier / 1e18` shares; the feed prices a share.
+        // One token of raw balance is `multiplier / 1e18` shares; the feed prices a share.
         let multiplier = stock_iface
             .ui_multiplier(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;

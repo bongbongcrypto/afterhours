@@ -1329,7 +1329,11 @@ mod props {
                                 c.price(),
                                 Err(AfterHoursError::NoData(NoData { reason: r })) if r == reason
                             );
-                            prop_assert!(refused_with_reason, "price() must refuse with NoData({})", reason);
+                            prop_assert!(
+                                refused_with_reason,
+                                "price() must refuse with NoData({})",
+                                reason
+                            );
                         }
                     }
                     sessions.borrow_mut()[session as usize] += 1;

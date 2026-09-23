@@ -352,7 +352,7 @@ impl AfterHours {
             // be observed, so it may keep fewer.
             if i == 0 {
                 let (_, _, _, cardinality, ..) = pool_iface
-                    .slot0(self.vm(), Call::new())
+                    .slot_0(self.vm(), Call::new())
                     .map_err(|_| call_failed(pool))?;
                 if u32::from(cardinality) < twap_window + 1 {
                     return Err(invalid(CONFIG_PRIMARY_HISTORY_TOO_SHORT));

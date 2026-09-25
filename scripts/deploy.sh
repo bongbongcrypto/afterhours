@@ -71,9 +71,15 @@ preflight() {
 }
 
 deploy() {
-  local flags log addr
+  local flags fee log addr
   # Reproducible (Docker) builds let `cargo stylus verify` / the explorer match the source.
   if [ "${REPRODUCIBLE:-false}" = "true" ]; then flags=""; else flags="--no-verify"; fi
+  # cargo-stylus sets maxFeePerGas to the base fee it has just read, so a base fee
+  # one step higher by the time the tx lands is refused (mainnet 2026-09-25:
+  # maxFeePerGas 35854000 < baseFee 36026000, nothing sent). Cap at twice the
+  # current base fee, the headroom `cast send` uses; the chain charges the base fee.
+  fee=$(cast base-fee --rpc-url "$RPC")
+  flags="$flags --max-fee-per-gas-gwei $(awk -v w="$fee" 'BEGIN { printf "%.9f", 2 * w / 1e9 }')"
   log="${DEPLOY_LOG:-$ROOT/deploy.log}"
   cargo stylus deploy --endpoint "$RPC" --private-key "$DEPLOYER_KEY" $flags 2>&1 | tee "$log"
   # cargo-stylus colours the address (ANSI codes sit between "address:" and "0x").

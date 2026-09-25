@@ -1,3 +1,18 @@
 {
-  "deployments": []
+  "deployments": [
+    {
+      "asset": "AAPL",
+      "chainId": 4663,
+      "network": "robinhood-mainnet",
+      "address": "0x69190621e300cd2bc4cbb80777b517691ee80f65",
+      "rpc": "https://rpc.mainnet.chain.robinhood.com",
+      "deployTx": "0x6ee581c608ab8da6b27671e291024effd7b165007cff27ce377deb7e685a379e",
+      "activateTx": "0x0da9d4ebe2e2268f1484508bb752e983e40d68843d58426384ae14e3d47db73f",
+      "initializeTx": "0xbbec5c96b9f9b4540fb58c8414bf9b893481c0bfa2217cc33d52ad413725b6f3",
+      "morphoMarketId": "0x516829adb04c8351c09747755eed21f4514370e2df11a73c89054fef7de316bc",
+      "morphoCreateMarketTx": "0xe7cc78e6bce947d8b1d95f5853d9ce0f11b30fdb2bc730fc69c2d085ebb65419",
+      "wasmSha256": "66848ef80af973d90ce715568723021ada8e2647cf0bef2d460d95e498acac2b",
+      "deployedAt": "2026-09-25T22:56:08Z"
+    }
+  ]
 }

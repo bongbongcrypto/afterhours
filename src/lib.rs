@@ -36,8 +36,10 @@
 //! splits (<https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood>,
 //! "Total Return Value calculation"). The pool's TWAP is in the same unit and
 //! is compared with the print as it is, and `price()` (Morpho) is the answer
-//! times Morpho's decimal scale. No multiplier is applied anywhere; the stock
-//! token is read only for its pause flag.
+//! times Morpho's decimal scale. No multiplier is applied anywhere, and the
+//! token's multiplier is never read: `initialize` reads the stock token's
+//! `decimals()` and `oraclePaused()`, and every price read after it reads only
+//! `oraclePaused()`.
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -622,7 +624,8 @@ impl AfterHours {
         let feed = self.feed.get();
         let stock = self.stock.get();
 
-        // The only read of the stock token: the issuer's corporate-action flag.
+        // The only read of the stock token on a price read: the issuer's
+        // corporate-action flag (`initialize` also read its decimals).
         let paused = IStockOraclePause::new(stock)
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;

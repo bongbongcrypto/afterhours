@@ -12,7 +12,8 @@ pragma solidity ^0.8.20;
 ///         continuous through dividends and splits
 ///         (docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood). The
 ///         feed must be a "Robinhood <SYMBOL> / USD" feed; AfterHours never reads
-///         the multiplier itself.
+///         the multiplier itself. Of the stock token, initialize reads decimals()
+///         and oraclePaused(); every price read reads only oraclePaused().
 interface IAfterHours {
     // ---- Chainlink AggregatorV3Interface ----------------------------------
     /// @dev Reverts NotInitialized before initialize (never a plausible 0).
@@ -130,9 +131,10 @@ interface IAfterHours {
     ///      superseded per-share deployment refused a zero uiMultiplier() with it),
     ///      15 heartbeat not in [liveMaxAge, maxAnchorAge) or quietBandBps not in
     ///      (0, maxDeviationBps], 16 the primary pool keeps fewer than twapWindow + 1
-    ///      observations (slot0). The stock must expose oraclePaused() (CallFailed
-    ///      otherwise); nothing else of it is read. `initializer` in config() records
-    ///      the caller.
+    ///      observations (slot0). initialize reads the stock's decimals() and
+    ///      oraclePaused() (CallFailed if either reverts); every price read after it
+    ///      reads only oraclePaused(). Its uiMultiplier() is never read. `initializer`
+    ///      in config() records the caller.
     function initialize(
         address feed,
         address[] calldata pools,

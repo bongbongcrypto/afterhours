@@ -139,9 +139,12 @@ Decision per read, in this order:
    Correction. The first deployment (`0x69190621e300cd2bc4cbb80777b517691ee80f65`,
    2026-09-25) treated the feed as a price per share: its `price()` multiplies
    the answer by `uiMultiplier`, which counts the multiplier twice, and its
-   ONCHAIN_TWAP path divides the pool's price by it. For AAPL today that is
-   0.057% (multiplier 1.00057); after a 10:1 split that took effect before the
-   last print it would value collateral about nine to ten times too high. The
+   ONCHAIN_TWAP path divides the pool's price by it. For AAPL today its
+   LIVE_FEED `price()` is 0.057% high (multiplier 1.00057); in ONCHAIN_TWAP,
+   while the pool is inside the band, the divide and the multiply cancel in
+   `price()` (its `latestRoundData()` answer is per share, 0.057% low). After a
+   10:1 split that took effect before the last print it would value collateral
+   about nine to ten times too high. The
    per-share model also carried a guard (`NoData(5)`) for a multiplier change
    between the print and the read, which the per-token feed makes unnecessary.
    That instance is superseded and its Morpho market holds no supply
@@ -491,13 +494,13 @@ re-activate it, and reads revert until someone does.
 
 | layer | what it proves | where |
 |---|---|---|
-| 71 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, a 10:1 split and a reinvested dividend priced continuously with the multiplier never read (it is not mocked, and the call log is checked), the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason, and `price()` is always the answer times the scale | `src/tests.rs`, `src/mockvm.rs` |
+| 73 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, a 10:1 split and a reinvested dividend priced continuously with the multiplier never read (the default test host leaves `uiMultiplier()` unmocked, so a read of it fails the test; where a test sets it to show that nothing moves with it, the call log shows the stock asked only for its pause flag), a fresh print that reads no pool, the band's overflow guard on both tiers, the reserved codes pinned and 5 never raised, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason, and `price()` is always the answer times the scale | `src/tests.rs`, `src/mockvm.rs` |
 | real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives, and `price()` is that answer times 1e16 | `fixtures/aapl_mainnet.txt` (block 70,472,250), `scripts/measure/capture_reads.py`, `src/tests.rs` |
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `abi/IAfterHours.sol` against `cargo stylus export-abi` | the interface integrators are pointed at declares exactly the functions, return types and errors the contract exports | `scripts/abi_check.py`, `.github/workflows/ci.yml` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), a 10:1 split (the issuer's pause, the multiplier going to 10, the print continuous) with every answer and `price()` unchanged, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail (it also checks that `price()` is the answer times the scale); 89 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
-| eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores; round 12 a self-review against Chainlink's documentation that corrected the unit model | every finding and its fix, with the commit | `REVIEWS.md` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), a 10:1 split (the issuer's pause, the multiplier going to 10, the print continuous) with every answer and `price()` unchanged, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail (it also checks that `price()` is the answer times the scale, with AAPL's multiplier on the token so a multiplier applied again would fail it); 90 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores; round 12 a self-review against Chainlink's documentation that corrected the unit model, then a review of that fix | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read, both measured with `eth_estimateGas` (which includes the 21k
 transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
@@ -518,8 +521,9 @@ measurement because Robinhood Chain's L1 base fee estimate read 0, so the
 whole figure is L2 gas. That instance made five external reads (pause flag,
 multiplier, its effective time, feed round, pool observe), which account for
 most of it; the current contract makes three (pause flag, feed round, pool
-observe), so its mainnet figures are lower and are measured again once it is
-deployed. At that block's base fee (0.0271 gwei) and Chainlink's ETH / USD
+observe), so its mainnet figures are expected to be lower. That is not a
+measurement: it stays an expectation until `scripts/measure/mainnet_gas.py`
+runs on the new instance once it is deployed. At that block's base fee (0.0271 gwei) and Chainlink's ETH / USD
 print ($2,691.30), a transaction that does nothing but read the superseded
 instance cost about $0.019, and a Morpho borrow or liquidation pays the read
 once. Latency

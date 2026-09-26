@@ -12,7 +12,7 @@ Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Mor
 | The AAPL instance on Robinhood Chain mainnet (4663) | [DEPLOYMENTS.md](DEPLOYMENTS.md): the current instance's address, deployment, activation, `initialize` and the Morpho AAPL/USDG market it prices. The first instance, `0x69190621e300cd2bc4cbb80777b517691ee80f65` (2026-09-25), treated the feed as a price per share and is superseded: do not integrate it (see [Units](#units)) |
 | Answers through the 09-26 weekend closure, every 10 minutes | [`status/10min.md`](status/10min.md): LIVE_FEED while Friday's print was fresh, then ONCHAIN_TWAP from the pool. Recorded from the superseded first instance, so its ONCHAIN_TWAP answers are per share, 0.057% under the per-token price the current contract gives |
 | Read it yourself (Python stdlib only) | `python scripts/probe.py --oracle <address>` prints the feed, the pool and what AfterHours answers, side by side, and checks that `price()` is the answer times Morpho's scale |
-| Tests | 71 unit and property tests in CI; 89 on-chain assertions on a local ArbOS 61 node in e2e ([Actions](https://github.com/bongbongcrypto/afterhours/actions)) |
+| Tests | 73 unit and property tests in CI; 90 on-chain assertions on a local ArbOS 61 node in e2e ([Actions](https://github.com/bongbongcrypto/afterhours/actions)) |
 
 ## Why
 
@@ -67,8 +67,11 @@ last good token price until the equity price and the new multiplier agree.
 
 Correction: the first deployment (`0x69190621…0f65`, 2026-09-25) treated the
 answer as a price per share. Its `price()` multiplies by `uiMultiplier` and its
-pool price is divided by it: 0.057% off for AAPL today (multiplier 1.00057),
-about ten times the collateral value after a 10:1 split. It is superseded; its
+pool price is divided by it. In LIVE_FEED that makes `price()` 0.057% high for
+AAPL today (multiplier 1.00057); in ONCHAIN_TWAP, while the pool is inside the
+band, the divide and the multiply cancel in `price()`, and only its
+`latestRoundData()` answer is per share (0.057% low). After a 10:1 split it
+would value collateral nine to ten times too high. It is superseded; its
 Morpho market holds no supply ([REVIEWS.md](REVIEWS.md), 2026-09-27).
 
 `state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped, pool)`
@@ -102,7 +105,7 @@ Published at https://bongbongcrypto.github.io/afterhours/ by the manual `pages` 
 | The feed goes silent for 52-57 hours every weekend | the live page's print tape, or `python scripts/measure/feed_cadence.py` (stdlib, about 60 reads, a minute) |
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
-| 71 unit and property tests, 89 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles; the deployed instance's mainnet gas is in the next row) |
+| 73 unit and property tests, 90 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles; the deployed instance's mainnet gas is in the next row) |
 | Gas per read, `latestRoundData()` / `price()`: on the dev node against Solidity test doubles 107,540 / 109,632 in LIVE_FEED and 148,267 / 150,349 in ONCHAIN_TWAP; on mainnet, the superseded first instance in ONCHAIN_TWAP, 257,152 / 259,404 (2026-09-26 19:27 UTC, block 73,332,952), higher than on the dev node: the real pool's `observe()` searches its observation buffer, and the real feed and token are proxies. That instance also read the token's multiplier and its effective time on every call, two reads the current contract does not make, so the current instance is measured again once deployed. Arbitrum's gas includes an L1 data component for posting the calldata to the parent chain; it was 0 here, as the chain's L1 base fee estimate read 0 | `python scripts/measure/mainnet_gas.py`: `eth_estimateGas` from the zero address, the method `e2e/run.sh` uses through `cast estimate`, with the L1 part from Arbitrum's NodeInterface (`gasEstimateComponents`) and the cost in USD from Chainlink's ETH / USD feed (seconds). It measures the session the instance is in, so LIVE_FEED on mainnet is measured during a US trading session, while the feed is fresh |
 | The contract decodes the real feed, pool and token: served the answers they gave at block 70,472,250, it prices AAPL exactly as a separate port of its rules does, and `price()` is that answer times 1e16 | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (13 requests, seconds), and `--replay <file>` re-derives the expected answer from a capture's bytes |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
@@ -157,7 +160,7 @@ cargo stylus check --endpoint https://rpc.testnet.chain.robinhood.com
 cargo stylus export-abi
 ```
 
-End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 89
+End-to-end (real wasm on a local Nitro dev node with Solidity doubles, 90
 assertions, gas per read): `.github/workflows/e2e.yml` runs `e2e/run.sh`
 against OffchainLabs' `nitro-devnode` upgraded to ArbOS 61 — the version
 Robinhood Chain runs, and the one a 2-fragment program (about 38 KB) needs.

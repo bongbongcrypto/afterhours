@@ -149,7 +149,9 @@ def main():
         pooled, terr = twap_from_pool(args.rpc, pool, twap_window, stock_is_token0,
                                       stock_dec, quote_dec, feed_dec)
         twap = pooled[0] if pooled else None
-        # state() and price() at one block, so price() can be checked against the answer
+        # state() and price() at one block, so price() can be checked against the
+        # answer. Without a block number the two calls could land on different
+        # blocks, so the check is skipped rather than run at "latest".
         head, _ = rpc_post(args.rpc, "eth_blockNumber", [])
         at = head or "latest"
         s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"], at)
@@ -184,6 +186,9 @@ def main():
             p, perr = rpc_call(args.rpc, args.oracle, SELECTORS["price()"], at)
             if perr:
                 print("  Morpho price(): reverted (%s)" % perr[:60])
+            elif not head:
+                print("  Morpho price(): %d  (not compared with the answer: the block number"
+                      " could not be read)" % word(p, 0))
             else:
                 scale = 36 + quote_dec - stock_dec - feed_dec
                 if session in (0, 1) and word(p, 0) != answer * 10 ** scale:

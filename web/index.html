@@ -422,6 +422,9 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     if (age > BigInt(P.maxAnchorAge)) { q.session = "NO_DATA"; q.reason = 4; return q; }
     q.bandBps = bandBps(age, nowTs);
     var bps = 10000n, dev = BigInt(q.bandBps);
+    // the contract's checked band arithmetic: a print whose upper edge does not fit
+    // in 256 bits is not an anchor (NO_DATA 1), decided before any pool is read
+    if (feedAnswer * (bps + dev) >= U256) { q.session = "NO_DATA"; q.reason = 1; return q; }
     var lower = feedAnswer * (bps - dev) / bps, upper = feedAnswer * (bps + dev) / bps;
     var chosen = null;
     for (var i = 0; i < r.obs.length; i++) {
@@ -503,12 +506,14 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         return { ticks: t, spl: l };
       };
       // the token's multiplier rides along to show that no decision reads it
-      var read = function (tick, printAge, now, multiplier) {
+      var read = function (tick, printAge, now, multiplier, print) {
         return {
           paused: false, multiplier: multiplier,
-          round: { answer: 33252000000n, updatedAt: now - printAge }, obs: [pool(tick)]
+          round: { answer: print === undefined ? 33252000000n : print, updatedAt: now - printAge }, obs: [pool(tick)]
         };
       };
+      // the largest print whose narrow upper edge (x 10100) fits in 256 bits
+      var edge = (U256 - 1n) / 10100n;
       var got = function (r, now) {
         var q = evaluate(asset, r, 8, now);
         return q.session + "/" + q.reason + "/" + q.answer + "/" + q.clamped;
@@ -521,7 +526,14 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
         // after a 10:1 split (multiplier 10), print 40 h old: the pool's own price, unscaled
         got(read(218301, 40n * HOUR, FRI, 10n * ONE), FRI) === "ONCHAIN_TWAP/0/33096497304/false",
         // after a 10:1 split, a fresh print: passed through, unscaled
-        got(read(218301, 120n, FRI, 10n * ONE), FRI) === "LIVE_FEED/0/33252000000/false"
+        got(read(218301, 120n, FRI, 10n * ONE), FRI) === "LIVE_FEED/0/33252000000/false",
+        // an absurd print seven hours old under the narrow band: its band does not
+        // fit in 256 bits, NO_DATA 1; the largest print that fits reaches the pool
+        // and is clamped, one more refuses (src/tests.rs,
+        // an_absurd_print_under_the_narrow_band_refuses_before_any_pool_read)
+        got(read(218301, 7n * HOUR, FRI, ONE, (1n << 255n) - 1n), FRI) === "NO_DATA/1/0/false",
+        got(read(218301, 7n * HOUR, FRI, ONE, edge), FRI) === "ONCHAIN_TWAP/0/" + (edge * 9900n / 10000n) + "/true",
+        got(read(218301, 7n * HOUR, FRI, ONE, edge + 1n), FRI) === "NO_DATA/1/0/false"
       ].every(Boolean);
     } finally {
       DATA.params = saved.params;
@@ -1039,7 +1051,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     ["link-design", "cta-design"].forEach(function (id) { $(id).href = DATA.repo + "/blob/main/DESIGN.md"; });
     var ok = selfTest();
     $("selftest").textContent = ok ?
-      "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, and four band and 10:1-split decisions)." :
+      "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, four band and 10:1-split decisions, and the band's overflow edge)." :
       "Self-check FAILED: this page's math does not reproduce the contract's end-to-end prices. Do not trust the AfterHours readout.";
     if (!ok) $("selftest").className = "refuse";
     await refresh();

@@ -1,6 +1,6 @@
 # AfterHours 10-minute record (UTC, from a server, probe.py --json)
 
-Recorded every 10 minutes from a server with `scripts/probe.py --json` against the AAPL instance `0x69190621e300cd2bc4cbb80777b517691ee80f65` on Robinhood Chain mainnet; copied here with 124 rows, 2026-09-25 22:59 to 2026-09-26 19:20 UTC. The GitHub `status` job keeps its own, sparser log in `log.md`.
+Recorded every 10 minutes from a server with `scripts/probe.py --json` against the AAPL instance `0x69190621e300cd2bc4cbb80777b517691ee80f65` on Robinhood Chain mainnet; copied here with 128 rows, 2026-09-25 22:59 to 2026-09-26 20:00 UTC. The GitHub `status` job keeps its own, sparser log in `log.md`.
 
 | time | asset | session | AfterHours | Chainlink | feed age h | pool | liquidity |
 |---|---|---|---|---|---|---|---|
@@ -128,3 +128,7 @@ Recorded every 10 minutes from a server with `scripts/probe.py --json` against t
 | 2026-09-26 19:00 | AAPL | ONCHAIN_TWAP | 340.3060 | 341.4532 | 23.2 | 0xaae0d815 | 1.06e+18 |
 | 2026-09-26 19:10 | AAPL | ONCHAIN_TWAP | 340.3400 | 341.4532 | 23.3 | 0xaae0d815 | 1.06e+18 |
 | 2026-09-26 19:20 | AAPL | ONCHAIN_TWAP | 340.3400 | 341.4532 | 23.5 | 0xaae0d815 | 1.06e+18 |
+| 2026-09-26 19:30 | AAPL | ONCHAIN_TWAP | 340.3060 | 341.4532 | 23.7 | 0xaae0d815 | 1.06e+18 |
+| 2026-09-26 19:40 | AAPL | ONCHAIN_TWAP | 340.2720 | 341.4532 | 23.8 | 0xaae0d815 | 1.06e+18 |
+| 2026-09-26 19:50 | AAPL | ONCHAIN_TWAP | 340.2379 | 341.4532 | 24.0 | 0xaae0d815 | 9.12e+17 |
+| 2026-09-26 20:00 | AAPL | ONCHAIN_TWAP | 340.2379 | 341.4532 | 24.2 | 0xaae0d815 | 9.11e+17 |

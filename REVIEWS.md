@@ -187,4 +187,4 @@ open with the reason.
 | `contract-client-gen` looked like a dead feature | kept: stylus-sdk's `#[public]` expansion gates code on it; Cargo.toml says so | aeb0e7b |
 | Suspected: a future `effectiveAt()` with no scheduled multiplier would read as a pending split | cannot happen with the token's verified implementation: one call sets both, and `newUIMultiplier()` answers 1e18 when none is set; DESIGN cites it | aeb0e7b |
 | `initialize` can be front-run; other entries are described, not named | kept, as documented | |
-| Not deployed, no public repo, no live URL, no final video | open: need the owner's funding and approvals | |
+| Not deployed, no public repo, no live URL, no final video | deployed on Robinhood Chain mainnet on 2026-09-25 with its Morpho market (DEPLOYMENTS.md); the public repository, live page and final video follow | 5fb7341 |

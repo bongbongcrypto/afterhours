@@ -149,6 +149,10 @@ Decision per read, in this order:
    between the print and the read, which the per-token feed makes unnecessary.
    That instance is superseded and its Morpho market holds no supply
    (`REVIEWS.md`, 2026-09-27); reason 5 is kept as a reserved code, never raised.
+   The fixed contract runs at `0x88b628472e595725178cc3e5e2ec70ada67f80f0`
+   and prices a new Morpho market, id
+   `0x3d9b0c04e374f7b50fa7a635393d2ecae23f45289e4e23f83793a6a611010918`
+   (`DEPLOYMENTS.md`).
 1. `oraclePaused()` on the stock token (the issuer's corporate-action flag,
    which Chainlink documents as advisory) -> **PAUSED**, reads revert. This
    wins over everything else: while a large corporate action is processed,
@@ -506,26 +510,26 @@ Gas per read, both measured with `eth_estimateGas` (which includes the 21k
 transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
 configured, the primary answering, Solidity test doubles): `latestRoundData()`
 107,540 in LIVE_FEED, 148,267 in ONCHAIN_TWAP; `price()` 109,632 / 150,349.
-On mainnet, the superseded first AAPL instance (one pool) in ONCHAIN_TWAP on
-2026-09-26 at 19:27 UTC, block 73,332,952 (`scripts/measure/mainnet_gas.py`,
-from the zero address): `latestRoundData()` 257,152, `price()` 259,404. The
-real feed, pool and beacon-proxy token cost more per call than the doubles:
-the pool's `observe()` searches its observation buffer (3,000 slots at
-deployment) and the feed and token are proxies. LIVE_FEED is measured on
-mainnet during a US trading session, while the feed is fresh, since the
-public RPC keeps recent state only. On an Arbitrum chain the estimate also
-includes an L1 data component, the gas that pays for posting the calldata to
-the parent chain;
-Arbitrum's NodeInterface (`gasEstimateComponents`) put it at 0 in this
-measurement because Robinhood Chain's L1 base fee estimate read 0, so the
-whole figure is L2 gas. That instance made five external reads (pause flag,
-multiplier, its effective time, feed round, pool observe), which account for
-most of it; the current contract makes three (pause flag, feed round, pool
-observe), so its mainnet figures are expected to be lower. That is not a
-measurement: it stays an expectation until `scripts/measure/mainnet_gas.py`
-runs on the new instance once it is deployed. At that block's base fee (0.0271 gwei) and Chainlink's ETH / USD
-print ($2,691.30), a transaction that does nothing but read the superseded
-instance cost about $0.019, and a Morpho borrow or liquidation pays the read
+On mainnet, the current AAPL instance (one pool) in ONCHAIN_TWAP, nine runs
+on 2026-09-26 from 22:59 to 23:10 UTC, blocks 73,459,093 to 73,465,934
+(`scripts/measure/mainnet_gas.py`, from the zero address): `latestRoundData()`
+226,760 to 240,559, `price()` 228,842 to 242,643. The real feed, pool and
+beacon-proxy token cost more per call than the doubles, and the pool's cost
+moves: Uniswap v3's `observe()` binary-searches the observation buffer (3,000
+slots) for each requested time older than the pool's latest observation, so a
+read soon after a swap searches more than one after a quiet half hour. On an
+Arbitrum chain the estimate also includes an L1 data component, the gas that
+pays for posting the calldata to the parent chain; Arbitrum's NodeInterface
+(`gasEstimateComponents`) put it at 10 to 140 gas in these runs, as Robinhood
+Chain's L1 base fee estimate read 90,309 to 1,229,595 wei. The contract makes
+three external reads (pause flag, feed round, pool observe). The superseded
+first instance made five (it also read the token's multiplier and its
+effective time) and measured 257,152 / 259,404 at block 73,332,952 on
+2026-09-26 at 19:27 UTC. LIVE_FEED is measured on mainnet during a US trading
+session, while the feed is fresh, since the public RPC keeps recent state
+only. At base fees of 0.0256 to 0.0267 gwei and Chainlink's ETH / USD print
+($2,690.47), a transaction that does nothing but read the oracle costs about
+$0.016 to $0.017, and a Morpho borrow or liquidation pays the read
 once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design the

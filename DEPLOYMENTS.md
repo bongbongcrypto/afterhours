@@ -3,7 +3,7 @@
 | network | chain id | asset | address | status | initialize params | tx |
 |---|---|---|---|---|---|---|
 | Robinhood Chain mainnet | 4663 | AAPL | `0x88b628472e595725178cc3e5e2ec70ada67f80f0` | current (per-token units) | the inputs below | deploy `0x6929dee2e3c399cd60d2f38d646f6634e810c0b07b585fff531737974695d572`, activate `0x63a37a1c65d090c9d0365c8174a6fe94b56636d7c23cf60b5617b3b710eaf3db`, initialize `0x1597e10caf4687593e54d0b9aacb4d5d41e4ce1f5daceb9fdca70052a953a83c` |
-| Robinhood Chain mainnet | 4663 | AAPL | `0x69190621e300cd2bc4cbb80777b517691ee80f65` | superseded 2026-09-27, do not integrate ([below](#superseded--do-not-integrate)) | the inputs below | deploy `0x6ee581c608ab8da6b27671e291024effd7b165007cff27ce377deb7e685a379e`, activate `0x0da9d4ebe2e2268f1484508bb752e983e40d68843d58426384ae14e3d47db73f`, initialize `0xbbec5c96b9f9b4540fb58c8414bf9b893481c0bfa2217cc33d52ad413725b6f3` |
+| Robinhood Chain mainnet | 4663 | AAPL | `0x69190621e300cd2bc4cbb80777b517691ee80f65` | superseded 2026-09-26 22:50 UTC, do not integrate ([below](#superseded--do-not-integrate)) | the inputs below | deploy `0x6ee581c608ab8da6b27671e291024effd7b165007cff27ce377deb7e685a379e`, activate `0x0da9d4ebe2e2268f1484508bb752e983e40d68843d58426384ae14e3d47db73f`, initialize `0xbbec5c96b9f9b4540fb58c8414bf9b893481c0bfa2217cc33d52ad413725b6f3` |
 
 ## Current: `0x88b628472e595725178cc3e5e2ec70ada67f80f0`
 
@@ -34,7 +34,7 @@ The same for both instances, AAPL on Robinhood Chain mainnet (4663):
 
 ## Superseded — do not integrate
 
-`0x69190621e300cd2bc4cbb80777b517691ee80f65`, superseded on 2026-09-27 by `0x88b628472e595725178cc3e5e2ec70ada67f80f0`. Reason: it treats Chainlink's answer as a price per share, while Chainlink's Robinhood feeds price one token of raw balance, so its `price()` counts AAPL's multiplier twice and its pool answers are divided by it (README "Units", REVIEWS.md 2026-09-27). It has no owner and no upgrade, so it stays on chain as it is; its Morpho market holds no supply.
+`0x69190621e300cd2bc4cbb80777b517691ee80f65`, superseded on 2026-09-26 at 22:50 UTC, when `0x88b628472e595725178cc3e5e2ec70ada67f80f0` was deployed. Reason: it treats Chainlink's answer as a price per share, while Chainlink's Robinhood feeds price one token of raw balance, so its `price()` counts AAPL's multiplier twice and its pool answers are divided by it (README "Units", REVIEWS.md round 12). It has no owner and no upgrade, so it stays on chain as it is; its Morpho market holds no supply.
 
 Deployed 2026-09-25 22:56 UTC by the manual `deploy` workflow from source commit `38ec3f9`, built reproducibly in `offchainlabs/cargo-stylus-base:0.10.9` (wasm sha256 `66848ef80af973d90ce715568723021ada8e2647cf0bef2d460d95e498acac2b`). The workflow read every configured field back and found them equal to the inputs. Receipts: all four status 1; gas used 63,660 (deploy), 6,412,290 (activate), 489,663 (initialize), 197,601 (Morpho `createMarket`).
 

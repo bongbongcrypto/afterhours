@@ -9,8 +9,8 @@ Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Mor
 | | |
 |---|---|
 | Live page (your browser reads Robinhood Chain directly) | https://bongbongcrypto.github.io/afterhours/ |
-| The AAPL instance on Robinhood Chain mainnet (4663) | [DEPLOYMENTS.md](DEPLOYMENTS.md): the current instance's address, deployment, activation, `initialize` and the Morpho AAPL/USDG market it prices. The first instance, `0x69190621e300cd2bc4cbb80777b517691ee80f65` (2026-09-25), treated the feed as a price per share and is superseded: do not integrate it (see [Units](#units)) |
-| Answers through the 09-26 weekend closure, every 10 minutes | [`status/10min.md`](status/10min.md): LIVE_FEED while Friday's print was fresh, then ONCHAIN_TWAP from the pool. Recorded from the superseded first instance, so its ONCHAIN_TWAP answers are per share, 0.057% under the per-token price the current contract gives |
+| The AAPL instance on Robinhood Chain mainnet (4663) | `0x88b628472e595725178cc3e5e2ec70ada67f80f0`, deployed 2026-09-26 22:50 UTC, the oracle of the Morpho Blue AAPL/USDG market `0x3d9b0c04e374f7b50fa7a635393d2ecae23f45289e4e23f83793a6a611010918`; deployment, activation, `initialize` and receipts in [DEPLOYMENTS.md](DEPLOYMENTS.md). The first instance, `0x69190621e300cd2bc4cbb80777b517691ee80f65` (2026-09-25), treated the feed as a price per share and is superseded: do not integrate it (see [Units](#units)) |
+| Answers through the 09-26/27 weekend closure, every 10 minutes | [`status/10min.md`](status/10min.md): the current instance from Saturday 23:00 UTC, in ONCHAIN_TWAP from the pool while the feed is silent. [`status/10min-0x6919-superseded.md`](status/10min-0x6919-superseded.md): the superseded first instance from Friday 22:59 to Saturday 23:00 UTC, LIVE_FEED while Friday's print was fresh, then ONCHAIN_TWAP; its ONCHAIN_TWAP answers are per share, 0.057% under the per-token price |
 | Read it yourself (Python stdlib only) | `python scripts/probe.py --oracle <address>` prints the feed, the pool and what AfterHours answers, side by side, and checks that `price()` is the answer times Morpho's scale |
 | Tests | 73 unit and property tests in CI; 90 on-chain assertions on a local ArbOS 61 node in e2e ([Actions](https://github.com/bongbongcrypto/afterhours/actions)) |
 
@@ -72,7 +72,9 @@ AAPL today (multiplier 1.00057); in ONCHAIN_TWAP, while the pool is inside the
 band, the divide and the multiply cancel in `price()`, and only its
 `latestRoundData()` answer is per share (0.057% low). After a 10:1 split it
 would value collateral nine to ten times too high. It is superseded; its
-Morpho market holds no supply ([REVIEWS.md](REVIEWS.md), 2026-09-27).
+Morpho market holds no supply ([REVIEWS.md](REVIEWS.md), 2026-09-27). The
+fixed contract runs at `0x88b628472e595725178cc3e5e2ec70ada67f80f0`, with a
+new Morpho market ([DEPLOYMENTS.md](DEPLOYMENTS.md)).
 
 `state()` returns `(session, reason, answer, feedAnswer, feedUpdatedAt, twap, liquidity, clamped, pool)`
 and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`](abi/IAfterHours.sol).
@@ -106,12 +108,12 @@ Published at https://bongbongcrypto.github.io/afterhours/ by the manual `pages` 
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
 | 73 unit and property tests, 90 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles; the deployed instance's mainnet gas is in the next row) |
-| Gas per read, `latestRoundData()` / `price()`: on the dev node against Solidity test doubles 107,540 / 109,632 in LIVE_FEED and 148,267 / 150,349 in ONCHAIN_TWAP; on mainnet, the superseded first instance in ONCHAIN_TWAP, 257,152 / 259,404 (2026-09-26 19:27 UTC, block 73,332,952), higher than on the dev node: the real pool's `observe()` searches its observation buffer, and the real feed and token are proxies. That instance also read the token's multiplier and its effective time on every call, two reads the current contract does not make, so the current instance is measured again once deployed. Arbitrum's gas includes an L1 data component for posting the calldata to the parent chain; it was 0 here, as the chain's L1 base fee estimate read 0 | `python scripts/measure/mainnet_gas.py`: `eth_estimateGas` from the zero address, the method `e2e/run.sh` uses through `cast estimate`, with the L1 part from Arbitrum's NodeInterface (`gasEstimateComponents`) and the cost in USD from Chainlink's ETH / USD feed (seconds). It measures the session the instance is in, so LIVE_FEED on mainnet is measured during a US trading session, while the feed is fresh |
+| Gas per read, `latestRoundData()` / `price()`: on the dev node against Solidity test doubles 107,540 / 109,632 in LIVE_FEED and 148,267 / 150,349 in ONCHAIN_TWAP; on mainnet, the current instance in ONCHAIN_TWAP, 226,760-240,559 / 228,842-242,643 over nine runs on 2026-09-26 from 22:59 to 23:10 UTC (blocks 73,459,093 to 73,465,934), about $0.016-0.017 a read. Higher than on the dev node: the real pool's `observe()` binary-searches its observation buffer for every requested time older than its latest observation, so the cost also moves with how recently the pool traded, and the real feed and token are proxies. Arbitrum's gas includes an L1 data component for posting the calldata to the parent chain; it was 10-140 gas of these figures. The superseded first instance, which also read the token's multiplier and its effective time on every call, measured 257,152 / 259,404 (block 73,332,952). LIVE_FEED on mainnet is measured on the next US trading day | `python scripts/measure/mainnet_gas.py`: `eth_estimateGas` from the zero address, the method `e2e/run.sh` uses through `cast estimate`, with the L1 part from Arbitrum's NodeInterface (`gasEstimateComponents`) and the cost in USD from Chainlink's ETH / USD feed (seconds). It measures the session the instance is in, so LIVE_FEED on mainnet is measured during a US trading session, while the feed is fresh |
 | The contract decodes the real feed, pool and token: served the answers they gave at block 70,472,250, it prices AAPL exactly as a separate port of its rules does, and `price()` is that answer times 1e16 | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (13 requests, seconds), and `--replay <file>` re-derives the expected answer from a capture's bytes |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
 | Chainlink lists no sequencer-uptime feed for the chain; the stock feeds have a 0.5% threshold and a 24-hour heartbeat | `python scripts/measure/feed_directory.py` (one request) |
 | The price math matches independent 80-digit references: AAPL's prices to the integer, 1.0001^tick within 1e-23 of the reference (one unit below tick 0) | the live page's self-check line, and the vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
-| It keeps answering while the market is closed | `status/10min.md`: the first (now superseded) instance read every 10 minutes from a server since 2026-09-25 22:59 UTC, in LIVE_FEED until Friday's last print was six hours old (01:50 UTC Saturday), then in ONCHAIN_TWAP from the pool (its answers there are per share, 0.057% under the per-token price); `python scripts/probe.py --oracle <address in DEPLOYMENTS.md>` reads the current instance now, and the live page on a weekend shows the Chainlink print hours old while AfterHours answers. `status/log.md` is the GitHub `status` job's sparser log (scheduled hourly, but GitHub starts it only every 2.4 to 6.3 hours) |
+| It keeps answering while the market is closed | `status/10min.md`: the current instance read every 10 minutes from a server since 2026-09-26 23:00 UTC, in ONCHAIN_TWAP from the pool while Friday's print ages. `status/10min-0x6919-superseded.md`: the first (now superseded) instance from 2026-09-25 22:59 UTC, in LIVE_FEED until Friday's last print was six hours old (01:50 UTC Saturday), then in ONCHAIN_TWAP (its answers there are per share, 0.057% under the per-token price). `python scripts/probe.py --oracle 0x88b628472e595725178cc3e5e2ec70ada67f80f0` reads the current instance now, and the live page on a weekend shows the Chainlink print hours old while AfterHours answers. `status/log.md` is the GitHub `status` job's sparser log (scheduled hourly, but GitHub starts it only every 2.4 to 6.3 hours) |
 | Moving AAPL's pool 10% takes $234k up or $314k down; the pool clears the 5e16 depth floor from -10.9% to +8.3%; the cheapest refusal parks $235k at +12% for eight seconds, once every ten minutes (block 70,474,692) | `python scripts/measure/pool_depth.py ` (walks every initialized tick over the pool's whole range at one block; about 900 reads in batches, a minute) |
 | Robinhood Chain runs ArbOS 61 with Stylus 3, programs expire after 365 days, mainnet has no StylusDeployer, blocks average 0.101 s | `python scripts/measure/stylus_params.py` (the chain's own precompiles, mainnet and testnet; seconds) |
 | 28 stocks have a Chainlink feed and an observable pool; 18 of them pass `initialize` today, 14 meet the bar | `assets.json`, regenerated by `scripts/measure/discover_assets.py` (about an hour of reads) |
@@ -147,7 +149,7 @@ scripts/deploy.sh the deployment steps, run by the deploy workflow and by e2e
 scripts/abi_check.py  CI check that abi/IAfterHours.sol declares what the contract exports
 web/              the live page (static HTML; reads the chain from the browser) and its data builder
 .github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, scheduled status, pages, verify
-status/           reads of the first (superseded) instance: 10min.md every 10 minutes from a server, log.md from the status job
+status/           reads from mainnet: 10min.md every 10 minutes from a server (current instance), 10min-0x6919-superseded.md (the first instance), log.md from the status job
 ```
 
 ## Build and test
@@ -188,13 +190,14 @@ must refuse and a read-back that must fail.
 ## Integrating
 
 **Morpho Blue market** — a market's oracle is fixed when it is created, so an
-existing market cannot switch; a new one is opened with AfterHours as its `oracle`:
+existing market cannot switch; a new one is opened with AfterHours as its `oracle`
+(ours, with these parameters, has id `0x3d9b0c04e374f7b50fa7a635393d2ecae23f45289e4e23f83793a6a611010918`):
 
 ```solidity
 MarketParams({
     loanToken:       USDG,          // 0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168
     collateralToken: AAPL,          // 0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9
-    oracle:          afterHoursAAPL,
+    oracle:          afterHoursAAPL, // 0x88b628472e595725178cc3e5e2ec70ada67f80f0
     irm:             AdaptiveCurveIrm, // 0x2BD3d5965B26B51814AC95127B2b80dD6CcC0fa1 on Robinhood Chain
     lltv:            0.625e18
 });

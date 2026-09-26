@@ -15,11 +15,12 @@ what has to be true before the final cut.
 ## Before the final cut
 
 - Slide 6 only ever shows a real read. The final cut uses `scripts/probe.py --oracle
-  <current instance in DEPLOYMENTS.md>` output saved to `video/probe.txt`, read while
+  0x88b628472e595725178cc3e5e2ec70ada67f80f0` (the current instance, DEPLOYMENTS.md)
+  output saved to `video/probe.txt`, read while
   the feed is silent and the oracle is in ONCHAIN_TWAP; the probe also checks that
   `price()` is the answer times Morpho's scale. The first instance
   (`0x69190621…0f65`, live since 2026-09-25 22:56 UTC and read every 10 minutes
-  through the weekend of 09-26 in `status/10min.md`) treated the feed as a price per
+  until 2026-09-26 23:00 UTC in `status/10min-0x6919-superseded.md`) treated the feed as a price per
   share and is superseded, so neither its probe output nor that record is for the
   final cut. The live-page capture branch of `make_slides.py` was written for the
   days before the deployment and its caption says so, so it is not for the final cut

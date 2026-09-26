@@ -499,14 +499,26 @@ re-activate it, and reads revert until someone does.
 | end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 90 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
 | eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
 
-Gas per read on the dev node (`cast estimate`, includes the 21k transaction
-base; two pools configured, the primary answering): `latestRoundData()`
+Gas per read, both measured with `eth_estimateGas` (which includes the 21k
+transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
+configured, the primary answering, Solidity test doubles): `latestRoundData()`
 114,724 in LIVE_FEED, 155,673 in ONCHAIN_TWAP; `price()` 116,987 / 157,925.
-These are against Solidity test doubles; the real feed, pool and beacon-proxy
-token cost more per call and the figure will be re-measured on mainnet. Five
-external reads (pause flag, multiplier, its effective time, feed round, pool
-observe) account for most of it; at Robinhood Chain's gas prices that is
-a fraction of a cent, and a Morpho borrow or liquidation pays it once. Latency
+On mainnet, the deployed AAPL instance (one pool) in ONCHAIN_TWAP on
+2026-09-26 at 19:27 UTC, block 73,332,952 (`scripts/measure/mainnet_gas.py`,
+from the zero address): `latestRoundData()` 257,152, `price()` 259,404. The
+real feed, pool and beacon-proxy token cost more per call than the doubles:
+the pool's `observe()` searches its observation buffer (3,000 slots at
+deployment) and the feed and token are proxies. LIVE_FEED is measured on
+mainnet on a weekday while the feed is fresh, since the public RPC keeps
+recent state only. On an Arbitrum chain the estimate also includes an L1 data
+component, the gas that pays for posting the calldata to the parent chain;
+Arbitrum's NodeInterface (`gasEstimateComponents`) put it at 0 in this
+measurement because Robinhood Chain's L1 base fee estimate read 0, so the
+whole figure is L2 gas. Five external reads (pause flag, multiplier, its
+effective time, feed round, pool observe) account for most of it. At that
+block's base fee (0.0271 gwei) and Chainlink's ETH / USD print ($2,691.30),
+a transaction that does nothing but read the oracle costs about $0.019, and
+a Morpho borrow or liquidation pays the read once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design the
 median of three 10-minute averages, so a genuine move starts to show after

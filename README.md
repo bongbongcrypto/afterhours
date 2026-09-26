@@ -10,6 +10,7 @@ Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Mor
 |---|---|
 | Live page (your browser reads Robinhood Chain directly) | https://bongbongcrypto.github.io/afterhours/ |
 | The AAPL instance on Robinhood Chain mainnet (4663) | [`0x69190621e300cd2bc4cbb80777b517691ee80f65`](https://robinhoodchain.blockscout.com/address/0x69190621e300cd2bc4cbb80777b517691ee80f65); deployment, activation, `initialize` and the Morpho AAPL/USDG market it prices: [DEPLOYMENTS.md](DEPLOYMENTS.md) |
+| Its answers during the weekend closure, every 10 minutes since the deployment | [`status/10min.md`](status/10min.md): LIVE_FEED while Friday's print was fresh, then ONCHAIN_TWAP from the pool |
 | Read it yourself (Python stdlib only) | `python scripts/probe.py --oracle 0x69190621e300cd2bc4cbb80777b517691ee80f65` prints the feed, the pool and what AfterHours answers, side by side |
 | Tests | 76 unit and property tests in CI; 90 on-chain assertions on a local ArbOS 61 node in e2e ([Actions](https://github.com/bongbongcrypto/afterhours/actions)) |
 
@@ -63,18 +64,20 @@ and never reverts for market reasons. Solidity interface: [`abi/IAfterHours.sol`
 median of three 10-minute averages) and AfterHours' answer side by side, the feed's last seven days of
 prints, and the same rules applied to every recommended stock. It is static:
 every price, age and pool figure is read from Robinhood Chain by the
-visitor's browser, and before an instance is deployed the AfterHours column
-runs the contract's decision rules ported with the same integer math (on
-load the page checks its port against exact prices and five band and
-corporate-action decisions from the contract's tests).
-After deployment it reads the contract's `state()` and compares.
+visitor's browser. The AfterHours column is the deployed instance's own
+`state()`; next to it the page runs the contract's decision rules, ported
+with the same integer math, on the feed and pool data of the same block and
+says whether the two agree (on load it also checks its port against exact
+prices and five band and corporate-action decisions from the contract's
+tests). The stocks table runs the same port on every recommended stock; of
+those, AAPL has an instance so far.
 
 ```bash
 python web/build_data.py
 python -m http.server 8745 --directory web
 ```
 
-Published by the manual `pages` workflow once GitHub Pages is enabled.
+Published at https://bongbongcrypto.github.io/afterhours/ by the manual `pages` workflow.
 
 ## Verify it in five minutes
 
@@ -83,12 +86,13 @@ Published by the manual `pages` workflow once GitHub Pages is enabled.
 | The feed goes silent for 52-57 hours every weekend | the live page's print tape, or `python scripts/measure/feed_cadence.py` (stdlib, about 60 reads, a minute) |
 | AAPL trades $4-5M on-chain every weekend | `python scripts/measure/weekend_swaps.py` (slow: about 170 reads and tens of minutes, as the public RPC narrows each log query and rate-limits) |
 | 83 funded Morpho markets lend against stock tokens, priced by stale-tolerant or raw-pool oracles | `python scripts/measure/morpho_markets.py` (every CreateMarket event, each market's supply and borrow, each oracle's feed; about 1,500 reads in batches, a few minutes) |
-| 76 unit and property tests, 90 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles: a real pool's `observe()` searches its observation buffer and the real feed and token are proxies, so mainnet costs more; re-measured after deployment) |
+| 76 unit and property tests, 90 on-chain assertions on ArbOS 61 | the latest `ci` and `e2e` runs under Actions; the e2e artifact `result.txt` lists every assertion and the gas per read (on Solidity test doubles; the deployed instance's mainnet gas is in the next row) |
+| Gas per read, `latestRoundData()` / `price()`: on the dev node against Solidity test doubles 114,724 / 116,987 in LIVE_FEED and 155,673 / 157,925 in ONCHAIN_TWAP; on mainnet, the deployed instance in ONCHAIN_TWAP, 257,152 / 259,404 (2026-09-26 19:27 UTC, block 73,332,952), higher than on the dev node: the real pool's `observe()` searches its observation buffer, and the real feed and token are proxies. Arbitrum's gas includes an L1 data component for posting the calldata to the parent chain; it was 0 here, as the chain's L1 base fee estimate read 0 | `python scripts/measure/mainnet_gas.py`: `eth_estimateGas` from the zero address, the method `e2e/run.sh` uses through `cast estimate`, with the L1 part from Arbitrum's NodeInterface (`gasEstimateComponents`) and the cost in USD from Chainlink's ETH / USD feed (seconds). It measures the session the instance is in, so LIVE_FEED on mainnet is measured on a weekday while the feed is fresh |
 | The contract decodes the real feed, pool and token: served the answers they gave at block 70,472,250, it prices AAPL exactly as a separate port of its rules does | `cargo test the_contract_reads_real_mainnet_answers` on `fixtures/aapl_mainnet.txt`; `python scripts/measure/capture_reads.py` re-captures them at the current block (16 reads, seconds) |
 | Inside the regular session the feed prints each 0.5% move; outside it the next print often lands at the open, further away | `python scripts/measure/session_prints.py` (about 450 reads, ten minutes) |
 | Chainlink lists no sequencer-uptime feed for the chain; the stock feeds have a 0.5% threshold and a 24-hour heartbeat | `python scripts/measure/feed_directory.py` (one request) |
 | The price math matches independent 80-digit references: AAPL's prices to the integer, 1.0001^tick within 1e-23 of the reference (one unit below tick 0) | the live page's self-check line, and the vectors from `scripts/measure/tick_vectors.py`, pasted verbatim into `src/tickmath.rs` |
-| It keeps answering while the market is closed | the live page on a weekend: the Chainlink print is hours old and AfterHours answers from the pool; after deployment, `python scripts/probe.py --oracle <address>` and the hourly `status/log.md` |
+| It keeps answering while the market is closed | `status/10min.md`: the deployed instance read every 10 minutes from a server since 2026-09-25 22:59 UTC, in LIVE_FEED until Friday's last print was six hours old (01:50 UTC Saturday), then in ONCHAIN_TWAP from the pool; `python scripts/probe.py --oracle 0x69190621e300cd2bc4cbb80777b517691ee80f65` reads it now, and the live page on a weekend shows the Chainlink print hours old while AfterHours answers. `status/log.md` is the GitHub `status` job's sparser log (scheduled hourly, but GitHub starts it only every 2.4 to 6.3 hours) |
 | Moving AAPL's pool 10% takes $234k up or $314k down; the pool clears the 5e16 depth floor from -10.9% to +8.3%; the cheapest refusal parks $235k at +12% for eight seconds, once every ten minutes (block 70,474,692) | `python scripts/measure/pool_depth.py ` (walks every initialized tick over the pool's whole range at one block; about 900 reads in batches, a minute) |
 | Robinhood Chain runs ArbOS 61 with Stylus 3, programs expire after 365 days, mainnet has no StylusDeployer, blocks average 0.101 s | `python scripts/measure/stylus_params.py` (the chain's own precompiles, mainnet and testnet; seconds) |
 | 28 stocks have a Chainlink feed and an observable pool; 18 of them pass `initialize` today, 14 meet the bar | `assets.json`, regenerated by `scripts/measure/discover_assets.py` (about an hour of reads) |
@@ -122,7 +126,8 @@ scripts/probe.py  read a deployed AfterHours next to the raw feed and pool (stdl
 scripts/deploy.sh the deployment steps, run by the deploy workflow and by e2e
 scripts/abi_check.py  CI check that abi/IAfterHours.sol declares what the contract exports
 web/              the live page (static HTML; reads the chain from the browser) and its data builder
-.github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, hourly status, pages
+.github/          ci (fmt, clippy, tests, cargo stylus check, ABI), e2e, manual deploy, scheduled status, pages, verify
+status/           reads of the deployed instance: 10min.md every 10 minutes from a server, log.md from the status job
 ```
 
 ## Build and test
@@ -202,7 +207,9 @@ but only when there is genuinely nothing to stand behind.
 ```
 
 `scripts/probe.py --oracle <address> --watch 300` prints the same next to the
-raw feed and pool; the hourly `status` workflow appends it to `status/log.md`.
+raw feed and pool. A server records it every 10 minutes in `status/10min.md`; the
+`status` workflow (scheduled hourly, but GitHub starts it only every 2.4 to 6.3
+hours) appends it to `status/log.md`.
 
 **Corporate actions** — while the issuer processes one, the token's
 `oraclePaused()` flag makes AfterHours refuse. When a new share multiplier

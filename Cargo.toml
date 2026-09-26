@@ -5,7 +5,7 @@ edition = "2021"
 rust-version = "1.91.0"
 license = "MIT"
 description = "A 24/7 price for tokenized stocks on Robinhood Chain: Chainlink while the market is open, the on-chain pool while it is closed. Arbitrum Stylus (Rust)."
-repository = "https://github.com/bongbongcrypto/afterhours-oracle"
+repository = "https://github.com/bongbongcrypto/afterhours"
 keywords = ["arbitrum", "stylus", "oracle", "robinhood", "rwa"]
 
 [dependencies]

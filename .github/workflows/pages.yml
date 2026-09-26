@@ -5,8 +5,8 @@ name: pages
 # browser; this job only regenerates web/data.json from assets.json and
 # deployments.json and uploads the folder.
 #
-# Manual until the owner turns Pages on (Settings -> Pages -> Source: GitHub
-# Actions) and the repository is public.
+# Manual: run it after a change to web/, assets.json or deployments.json.
+# Served at https://bongbongcrypto.github.io/afterhours/ (Pages source: GitHub Actions).
 on:
   workflow_dispatch:
 

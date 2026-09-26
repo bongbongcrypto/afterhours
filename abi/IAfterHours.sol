@@ -5,10 +5,14 @@ pragma solidity ^0.8.20;
 /// @notice Drop-in replacement for a Chainlink stock feed that keeps answering
 ///         while the US market is closed. Implements Chainlink's
 ///         AggregatorV3Interface and Morpho Blue's IOracle.
-///         Units: every Chainlink-shaped answer is per share, like the feed.
-///         price() values one raw token unit: the per-share answer times the
-///         stock token's uiMultiplier (the token keeps balances raw: one token of raw
-///         balance is uiMultiplier/1e18 shares).
+///         Units: every answer is the price of one token of raw balance
+///         (10^stockDecimals raw units, what ERC-20 transfers, Uniswap pools and
+///         Morpho collateral count). That is the unit Chainlink's Robinhood feeds
+///         price: the underlying equity's price times the token's uiMultiplier,
+///         continuous through dividends and splits
+///         (docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood). The
+///         feed must be a "Robinhood <SYMBOL> / USD" feed; AfterHours never reads
+///         the multiplier itself.
 interface IAfterHours {
     // ---- Chainlink AggregatorV3Interface ----------------------------------
     /// @dev Reverts NotInitialized before initialize (never a plausible 0).
@@ -41,7 +45,7 @@ interface IAfterHours {
 
     // ---- Morpho Blue IOracle -----------------------------------------------
     /// @dev Quote-token value of one raw stock unit, scaled by 1e36:
-    ///      answer * 10^(36 + quote - stock - feed decimals) * uiMultiplier / 1e18.
+    ///      answer * 10^(36 + quote - stock - feed decimals), no share multiplier.
     ///      Reverts like latestRoundData(), and NoData(6) when that product would not
     ///      fit in 256 bits (only at absurd prices; the other surfaces still answer).
     function price() external view returns (uint256);
@@ -49,14 +53,13 @@ interface IAfterHours {
     // ---- AfterHours ---------------------------------------------------------
     /// @dev session: 0 LIVE_FEED, 1 ONCHAIN_TWAP, 2 PAUSED, 3 NO_DATA
     ///      reason (NO_DATA only): 1 feed invalid, 2 pool too thin, 3 TWAP unavailable,
-    ///      4 last feed print older than maxAnchorAge, 5 the print and the token's share
-    ///      multiplier may count different shares (a change took effect after the print,
-    ///      or a split-sized change is pending) and the pool per share is outside the
-    ///      wide band
-    ///      answer: the per-share price the oracle stands behind (0 when it refuses)
-    ///      twap: the pool's price per share, the median of three sub-window
-    ///            time-weighted averages, before the band (0 unless the pool was
-    ///            priced: ONCHAIN_TWAP, NO_DATA 5, or a pending split it confirmed)
+    ///      4 last feed print older than maxAnchorAge; 5 is reserved and never raised
+    ///      (the superseded per-share deployment used it), 6 is raised by price() only
+    ///      answer: the price of one token of raw balance the oracle stands behind (0
+    ///              when it refuses)
+    ///      twap: the pool's price of one token of raw balance, the median of three
+    ///            sub-window time-weighted averages, before the band (0 unless the
+    ///            pool was priced: ONCHAIN_TWAP)
     ///      liquidity: median of three sub-windows' harmonic-mean in-range liquidity of the pool used
     ///      clamped: the price was pulled back to the edge of the band: quietBandBps
     ///               during the US regular session (Monday to Friday, 14:30-20:00
@@ -123,12 +126,13 @@ interface IAfterHours {
     ///      can keep more than 65,535 observations),
     ///      10 a pool does not answer observe() at the four sub-window boundaries
     ///      [twapWindow, 2w/3, w/3, 0], 11 not 1-3 pools, 12 the pools do not share one
-    ///      quote token, 13 a pool is listed twice, 14 the stock's uiMultiplier() is
-    ///      zero, 15 heartbeat not in [liveMaxAge, maxAnchorAge) or quietBandBps not in
+    ///      quote token, 13 a pool is listed twice, 14 reserved and never raised (the
+    ///      superseded per-share deployment refused a zero uiMultiplier() with it),
+    ///      15 heartbeat not in [liveMaxAge, maxAnchorAge) or quietBandBps not in
     ///      (0, maxDeviationBps], 16 the primary pool keeps fewer than twapWindow + 1
-    ///      observations (slot0). The stock must expose oraclePaused(), uiMultiplier(),
-    ///      effectiveAt() and newUIMultiplier() (CallFailed otherwise). `initializer`
-    ///      in config() records the caller.
+    ///      observations (slot0). The stock must expose oraclePaused() (CallFailed
+    ///      otherwise); nothing else of it is read. `initializer` in config() records
+    ///      the caller.
     function initialize(
         address feed,
         address[] calldata pools,

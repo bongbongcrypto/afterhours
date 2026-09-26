@@ -77,7 +77,9 @@ pub fn mean_tick(cumulative_then: i64, cumulative_now: i64, window: u32) -> Opti
     i32::try_from(mean).ok()
 }
 
-/// Price of one whole stock token in quote units, scaled by 10^feed_decimals.
+/// Price of one whole stock token (10^stock_decimals raw units) in quote
+/// units, scaled by 10^feed_decimals: the unit Chainlink's Robinhood feeds
+/// price, so the result is compared with the feed's answer as it is.
 ///
 /// `ratio` is token1-per-token0 in Q96. When the stock is token1 the ratio is
 /// stock-per-quote and has to be inverted; when it is token0 the ratio is

@@ -27,12 +27,17 @@
 //! opened with it as its oracle keeps working through the weekend. The
 //! configuration is fixed at deployment; there is no owner and no upgrade.
 //!
-//! Units: Chainlink prices one share. A Robinhood stock token is a scaled-UI
-//! token that keeps balances raw: one token of raw balance is
-//! `uiMultiplier / 1e18` shares, and the multiplier
-//! grows with every dividend and jumps on a split. Every Chainlink-shaped
-//! answer here is per share, like the feed; `price()` (Morpho) values raw
-//! collateral units, so it multiplies by the token's current `uiMultiplier`.
+//! Units: everything here is counted per token of raw balance, 10^stockDecimals
+//! raw units, the unit ERC-20 transfers, Uniswap pools and Morpho collateral
+//! count. It is also the unit Chainlink's Robinhood feeds price: the feed
+//! reports the token's price, "Token Price = Underlying Equity Market Price x
+//! Multiplier", with the multiplier read by Chainlink from the token's
+//! `uiMultiplier()`, so the answer stays continuous through dividends and
+//! splits (<https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood>,
+//! "Total Return Value calculation"). The pool's TWAP is in the same unit and
+//! is compared with the print as it is, and `price()` (Morpho) is the answer
+//! times Morpho's decimal scale. No multiplier is applied anywhere; the stock
+//! token is read only for its pause flag.
 #![cfg_attr(not(any(test, feature = "export-abi")), no_main)]
 #![cfg_attr(not(any(test, feature = "export-abi")), no_std)]
 #![allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -44,7 +49,7 @@ use alloc::{string::String, vec::Vec};
 
 use alloy_primitives::{
     aliases::{I56, U128, U160, U32, U64, U8, U80},
-    Address, I256, U256, U512,
+    Address, I256, U256,
 };
 use alloy_sol_types::sol;
 use stylus_sdk::prelude::*;
@@ -65,15 +70,14 @@ pub const REASON_TWAP_UNAVAILABLE: u8 = 3;
 /// The last exchange print is older than `maxAnchorAge`: the feed is dead or
 /// the stock is halted, and no band anchored to it can be trusted.
 pub const REASON_ANCHOR_STALE: u8 = 4;
-/// The last print and the token's multiplier may count different shares, and
-/// the pool, read per share in the token's current units, sits outside the wide
-/// band of the print: a new multiplier took effect after the print (a split or
-/// a merger the print knows nothing about), or a split-sized change is
-/// scheduled and the feed has already printed the post-action price. Refuse
-/// until the feed and the token agree again.
+/// Reserved: never raised by this contract. The superseded first deployment,
+/// which modelled the feed as a price per share, raised it when a share
+/// multiplier change and the last print disagreed. The number is kept, not
+/// reused, so that 6 keeps its meaning and that instance's refusals stay
+/// decodable.
 pub const REASON_MULTIPLIER_CHANGED: u8 = 5;
-/// Only `price()` raises this: the answer is valid, but Morpho's 1e36 scale
-/// times the share multiplier cannot hold it (an absurd price).
+/// Only `price()` raises this: the answer is valid, but the answer times
+/// Morpho's scale does not fit in 256 bits (an absurd price).
 pub const REASON_PRICE_OVERFLOW: u8 = 6;
 
 /// `InvalidConfig(reason)` codes raised by `initialize`.
@@ -97,7 +101,8 @@ pub const CONFIG_POOL_COUNT: u8 = 11;
 pub const CONFIG_POOL_QUOTE_MISMATCH: u8 = 12;
 /// The same pool was given twice.
 pub const CONFIG_DUPLICATE_POOL: u8 = 13;
-/// The stock's `uiMultiplier()` answered zero.
+/// Reserved: never raised. The superseded per-share deployment refused a zero
+/// `uiMultiplier()` with it; this contract does not read the multiplier.
 pub const CONFIG_BAD_MULTIPLIER: u8 = 14;
 /// `heartbeat` must lie in `[liveMaxAge, maxAnchorAge)` and `quietBandBps` in
 /// `(0, maxDeviationBps]`.
@@ -123,8 +128,6 @@ const MAX_POOLS: usize = 3;
 const SUBWINDOWS: u32 = 3;
 /// Shortest TWAP window: each sub-window must last at least a second.
 const MIN_TWAP_WINDOW: u32 = SUBWINDOWS;
-/// 1e18, the token's multiplier for "one token of raw balance is one share".
-const ONE_SHARE: U256 = U256::from_limbs([1_000_000_000_000_000_000, 0, 0, 0]);
 
 sol_interface! {
     interface IAggregatorV3 {
@@ -147,9 +150,6 @@ sol_interface! {
 
     interface IStockOraclePause {
         function oraclePaused() external view returns (bool);
-        function uiMultiplier() external view returns (uint256);
-        function effectiveAt() external view returns (uint256);
-        function newUIMultiplier() external view returns (uint256);
     }
 }
 
@@ -199,8 +199,7 @@ sol_storage! {
         address[] pools;
         /// Per pool: true when the stock is token0 (the pool's tick is quote per stock).
         bool[] pool_stock_is_token0;
-        /// The stock token (also queried for the issuer's oracle pause flag and
-        /// its share multiplier).
+        /// The stock token (also queried for the issuer's oracle pause flag).
         address stock;
         /// The quote token shared by every pool (USDG on Robinhood Chain).
         address quote;
@@ -242,20 +241,18 @@ pub struct Quote {
     pub feed_started_at: U256,
     pub feed_updated_at: U256,
     pub feed_answered_in_round: U80,
-    /// The median sub-window's pool average, per share, in feed decimals,
-    /// before the band is applied (0 unless the pool was priced: ONCHAIN_TWAP,
-    /// NO_DATA 5, or a pending split confirmed by the pool).
+    /// The median sub-window's pool price of one token of raw balance, in feed
+    /// decimals (the unit the feed prints), before the band is applied (0
+    /// unless the pool was priced: ONCHAIN_TWAP).
     pub twap: U256,
     /// Median of the three sub-windows' harmonic-mean in-range liquidity of
     /// `pool` (0 when no pool was read).
     pub liquidity: u128,
     /// True when the TWAP was pulled back to the edge of the allowed band.
     pub clamped: bool,
-    /// The pool that was observed to price (or to refuse: NO_DATA 2, 5 and the
+    /// The pool that was observed to price (or to refuse: NO_DATA 2 and the
     /// tick conversion case of 3). Zero when no pool was needed or none could be observed.
     pub pool: Address,
-    /// The stock's share multiplier at this read (1e18 = one token of raw balance is one share).
-    pub multiplier: U256,
 }
 
 #[public]
@@ -269,7 +266,8 @@ impl AfterHours {
     /// here rather than at the first weekend. `pools` holds one to three
     /// distinct Uniswap v3 pools of the stock against one quote token; the
     /// first is the primary (give the deepest fee tier), the rest are standbys.
-    /// The stock must expose `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`.
+    /// The stock must expose `oraclePaused()`; its share multiplier is not read
+    /// (the feed already prices one token of raw balance).
     /// `heartbeat` and `quiet_band_bps` set the quiet tier: a print at most
     /// `heartbeat` seconds old holds the pool to `quiet_band_bps` around it.
     pub fn initialize(
@@ -391,25 +389,11 @@ impl AfterHours {
         {
             return Err(invalid(CONFIG_DECIMALS_TOO_LARGE));
         }
-        // The pause flag and the share multiplier must be readable now, so a
-        // token without them fails at deployment rather than at the first weekend.
-        let stock_iface = IStockOraclePause::new(stock);
-        stock_iface
+        // The pause flag must be readable now, so a token without it fails at
+        // deployment rather than at the first weekend.
+        IStockOraclePause::new(stock)
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
-        let multiplier = stock_iface
-            .ui_multiplier(self.vm(), Call::new())
-            .map_err(|_| call_failed(stock))?;
-        stock_iface
-            .effective_at(self.vm(), Call::new())
-            .map_err(|_| call_failed(stock))?;
-        // Read only while a change is scheduled, but it must exist.
-        stock_iface
-            .new_ui_multiplier(self.vm(), Call::new())
-            .map_err(|_| call_failed(stock))?;
-        if multiplier.is_zero() {
-            return Err(invalid(CONFIG_BAD_MULTIPLIER));
-        }
 
         // Morpho: 1e36 * 10^loan / (10^collateral * 10^feed) with loan = quote.
         let scale_num = 36u64 + u64::from(quote_decimals);
@@ -527,20 +511,16 @@ impl AfterHours {
     // ---- Morpho Blue IOracle ---------------------------------------------------
 
     /// Quote-token value of one raw stock unit, scaled by 1e36 (Morpho's
-    /// convention): the per-share answer times the token's share multiplier.
+    /// convention): the answer, which prices one token of raw balance, times
+    /// 10^(36 + quoteDecimals - stockDecimals - feedDecimals). No share
+    /// multiplier: the feed already prices the token.
     pub fn price(&self) -> Result<U256, AfterHoursError> {
         let q = self.evaluate()?;
         let answer = require_price(&q)?;
         // An answer too large for Morpho's 1e36 scale is not a price we can stand
         // behind in raw units; only this surface refuses, with its own reason.
-        // The product is formed in 512 bits, so only a result that does not fit
-        // in 256 refuses, never an intermediate.
-        U512::from(answer)
-            .checked_mul(U512::from(self.morpho_scale.get()))
-            .and_then(|v| v.checked_mul(U512::from(q.multiplier)))
-            .map(|v| v / U512::from(ONE_SHARE))
-            .filter(|v| *v <= U512::from(U256::MAX))
-            .map(|v| v.to::<U256>())
+        answer
+            .checked_mul(self.morpho_scale.get())
             .ok_or(AfterHoursError::NoData(NoData {
                 reason: REASON_PRICE_OVERFLOW,
             }))
@@ -642,21 +622,10 @@ impl AfterHours {
         let feed = self.feed.get();
         let stock = self.stock.get();
 
-        let stock_iface = IStockOraclePause::new(stock);
-        let paused = stock_iface
+        // The only read of the stock token: the issuer's corporate-action flag.
+        let paused = IStockOraclePause::new(stock)
             .oracle_paused(self.vm(), Call::new())
             .map_err(|_| call_failed(stock))?;
-        // One token of raw balance is `multiplier / 1e18` shares; the feed prices a share.
-        let multiplier = stock_iface
-            .ui_multiplier(self.vm(), Call::new())
-            .map_err(|_| call_failed(stock))?;
-        let effective_at = stock_iface
-            .effective_at(self.vm(), Call::new())
-            .map_err(|_| call_failed(stock))?;
-        // The token itself never answers zero (it defaults to 1e18); a zero is a broken read.
-        if multiplier.is_zero() {
-            return Err(call_failed(stock));
-        }
 
         let (round_id, feed_answer, started_at, updated_at, answered_in_round) =
             IAggregatorV3::new(feed)
@@ -668,7 +637,6 @@ impl AfterHours {
             feed_started_at: started_at,
             feed_updated_at: updated_at,
             feed_answered_in_round: answered_in_round,
-            multiplier,
             ..Quote::default()
         };
 
@@ -680,8 +648,9 @@ impl AfterHours {
         }
 
         // The issuer's flag wins over every market condition (only a failed
-        // read ranks above it): a corporate action is being processed and
-        // neither the feed nor the pool price means what it says.
+        // read ranks above it): a corporate action is being processed, the
+        // feed holds its last good value until the underlying price and the
+        // token's new multiplier are aligned, and the pool may not have caught up.
         if paused {
             q.session = SESSION_PAUSED;
             return Ok(q);
@@ -694,30 +663,7 @@ impl AfterHours {
         let feed_answer = q.feed_answer;
 
         let age = now - updated_at;
-        // A new share multiplier took effect after the last print: that print is
-        // in pre-action shares, so it is not passed through. The pool, which
-        // trades raw units, is read per share instead, and a move beyond the
-        // wide band (a split) refuses rather than clamps.
-        let rebased = effective_at > updated_at && effective_at <= now;
-        // A change is scheduled but not yet in effect. Until `effectiveAt` the
-        // token keeps the old multiplier, while the feed may already print the
-        // exchange's post-action price. A dividend-sized change moves a raw
-        // unit's value by less than the band either way; one the size of a
-        // split halves or doubles it. While such a change is pending, a print
-        // is passed through or anchored to only if the pool, read in the
-        // token's current units, puts it within the wide band.
-        let split_pending = effective_at > now && {
-            let next = stock_iface
-                .new_ui_multiplier(self.vm(), Call::new())
-                .map_err(|_| call_failed(stock))?;
-            let bps = U512::from(BPS);
-            let wide = U512::from(self.max_deviation_bps.get());
-            let next = U512::from(next) * bps;
-            let current = U512::from(multiplier);
-            next < current * (bps - wide) || next > current * (bps + wide)
-        };
-        let unconfirmed = rebased || split_pending;
-        if age <= U256::from(self.live_max_age.get()) && !unconfirmed {
+        if age <= U256::from(self.live_max_age.get()) {
             q.session = SESSION_LIVE_FEED;
             q.answer = feed_answer;
             return Ok(q);
@@ -748,19 +694,10 @@ impl AfterHours {
         // arithmetic overflows is not a print to anchor to. Checked before any
         // pool read so a refusal never carries a half-computed TWAP.
         let bps = U256::from(BPS);
-        let bounds = |band: u64| {
-            let dev = U256::from(band);
-            Some((
-                feed_answer.checked_mul(bps - dev)? / bps,
-                feed_answer.checked_mul(bps + dev)? / bps,
-            ))
-        };
-        // The wide band also judges a corporate action after the print: a split
-        // moves the price per share by half or more, a distribution by a few
-        // percent, and only the first means the print knows nothing.
-        let (Some((wide_lower, wide_upper)), Some((lower, upper))) = (
-            bounds(self.max_deviation_bps.get().to::<u64>()),
-            bounds(band_bps),
+        let dev = U256::from(band_bps);
+        let (Some(lower), Some(upper)) = (
+            feed_answer.checked_mul(bps - dev).map(|v| v / bps),
+            feed_answer.checked_mul(bps + dev).map(|v| v / bps),
         ) else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_FEED_INVALID;
@@ -809,7 +746,10 @@ impl AfterHours {
             return Ok(q);
         }
 
-        let twap = tick.and_then(tickmath::ratio_q96).and_then(|ratio| {
+        // The pool's price of one token of raw balance in feed decimals: the
+        // unit the feed prints, so it meets the band as it is. A price that
+        // rounds to zero is not a price (`stock_price` refuses it).
+        let Some(twap) = tick.and_then(tickmath::ratio_q96).and_then(|ratio| {
             tickmath::stock_price(
                 ratio,
                 stock_is_token0,
@@ -817,34 +757,12 @@ impl AfterHours {
                 self.quote_decimals.get().to::<u8>(),
                 self.feed_decimals.get().to::<u8>(),
             )
-        });
-        // The pool prices one token of raw balance; the band and every Chainlink-shaped
-        // answer are per share. A price that rounds to zero is not a price.
-        let Some(twap) = twap
-            .and_then(|raw| raw.checked_mul(ONE_SHARE))
-            .map(|v| v / multiplier)
-            .filter(|v| !v.is_zero())
-        else {
+        }) else {
             q.session = SESSION_NO_DATA;
             q.reason = REASON_TWAP_UNAVAILABLE;
             return Ok(q);
         };
         q.twap = twap;
-        // The print and the token's multiplier may count different shares: a
-        // pool price per share beyond the wide band means the print knows
-        // nothing (a split). The pool price stays in the answer for keepers.
-        if unconfirmed && (twap < wide_lower || twap > wide_upper) {
-            q.session = SESSION_NO_DATA;
-            q.reason = REASON_MULTIPLIER_CHANGED;
-            return Ok(q);
-        }
-        // A split is pending and the pool puts the print in the token's
-        // current units: a fresh print passes through as it always does.
-        if split_pending && age <= U256::from(self.live_max_age.get()) {
-            q.session = SESSION_LIVE_FEED;
-            q.answer = feed_answer;
-            return Ok(q);
-        }
         let (answer, clamped) = if twap < lower {
             (lower, true)
         } else if twap > upper {

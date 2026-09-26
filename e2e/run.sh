@@ -26,8 +26,9 @@ POOL2_TWAP=31482440784        # standby, stock as token0, tick -218801: floor of
 DOWN_TWAP=31482440784         # primary at tick 218801 (-5.3%): the same exact price, the same floor
 HELD_TWAP=32118396159         # primary at tick 218601 (-3%): floor of 32118396159.78
 MORPHO_SCALE=10000000000000000  # 10^(36 + 6 - 18 - 8)
-ONE=1000000000000000000         # uiMultiplier for one share per token of raw balance
+ONE=1000000000000000000         # a uiMultiplier of 1.0 (AfterHours never reads it: the feed prices the token)
 AAPL_MULT=1000566080000000000   # AAPL's uiMultiplier on 2026-09-23
+TEN_X=10000000000000000000      # after a 10:1 split (a literal: 10 x ONE overflows bash arithmetic)
 DEEP=1600000000000000000        # 1.6e18, the real AAPL 0.05% pool's depth
 
 pass=0; fail=0
@@ -311,42 +312,39 @@ mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint2
 expect "session NO_DATA/feed invalid" "${s[0]}/${s[1]}" "3/1"
 reverts_nodata "price with a broken round" 1 "$ADDR" "price()(uint256)"
 
-echo "== share multiplier: price() values raw units, answers stay per share"
+echo "== units: the feed prices one token of raw balance, so the token's uiMultiplier is never applied"
 T=$(now)
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
 send "$STOCK" "setMultiplier(uint256,uint256)" "$AAPL_MULT" "$((T - 86400))"
 mapfile -t r < <(call "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)")
-expect "latestRoundData per share (the feed's)" "$(num "${r[1]}")" "$FRIDAY"
-expect "price() = feed x 1e16 x multiplier" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE * $AAPL_MULT // $ONE")"
+expect "latestRoundData = the feed's token price" "$(num "${r[1]}")" "$FRIDAY"
+expect "price() = feed x 1e16 with AAPL's multiplier (1.00057) on the token" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
 
-echo "== a split after the last print refuses until the feed prints"
-T=$(now)
-send "$FEED" "set(uint80,int256,uint256,uint256)" "$ROUND" "$FRIDAY" "$((T - 120))" "$((T - 120))"
-send "$STOCK" "setMultiplier(uint256,uint256)" "$((2 * ONE))" "$((T - 60))"
+echo "== a 10:1 split: the issuer pauses, the multiplier goes to 10, the feed prints the token price continuously"
+send "$STOCK" "setPaused(bool)" true
+send "$STOCK" "setMultiplier(uint256,uint256)" "$TEN_X" "$((T - 60))"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
-expect "session NO_DATA/multiplier changed" "${s[0]}/${s[1]}" "3/5"
-reverts_nodata "price after a split" 5 "$ADDR" "price()(uint256)"
+expect "PAUSED while the issuer processes the split" "${s[0]}" "2"
+reverts_with "price while paused for the split" "IssuerPaused()" "$ADDR" "price()(uint256)"
+send "$STOCK" "setPaused(bool)" false
 T=$(now)
-send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 1))" "$((FRIDAY / 2))" "$T" "$T"
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 1))" "$FRIDAY" "$T" "$T"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
-expect "live again once the feed prints the split price" "${s[0]}/${s[1]}" "0/0"
-expect "a raw token is worth what it was before the split" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
-send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
+expect "after the split, a fresh print: LIVE_FEED, the same answer" "${s[0]}/${s[1]}/$(num "${s[2]}")" "0/0/$FRIDAY"
+expect "price() unchanged: a raw token is worth what it was" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$FRIDAY * $MORPHO_SCALE")"
+T=$(now)
+send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 1))" "$FRIDAY" "$((T - 144000))" "$((T - 144000))"
+mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+expect "after the split, print 40 h old: ONCHAIN_TWAP at the pool's own price, not clamped" "${s[0]}/${s[1]}/$(num "${s[2]}")/$(num "${s[5]}")/${s[7]}" "1/0/$EXPECT_TWAP/$EXPECT_TWAP/false"
+expect "price() = twap x 1e16" "$(num "$(call "$ADDR" "price()(uint256)")")" "$(pyint "$EXPECT_TWAP * $MORPHO_SCALE")"
 
-echo "== a split scheduled but not yet in effect: the pool has to confirm the print"
+echo "== a split scheduled but not yet in effect changes nothing"
 T=$(now)
 send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" "$((T + 3600))"
 send "$STOCK" "setNewMultiplier(uint256)" "$((2 * ONE))"
-send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 2))" "$FRIDAY" "$T" "$T"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
-expect "a pre-split print the pool agrees with passes through" "${s[0]}/${s[1]}/$(num "${s[2]}")" "0/0/$FRIDAY"
-T=$(now)
-send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 3))" "$((FRIDAY / 2))" "$T" "$T"
-mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
-expect "a post-split print before the token switches refuses" "${s[0]}/${s[1]}" "3/5"
-expect "the pool price that refused is reported" "$(num "${s[5]}")" "$EXPECT_TWAP"
-reverts_nodata "price with a split pending and the print already split" 5 "$ADDR" "price()(uint256)"
+expect "a fresh print passes through, the pool is not read" "${s[0]}/${s[1]}/$(num "${s[2]}")/$(num "${s[5]}")" "0/0/$FRIDAY/0"
 send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 send "$STOCK" "setNewMultiplier(uint256)" "$ONE"
 

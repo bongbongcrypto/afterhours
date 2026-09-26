@@ -6,6 +6,10 @@ the code, running the read-only measurement scripts and reporting defects.
 Rounds 6 to 11 ran from an empty folder with a clean copy of the repository
 as it will be published, the rubric and the form text; they saw the findings
 below, not any score.
+Round 12 was not an independent reviewer: it was a self-review of the
+contract against Chainlink's documentation, and it corrected the unit model
+that rounds 4 to 11 had built on (the rows it supersedes are listed in it and
+left as they were written).
 Every finding below was either fixed in the commit shown or is listed as
 open with the reason.
 
@@ -188,3 +192,13 @@ open with the reason.
 | Suspected: a future `effectiveAt()` with no scheduled multiplier would read as a pending split | cannot happen with the token's verified implementation: one call sets both, and `newUIMultiplier()` answers 1e18 when none is set; DESIGN cites it | aeb0e7b |
 | `initialize` can be front-run; other entries are described, not named | kept, as documented | |
 | Not deployed, no public repo, no live URL, no final video | deployed on Robinhood Chain mainnet on 2026-09-25 with its Morpho market (DEPLOYMENTS.md); the public repository, live page and final video follow | 5fb7341 |
+
+## Round 12 (2026-09-27): unit model, a self-review against Chainlink's documentation
+
+| finding | resolution | commit |
+|---|---|---|
+| The contract treated Chainlink's Robinhood feed as a price per share. Chainlink documents it as the token's price, "Token Price = Underlying Equity Market Price × Multiplier", the multiplier read from the token's `uiMultiplier()`, continuous through splits ([Robinhood tokenized equities](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood), "Total Return Value calculation"). So `price()` counted the multiplier twice in LIVE_FEED (0.057% high for AAPL today, ten times after a 10:1 split), and ONCHAIN_TWAP divided the pool's price of a raw token by it and banded that against a per-token print: after a 10:1 split before the last print, 9 to 10 times the collateral value. Found by a self-review against Chainlink's documentation, 2026-09-27 | every quantity is per token of raw balance: `price()` = answer × Morpho scale, the pool's price meets the band as it is, and the multiplier, its effective time and a pending multiplier are never read (in `initialize` or in any read). `NoData(5)` and `InvalidConfig(14)` are reserved codes, never raised. New tests: a 10:1 split (pause, multiplier 10, continuous print) and a reinvested dividend with every answer and `price()` unchanged or counted once; the multiplier is left unmocked so any read fails, and the call log is checked. The real-mainnet fixture replayed with the per-token rules (`capture_reads.py --replay`: answer 34,053,268,877, `price()` = answer × 1e16). The e2e split scenario replaces the `NoData(5)` ones, and the deploy read-back checks `price()` = answer × scale | 4c7680e |
+| The same unit error in the tools: `probe.py`, `pool_depth.py` and the live page divided the pool's price by the multiplier, and `capture_reads.py`'s port multiplied `price()` by it | all per token; `probe.py` reads `state()` and `price()` at one block and flags a `price()` that is not the answer times the scale | 618b387 |
+| The deployed instance `0x69190621e300cd2bc4cbb80777b517691ee80f65` keeps the per-share model for good (no owner, no upgrade); its Morpho market holds no supply | marked superseded in `deployments.json`; the page, the hourly status job and `mainnet_gas.py` skip it; README and DESIGN say not to integrate it. The fixed instance and a new market follow in a separate deploy step | d63ef9c |
+| Superseded by the rows above, and kept as written: round 4, "Raw token units vs per-share feed" (`price()` × `uiMultiplier`, TWAP per share, `NoData(5)`); round 6, the three mandatory token reads and the per-share price that rounds to zero; round 7, a corporate action judged against the wide band and the one-sentence units wording; round 8, the page's corporate-action decisions; round 9, the 512-bit `price()` at 1e50 per share, the dividend-after-the-print limitation and the multiplier-schedule citation; round 10, the pending-split guard, the preflight's multiplier reads and the pool price kept on `NoData(5)`; round 11, a future `effectiveAt()` without a scheduled multiplier | the code they describe is gone; the one token read left is `oraclePaused()` | 4c7680e |
+| Not deployed with the fixed code | carried: redeploy, new Morpho market, and the mainnet gas measured again (two fewer token reads per call) | |

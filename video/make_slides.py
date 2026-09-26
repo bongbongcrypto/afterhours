@@ -190,9 +190,9 @@ def slides():
 <h2>AfterHours sits in front of the feed.</h2>
 <div class="boxes">
   <div class="stack">
-    <div class="box"><div class="t">Chainlink feed</div>24/5 · last print per share</div>
+    <div class="box"><div class="t">Chainlink feed</div>24/5 · last print per token</div>
     <div class="box"><div class="t">Uniswap v3 pool</div>fixed venue · 24/7 TWAP</div>
-    <div class="box"><div class="t">Stock token</div>pause flag · multiplier</div>
+    <div class="box"><div class="t">Stock token</div>pause flag</div>
   </div>
   <div class="arrow">→</div>
   <div class="box core"><div class="t">AfterHours</div>Stylus, Rust · immutable · no owner<br><span class="mono" style="color:var(--fog)">LIVE_FEED · ONCHAIN_TWAP · PAUSED · NO_DATA</span></div>
@@ -206,7 +206,7 @@ def slides():
   <div><b>Fresh feed</b> → pass it through, verbatim.</div>
   <div><b>Quiet feed</b> → median 10-min pool price, <span class="m">±1% first day, ±10% after</span>.</div>
   <div><b>Thin pool</b> (3-window median) → refuse, never switch venue.</div>
-  <div><b>Paused, split since print, or print &gt;5 days</b> → refuse.</div>
+  <div><b>Paused, or print &gt;5 days</b> → refuse.</div>
 </div>
 <div class="grow"></div>""")
 
@@ -215,11 +215,11 @@ def slides():
     S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
-  <div class="col"><div class="t">76 tests + 90 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
+  <div class="col"><div class="t">71 tests + 89 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a 10:1 split priced continuously, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Eleven review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, the share multiplier through dividends and splits. 14 stocks meet the bar today; 18 pass initialize.</p></div>
+  <div class="col"><div class="t">Twelve review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, units that match Chainlink's per-token feed through dividends and splits. 14 stocks meet the bar today; 18 pass initialize.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ about 40 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">cargo stylus check ✓ about 38 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>

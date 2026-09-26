@@ -32,8 +32,10 @@ by design (`us_equities_24/5`). NVDA and SPY show the same pattern (51.9 h and
 (docs.chain.link, Data Feeds, Robinhood tokenized equities) says the same:
 while the market is closed a feed may hold its last price, there is no
 heartbeat off-hours, and integrators are to bound staleness themselves. The
-same page defines the token's price as the equity's price times the token's
-multiplier, which is what `price()` below returns per raw unit.
+same page defines what the feed reports: the token's price, "Token Price =
+Underlying Equity Market Price × Multiplier", with the multiplier read from
+the token's `uiMultiplier()`. The feed therefore already prices one token of
+raw balance, continuously through dividends and splits (§3, step 0).
 
 **The token keeps trading while the feed sleeps.** Swap events of the three
 AAPL/USDG Uniswap v3 pools inside each silent window (`weekend_swaps.py`):
@@ -109,37 +111,49 @@ is fixed when it is created, is opened with AfterHours as its oracle.
    (24/5)            |   AfterHours (Stylus, Rust)   |--> price()        (Morpho)
    Uniswap v3 pools >|   immutable, no owner         |--> state()        (session, reason,
    (24/7, up to 3)   |                               |                    answer, twap, pool, ...)
-   Stock token ----->|  oraclePaused, uiMultiplier   |
+   Stock token ----->|  oraclePaused                 |
                      +-------------------------------+
 ```
 
 Decision per read, in this order:
 
-0. Units. Chainlink prices one share. A Robinhood stock token is a scaled-UI
-   token (its verified `Stock` source) that keeps balances raw: one token of raw balance is `uiMultiplier / 1e18`
-   shares, the multiplier grows with every reinvested dividend (AAPL 1.00057,
-   SPY 1.0017, SGOV 1.0051 on 2026-09-23) and a split multiplies it. Every
-   Chainlink-shaped answer here is per share; `price()` multiplies by the
-   token's current `uiMultiplier()` because Morpho counts raw collateral units.
-   The pool also trades raw units, so its TWAP is divided by the multiplier
-   before it meets the band.
+0. Units. Every quantity is the price of one token of raw balance
+   (10^stockDecimals raw units), the unit ERC-20 transfers, Uniswap pools and
+   Morpho collateral count. A Robinhood stock token is a scaled-UI token (its
+   verified `Stock` source): balances stay raw, and a UI balance is the raw
+   balance times `uiMultiplier / 1e18`, which grows with every reinvested
+   dividend (AAPL 1.00057, SPY 1.0017, SGOV 1.0051 on 2026-09-23) and is
+   multiplied by a split. Chainlink's Robinhood feed prices the token, not the
+   share: its page for these feeds
+   ([Robinhood tokenized equities](https://docs.chain.link/data-feeds/tokenized-equity-feeds/robinhood),
+   "Total Return Value calculation") gives "Token Price = Underlying Equity
+   Market Price × Multiplier", the multiplier read by Chainlink from the
+   token's `uiMultiplier()`, and in its 10:1 split example the stock goes from
+   $200 to $20 and the multiplier from 1 to 10 while the token price stays
+   $200. The pool's TWAP is the price of the same raw token, so it meets the
+   band as it is, and `price()` is the answer times Morpho's decimal scale.
+   AfterHours never reads the multiplier: through a dividend or a split the
+   multiplier moves by the factor the share price moves against it, and the
+   token price it is given is unchanged.
+
+   Correction. The first deployment (`0x69190621e300cd2bc4cbb80777b517691ee80f65`,
+   2026-09-25) treated the feed as a price per share: its `price()` multiplies
+   the answer by `uiMultiplier`, which counts the multiplier twice, and its
+   ONCHAIN_TWAP path divides the pool's price by it. For AAPL today that is
+   0.057% (multiplier 1.00057); after a 10:1 split that took effect before the
+   last print it would value collateral about nine to ten times too high. The
+   per-share model also carried a guard (`NoData(5)`) for a multiplier change
+   between the print and the read, which the per-token feed makes unnecessary.
+   That instance is superseded and its Morpho market holds no supply
+   (`REVIEWS.md`, 2026-09-27); reason 5 is kept as a reserved code, never raised.
 1. `oraclePaused()` on the stock token (the issuer's corporate-action flag,
    which Chainlink documents as advisory) -> **PAUSED**, reads revert. This
-   wins over everything else: while a split or dividend is being processed
-   neither the feed nor the pool price means what it says.
+   wins over everything else: while a large corporate action is processed,
+   Chainlink holds the last good token price until the equity price and the
+   new multiplier agree, and the pool may not have caught up.
 2. Feed round invalid (answer <= 0, `updatedAt` 0 or in the future) ->
    **NO_DATA(1)**, reads revert.
-3. Feed age <= `liveMaxAge` and no new share multiplier took effect since the
-   print (`effectiveAt()` is not between the print and now) -> **LIVE_FEED**:
-   the feed's round, verbatim. If a multiplier did take effect after the
-   print, that print is in pre-action shares and is not passed through, even
-   when it is fresh: the read continues to the pool. The mirror case is a
-   change scheduled but not yet in effect: until `effectiveAt()` the token
-   keeps the old multiplier, while the feed may already print the post-action
-   price. A pending change the size of a split (outside the wide band of the
-   current multiplier, `newUIMultiplier()`) therefore also sends the read to
-   the pool; a pending dividend-sized change does not, since it moves a raw
-   unit's value by less than the band.
+3. Feed age <= `liveMaxAge` -> **LIVE_FEED**: the feed's round, verbatim.
 4. Feed age > `maxAnchorAge` -> **NO_DATA(4)**. No market closure lasts this
    long (5 days covers a holiday weekend); the feed has been deprecated or the
    stock is halted, and a band anchored to that print would only look fresh.
@@ -177,20 +191,10 @@ Decision per read, in this order:
      to Friday, 14:30-20:00 UTC) while the last print is at most
      `heartbeat` (24 h) old, `maxDeviationBps` (10%) at every other hour
      and past the heartbeat (see "Two bands" below);
-   - the price per share (pool price of a raw unit divided by the multiplier)
-     is bounded to `[feedAnswer * (1 - band), feedAnswer * (1 + band)]`. If a
-     new multiplier took effect after the last print and the price per share
-     is outside the wide band (`maxDeviationBps`, whatever the print's age),
-     the print cannot anchor anything (a split or a merger it knows nothing
-     about) -> **NO_DATA(5)**, with the pool's price per share kept in
-     `state()`; the feed's next print ends it. The same holds while a
-     split-sized change is pending: a print the pool, in the token's current
-     units, puts beyond the wide band is one already in post-action shares.
-     A print the pool confirms passes through as **LIVE_FEED** when it is
-     fresh. A distribution of a few percent stays inside the wide band and is
-     held to the band that applies, like any other move;
-   - else **ONCHAIN_TWAP**: the price per share, or the band edge it crossed
-     with `clamped = true`.
+   - the pool's price of one token of raw balance is bounded to
+     `[feedAnswer * (1 - band), feedAnswer * (1 + band)]`;
+   - **ONCHAIN_TWAP**: that price, or the band edge it crossed with
+     `clamped = true`.
 
 `latestRoundData()` in ONCHAIN_TWAP keeps the feed's round ids, reports the
 last exchange print as `startedAt` and `block.timestamp` as `updatedAt`
@@ -208,8 +212,8 @@ market built on AfterHours cannot borrow, withdraw collateral or liquidate
 The configuration is written once by `initialize` and cannot be changed.
 There is no owner, no pause switch, no upgrade path. `initialize` exercises
 every read the oracle will ever make (token order, decimals, the pause flag,
-the share multiplier and its effective time, `observe` at the four points) so
-a wrong pool or a token without those functions fails at deployment; the deploy workflow then reads the configuration
+`observe` at the four points) so a wrong pool or a token without the pause
+flag fails at deployment; the deploy workflow then reads the configuration
 back and fails unless every field matches its inputs and the feed's
 `description()` names the expected asset. Robinhood Chain mainnet
 does not have the canonical StylusDeployer factory
@@ -227,8 +231,7 @@ Uniswap TWAP anchor. AfterHours inverts the roles for a market that closes:
 the exchange feed is the anchor, and the on-chain TWAP is the price while the
 anchor cannot print. The parts that are specific to this chain are the closed
 session as an explicit state instead of a staleness error, the issuer's
-corporate-action surface (the pause flag and the share multiplier, with a
-split after the last print refusing rather than clamping), price and depth
+corporate-action pause flag as a refusal, price and depth
 judged per sub-window so one excursion can neither move the price nor switch
 pricing off, a narrow band only while the exchange is open and the feed
 prints every move, and a venue fixed at deployment so depth elsewhere cannot
@@ -419,15 +422,13 @@ feed's `description()` (`Robinhood AAPL / USD`) and the stock's
 `oraclePaused()`; the absence of the StylusDeployer on mainnet
 (`stylus_params.py`).
 
-Read from verified source: the stock token's multiplier schedule. The
-token's implementation (`Stock`,
-`0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2`, verified) returns a scheduled
-multiplier from `uiMultiplier()` only once `block.timestamp >= effectiveAt()`,
-and refuses to schedule one in the past, so the multiplier the oracle reads
-never runs ahead of the time it compares with the last print. A schedule sets
-`newUIMultiplier()` and `effectiveAt()` in the same call, and
-`newUIMultiplier()` answers 1e18 when none is set, so a future `effectiveAt()`
-always comes with the multiplier it schedules.
+Read from Chainlink's documentation: the unit of the feed. Chainlink's page
+for the Robinhood tokenized-equity feeds defines the reported price as the
+underlying equity's price times the token's multiplier, read from the token,
+continuous through splits, with the feed holding its last good value while the
+issuer's oracle is paused (§3, step 0). Read from verified source: the token
+keeps balances raw (`Stock`, `0xb35490d6f9163DE4F80d88dc75c3516eb64C5aE2`,
+verified), so a raw token is the unit Uniswap pools and Morpho count.
 
 Assumed: that the pool keeps tracking fair value on a *news* weekend (both
 measured weekends were quiet; the band exists precisely because this is not
@@ -459,30 +460,29 @@ and a new instance is deployed with the new primary (one workflow run).
 Following liquidity automatically is exactly the lever a manipulator would
 pull.
 
-The multiplier guard sees only the latest scheduled change: the token exposes
-one `effectiveAt()`. If a change took effect after the last print and the
-issuer scheduled another one before the feed printed again, the first change
-would pass unseen until the next print. For a dividend that is a fraction of
-a percent; for a split the issuer's `oraclePaused()` flag, which Robinhood
-sets while it processes a corporate action, is the primary protection and
-the guard is the second. The guard covers both orderings: a change that took
-effect after the print, and a split-sized change still pending while the
-feed may already print the post-action price.
+Corporate actions rest on Chainlink and the issuer. The feed prices the
+token, and Chainlink documents that while the issuer's `oraclePaused()` is set
+the feed holds its last good value until the equity price and the new
+multiplier agree; AfterHours refuses for as long as the flag is set. There is
+no second guard: one that compared the feed with the pool across a multiplier
+change would need the token's schedule again and could not tell which source
+is misaligned. If the issuer failed to set the flag and a feed printed the new
+equity price with the old multiplier, LIVE_FEED would pass that print through,
+as any consumer of the feed would; in ONCHAIN_TWAP the band around it would
+clamp the pool's price or refuse.
 
 Operational risks, both fail closed: every price read calls the issuer's
-upgradeable token for `oraclePaused()`, `uiMultiplier()` and `effectiveAt()`;
-if a token upgrade removed one of them, every price read would revert for
-good, because there is no admin to repoint anything. A Morpho market cannot
+upgradeable token for `oraclePaused()`, its only read of the token; if a token
+upgrade removed it, every price read would revert for good, because there is
+no admin to repoint anything. A Morpho market cannot
 change its oracle, so a market priced by that instance would stop borrowing
 and liquidating permanently. Borrowers could still repay and then withdraw
 their collateral (Morpho skips the oracle for a position without debt),
 lenders could withdraw what is not lent out, and `getRoundData` keeps serving
 the feed's history. The way forward would be a new instance and a new
-market. All three reads stay mandatory on purpose: without the multiplier
-`price()` cannot value a raw unit, and without `effectiveAt()` a split after
-the last print would pass through at the pre-split price, valuing collateral
-at twice what it is worth until the feed prints. A frozen market is the
-lesser failure. And like every Stylus
+market. The read stays mandatory on purpose: without the pause flag a price
+would be served in the middle of a corporate action, and a frozen market is
+the lesser failure. And like every Stylus
 program the contract must stay activated: activation lasts 365 days on this
 chain and must be renewed after a Stylus version upgrade; anyone can pay to
 re-activate it, and reads revert until someone does.
@@ -491,19 +491,19 @@ re-activate it, and reads revert until someone does.
 
 | layer | what it proves | where |
 |---|---|---|
-| 76 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, the share multiplier, the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason | `src/tests.rs`, `src/mockvm.rs` |
-| real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives | `fixtures/aapl_mainnet.txt` (block 70,472,250), `scripts/measure/capture_reads.py`, `src/tests.rs` |
+| 71 unit and property tests on a host that serves mocked calls exactly | decision logic, both bands, scaling, a 10:1 split and a reinvested dividend priced continuously with the multiplier never read (it is not mocked, and the call log is checked), the fixed venue, the sub-window medians of price and depth, every refusal, exact numbers; property runs over random feed, pool and multiplier data reach every session and every refusal reason, and `price()` is always the answer times the scale | `src/tests.rs`, `src/mockvm.rs` |
+| real mainnet answers | the contract's reads of the real Chainlink feed, the real AAPL 0.05% pool (`observe` at the four points, `slot0`, its tokens) and the real stock and quote tokens, served byte for byte from one block, give the answer a separate Python port of the rules gives, and `price()` is that answer times 1e16 | `fixtures/aapl_mainnet.txt` (block 70,472,250), `scripts/measure/capture_reads.py`, `src/tests.rs` |
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `abi/IAfterHours.sol` against `cargo stylus export-abi` | the interface integrators are pointed at declares exactly the functions, return types and errors the contract exports | `scripts/abi_check.py`, `.github/workflows/ci.yml` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), the multiplier and a split, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail; 90 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
-| eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores | every finding and its fix, with the commit | `REVIEWS.md` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), a 10:1 split (the issuer's pause, the multiplier going to 10, the print continuous) with every answer and `price()` unchanged, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail (it also checks that `price()` is the answer times the scale); 89 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores; round 12 a self-review against Chainlink's documentation that corrected the unit model | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read, both measured with `eth_estimateGas` (which includes the 21k
 transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
 configured, the primary answering, Solidity test doubles): `latestRoundData()`
-114,724 in LIVE_FEED, 155,673 in ONCHAIN_TWAP; `price()` 116,987 / 157,925.
-On mainnet, the deployed AAPL instance (one pool) in ONCHAIN_TWAP on
+107,540 in LIVE_FEED, 148,267 in ONCHAIN_TWAP; `price()` 109,632 / 150,349.
+On mainnet, the superseded first AAPL instance (one pool) in ONCHAIN_TWAP on
 2026-09-26 at 19:27 UTC, block 73,332,952 (`scripts/measure/mainnet_gas.py`,
 from the zero address): `latestRoundData()` 257,152, `price()` 259,404. The
 real feed, pool and beacon-proxy token cost more per call than the doubles:
@@ -515,11 +515,14 @@ includes an L1 data component, the gas that pays for posting the calldata to
 the parent chain;
 Arbitrum's NodeInterface (`gasEstimateComponents`) put it at 0 in this
 measurement because Robinhood Chain's L1 base fee estimate read 0, so the
-whole figure is L2 gas. Five external reads (pause flag, multiplier, its
-effective time, feed round, pool observe) account for most of it. At that
-block's base fee (0.0271 gwei) and Chainlink's ETH / USD print ($2,691.30),
-a transaction that does nothing but read the oracle costs about $0.019, and
-a Morpho borrow or liquidation pays the read once. Latency
+whole figure is L2 gas. That instance made five external reads (pause flag,
+multiplier, its effective time, feed round, pool observe), which account for
+most of it; the current contract makes three (pause flag, feed round, pool
+observe), so its mainnet figures are lower and are measured again once it is
+deployed. At that block's base fee (0.0271 gwei) and Chainlink's ETH / USD
+print ($2,691.30), a transaction that does nothing but read the superseded
+instance cost about $0.019, and a Morpho borrow or liquidation pays the read
+once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design the
 median of three 10-minute averages, so a genuine move starts to show after
@@ -531,8 +534,8 @@ never shows. That is the manipulation trade-off the window encodes.
 What Stylus bought here is one body of Rust that is both the contract and
 what the tests run. The decision code in `evaluate()` runs unchanged on a
 host under `cargo test`: every CI run sends 3,000 random feed, pool and
-multiplier cases through it and fails unless every session and every refusal
-reason was reached, and the same code, compiled to wasm, then runs on a Nitro
+multiplier cases through it (the multiplier to show that it changes nothing)
+and fails unless every session and every refusal reason was reached, and the same code, compiled to wasm, then runs on a Nitro
 node. The fixed-point math needs 512-bit intermediates (1.0001^tick by
 square-and-multiply, the price conversion); `alloy`'s `U512` gives them
 without assembly or unchecked blocks, checked against reference values

@@ -84,7 +84,11 @@ contract MockToken {
     uint8 private dec;
     bool public oraclePaused;
     string public symbol;
-    /// Robinhood's scaled-UI surface: one token of raw balance is uiMultiplier / 1e18 shares.
+    /// Robinhood's scaled-UI surface (a UI balance is the raw balance times
+    /// uiMultiplier / 1e18). AfterHours reads only decimals() and oraclePaused():
+    /// Chainlink's Robinhood feed already prices one token of raw balance (the
+    /// equity's price times this multiplier). The scenario changes these to show
+    /// that no answer moves with them.
     uint256 public uiMultiplier = 1e18;
     uint256 public effectiveAt;
     /// The multiplier scheduled for effectiveAt (the real token answers 1e18 when none is).

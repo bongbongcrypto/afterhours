@@ -85,8 +85,8 @@
           "풀이 얕으면 거부하고, 정규장이 열려 있는 동안은 마지막 프린트의 1% 안, 그 밖의 시간엔 10% 안으로 묶습니다."
         ],
         [
-          "Corporate actions: refuse while paused, and value raw tokens with the share multiplier.",
-          "배당·분할 처리 중이면 거부하고, 토큰의 주식 배수로 원시 단위 가치를 맞춥니다."
+          "Corporate actions: refuse while the issuer pauses; the feed already prices the token, splits included.",
+          "배당·분할 처리로 발행사가 멈추면 거부합니다. 분할은 피드가 이미 토큰 가격에 반영합니다."
         ],
         [
           "A print older than five days: refuse; the feed is gone, not closed.",

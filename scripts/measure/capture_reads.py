@@ -1,17 +1,28 @@
 # -*- coding: utf-8 -*-
-"""Capture, at one pinned block, every answer the AAPL instance's reads get
+"""Capture, at one pinned block, every answer an AAPL instance's reads get
 from Robinhood Chain mainnet: the Chainlink feed, the primary pool (observe at
 the four sub-window points, slot0, its tokens) and the stock and quote tokens.
 The unit test `the_contract_reads_real_mainnet_answers` serves these exact
 bytes to the contract, so its decoding of the real feed, pool and token is
 tested without a deployment. The answer the contract must give is computed
 here by a separate port of its rules (the live page's integer math, in
-Python), from the same bytes. Read-only, stdlib, 15 requests.
+Python), from the same bytes. Read-only, stdlib, 13 requests: the block, the
+ten reads the contract makes, and the token's uiMultiplier(), which the
+contract does not read (the feed and the pool both price one token of raw
+balance) and which is recorded as a comment only.
 
     python scripts/measure/capture_reads.py > fixtures/aapl_mainnet.txt
+
+--replay FILE re-derives the expected answer from the bytes of an earlier
+capture with the current rules, without a network request, and prints the
+fixture again (reads the contract no longer makes are dropped):
+
+    python scripts/measure/capture_reads.py --replay fixtures/aapl_mainnet.txt
 """
+import argparse
 import io
 import json
+import re
 import sys
 import time
 import urllib.error
@@ -76,6 +87,7 @@ def ratio_q96(tick):
 
 
 def stock_price(ratio, stock_is_token0, sd, qd, fd):
+    """Price of one token of raw balance (10^sd raw units) in feed decimals."""
     num, qp = 10 ** (sd + fd), 10 ** qd
     return (ratio * num) // (qp << 96) if stock_is_token0 else (num << 96) // (ratio * qp)
 
@@ -90,42 +102,32 @@ def mean_tick(then, now, span):
     return m
 
 
-def main():
-    head = int(post("eth_blockNumber", []), 16) - 5
-    block = hex(head)
-    ts = int(post("eth_getBlockByNumber", [block, False])["timestamp"], 16)
-
+def contract_reads():
+    """Every read the contract makes: (who, name, calldata)."""
     obs_data = selector("observe(uint32[])") + format(32, "064x") + format(4, "064x") + "".join(
         format(p, "064x") for p in POINTS)
-    reads = [
-        ("feed", FEED, "decimals", selector("decimals()")),
-        ("feed", FEED, "description", selector("description()")),
-        ("feed", FEED, "latestRoundData", selector("latestRoundData()")),
-        ("pool", POOL, "token0", selector("token0()")),
-        ("pool", POOL, "token1", selector("token1()")),
-        ("pool", POOL, "observe", obs_data),
-        ("pool", POOL, "slot0", selector("slot0()")),
-        ("stock", STOCK, "decimals", selector("decimals()")),
-        ("stock", STOCK, "oraclePaused", selector("oraclePaused()")),
-        ("stock", STOCK, "uiMultiplier", selector("uiMultiplier()")),
-        ("stock", STOCK, "effectiveAt", selector("effectiveAt()")),
-        ("stock", STOCK, "newUIMultiplier", selector("newUIMultiplier()")),
-        ("quote", QUOTE, "decimals", selector("decimals()")),
+    return [
+        ("feed", "decimals", selector("decimals()")),
+        ("feed", "description", selector("description()")),
+        ("feed", "latestRoundData", selector("latestRoundData()")),
+        ("pool", "token0", selector("token0()")),
+        ("pool", "token1", selector("token1()")),
+        ("pool", "observe", obs_data),
+        ("pool", "slot0", selector("slot0()")),
+        ("stock", "decimals", selector("decimals()")),
+        ("stock", "oraclePaused", selector("oraclePaused()")),
+        ("quote", "decimals", selector("decimals()")),
     ]
-    ret = {}
-    for who, to, name, data in reads:
-        ret[(who, name)] = post("eth_call", [{"to": to, "data": data}, block])
 
-    # the rules on those bytes
+
+def rules(ret, ts):
+    """The contract's answer on these bytes: (want, price, round id, print time)."""
     fd, sd, qd = (words(ret[(w, "decimals")])[0] for w in ("feed", "stock", "quote"))
     token0 = "0x" + ret[("pool", "token0")][-40:]
     stock_is_token0 = token0.lower() == STOCK.lower()
     rid, answer, _, updated, _ = words(ret[("feed", "latestRoundData")])[:5]
     answer = signed(answer, 256)
     paused = words(ret[("stock", "oraclePaused")])[0] != 0
-    mult = words(ret[("stock", "uiMultiplier")])[0]
-    eff = words(ret[("stock", "effectiveAt")])[0]
-    nxt = words(ret[("stock", "newUIMultiplier")])[0]
     w = words(ret[("pool", "observe")])
     a, b = w[0] // 32, w[1] // 32
     ticks = [signed(v, 256) for v in w[a + 1:a + 5]]
@@ -134,22 +136,17 @@ def main():
 
     want = {"session": 3, "reason": 0, "answer": 0, "twap": 0, "liquidity": 0, "clamped": 0}
     age = ts - updated
-    rebased = updated < eff <= ts
-    # a split-sized change scheduled but not in effect: the pool has to confirm the print
-    split_pending = eff > ts and not mult * (10_000 - MAX_DEV) <= nxt * 10_000 <= mult * (10_000 + MAX_DEV)
-    unconfirmed = rebased or split_pending
     if paused:
         want["session"] = 2
     elif not (answer > 0 and 0 < updated <= ts):
         want["reason"] = 1
-    elif age <= LIVE_MAX_AGE and not unconfirmed:
+    elif age <= LIVE_MAX_AGE:
         want.update(session=0, answer=answer)
     elif age > MAX_ANCHOR:
         want["reason"] = 4
     else:
         band = QUIET if age <= HEARTBEAT and in_session(ts) else MAX_DEV
         lo, hi = answer * (10_000 - band) // 10_000, answer * (10_000 + band) // 10_000
-        wlo, whi = answer * (10_000 - MAX_DEV) // 10_000, answer * (10_000 + MAX_DEV) // 10_000
         spans = [POINTS[k] - POINTS[k + 1] for k in range(3)]
         deltas = [(spl[k + 1] - spl[k]) % (1 << 160) for k in range(3)]   # the accumulator wraps
         # no liquidity-seconds recorded reads as an empty sub-window; the mean saturates at uint128
@@ -159,32 +156,82 @@ def main():
         if liqs[1] < MIN_LIQ:
             want["reason"] = 2
         else:
-            twap = stock_price(ratio_q96(tick), stock_is_token0, sd, qd, fd) * 10 ** 18 // mult
+            # the pool's price of one token of raw balance: the unit the feed prints
+            twap = stock_price(ratio_q96(tick), stock_is_token0, sd, qd, fd)
             if twap == 0:
                 want["reason"] = 3
-            elif unconfirmed and not wlo <= twap <= whi:
-                want.update(reason=5, twap=twap)
-            elif split_pending and age <= LIVE_MAX_AGE:
-                want.update(session=0, answer=answer, twap=twap)
             else:
                 clamped = twap < lo or twap > hi
                 want.update(session=1, twap=twap, answer=min(max(twap, lo), hi), clamped=int(clamped))
-    price = want["answer"] * scale * mult // 10 ** 18 if want["session"] in (0, 1) else "refuse"
+    # Morpho: the answer times the scale, no share multiplier
+    price = want["answer"] * scale if want["session"] in (0, 1) else "refuse"
+    return want, price, rid, updated
 
+
+def emit(block, ts, ret, mult, note):
+    want, price, rid, updated = rules(ret, ts)
     when = datetime.fromtimestamp(ts, timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-    print("# Robinhood Chain mainnet, block %d (%s UTC): every read the AAPL instance makes," % (head, when))
+    print("# Robinhood Chain mainnet, block %d (%s UTC): every read an AAPL instance makes," % (block, when))
     print("# captured by scripts/measure/capture_reads.py. Expected values come from that script's own port")
     print("# of the rules. Feed print %s UTC, %.1f h before the block." % (
-        datetime.fromtimestamp(updated, timezone.utc).strftime("%Y-%m-%d %H:%M"), age / 3600))
+        datetime.fromtimestamp(updated, timezone.utc).strftime("%Y-%m-%d %H:%M"), (ts - updated) / 3600))
+    if mult is not None:
+        print("# The token's uiMultiplier() at this block: %d. AfterHours does not read it: the feed" % mult)
+        print("# and the pool both price one token of raw balance, so the answer is not scaled by it.")
+    if note:
+        print("# " + note)
     print("timestamp %d" % ts)
     for who, addr in (("feed", FEED), ("pool", POOL), ("stock", STOCK), ("quote", QUOTE)):
         print("%s %s" % (who, addr))
-    for who, _, name, _ in reads:
+    for who, name, _ in contract_reads():
         print("ret %s %s %s" % (who, name, ret[(who, name)]))
     for k in ("session", "reason", "answer", "twap", "liquidity", "clamped"):
         print("want %s %s" % (k, want[k]))
     print("want price %s" % price)
     print("want round %d" % rid)
+
+
+def replay(path):
+    """Block, timestamp, ret lines and recorded multiplier of an earlier capture."""
+    block, ts, mult, ret = None, None, None, {}
+    for line in io.open(path, encoding="utf-8"):
+        m = re.match(r"# Robinhood Chain mainnet, block (\d+) ", line)
+        if m:
+            block = int(m.group(1))
+        m = re.match(r"# The token's uiMultiplier\(\) at this block: (\d+)\.", line)
+        if m:
+            mult = int(m.group(1))
+        f = line.split()
+        if f and f[0] == "timestamp":
+            ts = int(f[1])
+        elif f and f[0] == "ret":
+            ret[(f[1], f[2])] = f[3]
+    if ("stock", "uiMultiplier") in ret:   # a capture made while the contract still read it
+        mult = words(ret[("stock", "uiMultiplier")])[0]
+    if block is None or ts is None:
+        raise SystemExit("%s: no block or timestamp line" % path)
+    return block, ts, ret, mult
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--replay", metavar="FILE", help="re-derive the answer from an earlier capture's bytes")
+    args = ap.parse_args()
+    if args.replay:
+        block, ts, ret, mult = replay(args.replay)
+        emit(block, ts, ret, mult, "Expected values re-derived from these bytes with --replay on %s UTC."
+             % datetime.now(timezone.utc).strftime("%Y-%m-%d"))
+        return
+
+    head = int(post("eth_blockNumber", []), 16) - 5
+    block = hex(head)
+    ts = int(post("eth_getBlockByNumber", [block, False])["timestamp"], 16)
+    to = {"feed": FEED, "pool": POOL, "stock": STOCK, "quote": QUOTE}
+    ret = {}
+    for who, name, data in contract_reads():
+        ret[(who, name)] = post("eth_call", [{"to": to[who], "data": data}, block])
+    mult = words(post("eth_call", [{"to": STOCK, "data": selector("uiMultiplier()")}, block]))[0]
+    emit(head, ts, ret, mult, "")
 
 
 if __name__ == "__main__":

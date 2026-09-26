@@ -24,9 +24,12 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, subprocess, datetime, pathlib
-          deps = json.load(open("deployments.json"))["deployments"]
+          # a superseded instance (another unit model) stays in deployments.json as a
+          # record but is not probed, so the log never mixes its answers with the current ones
+          deps = [d for d in json.load(open("deployments.json"))["deployments"]
+                  if "superseded" not in d and "supersededBy" not in d]
           if not deps:
-              print("no deployments yet"); raise SystemExit(0)
+              print("no current deployments"); raise SystemExit(0)
           out = pathlib.Path("status/log.md"); out.parent.mkdir(exist_ok=True)
           if not out.exists():
               out.write_text("# AfterHours status log (hourly, UTC)\n\n| time | asset | session | AfterHours | Chainlink | feed age | pool | liquidity |\n|---|---|---|---|---|---|---|---|\n")

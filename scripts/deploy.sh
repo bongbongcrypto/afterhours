@@ -54,15 +54,13 @@ preflight() {
     fi
     role=standby
   done
-  # the feed's, the stock's and the quote's decimals, and the stock's pause flag and
-  # share multiplier with its schedule: initialize reads every one of them
+  # the feed's, the stock's and the quote's decimals, and the stock's pause flag:
+  # initialize reads every one of them (the share multiplier is not read: the
+  # feed already prices one token of raw balance)
   cast call --rpc-url "$RPC" "$FEED" "decimals()(uint8)"
   cast call --rpc-url "$RPC" "$STOCK" "decimals()(uint8)"
   cast call --rpc-url "$RPC" "$EXPECTED_QUOTE" "decimals()(uint8)"
   cast call --rpc-url "$RPC" "$STOCK" "oraclePaused()(bool)"
-  cast call --rpc-url "$RPC" "$STOCK" "uiMultiplier()(uint256)"
-  cast call --rpc-url "$RPC" "$STOCK" "effectiveAt()(uint256)"
-  cast call --rpc-url "$RPC" "$STOCK" "newUIMultiplier()(uint256)"
   addr=$(cast wallet address --private-key "$DEPLOYER_KEY")
   bal=$(cast balance --rpc-url "$RPC" "$addr")
   echo "deployer $addr balance $bal wei"
@@ -100,7 +98,7 @@ initialize() {
 }
 
 verify() {
-  local cfg c tier qt got desc
+  local cfg c tier qt got desc blk st want
   echo "AfterHours at $ADDR"
   cfg=$(cast call --rpc-url "$RPC" "$ADDR" "config()(bool,address,address,address,address,address,bool,uint8,uint8,uint8,uint64,uint32,uint64,uint128,uint64)")
   echo "$cfg"
@@ -128,6 +126,16 @@ verify() {
   test "$desc" = "\"$EXPECTED_DESCRIPTION (AfterHours)\"" || { echo "description mismatch: $desc"; exit 1; }
   cast call --rpc-url "$RPC" "$ADDR" "decimals()(uint8)"
   cast call --rpc-url "$RPC" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)"
+  # While it answers, price() must be the answer times Morpho's scale and nothing else:
+  # the feed prices one token of raw balance, so no share multiplier. One block for both.
+  blk=$(cast block-number --rpc-url "$RPC")
+  mapfile -t st < <(cast call --rpc-url "$RPC" --block "$blk" "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
+  if [ "${st[0]}" = 0 ] || [ "${st[0]}" = 1 ]; then
+    want=$(python3 -c "print($(num "${st[2]}") * 10 ** (36 + ${c[9]} - ${c[8]} - ${c[7]}))")
+    got=$(num "$(cast call --rpc-url "$RPC" --block "$blk" "$ADDR" "price()(uint256)")")
+    test "$got" = "$want" || { echo "price() $got is not answer x 10^(36 + quote - stock - feed decimals) = $want"; exit 1; }
+    echo "price() = answer x 10^$((36 + c[9] - c[8] - c[7])) at block $blk"
+  fi
   # PAUSED / NO_DATA are legal at deploy time (weekend, thin pool); state() above says why.
   cast call --rpc-url "$RPC" "$ADDR" "latestRoundData()(uint80,int256,uint256,uint256,uint80)" \
     || echo "latestRoundData() reverted: the oracle is refusing to price right now (see state())"

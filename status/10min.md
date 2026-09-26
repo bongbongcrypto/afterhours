@@ -2,6 +2,8 @@
 
 Recorded every 10 minutes from a server with `scripts/probe.py --json` against the AAPL instance `0x69190621e300cd2bc4cbb80777b517691ee80f65` on Robinhood Chain mainnet; copied here with 128 rows, 2026-09-25 22:59 to 2026-09-26 20:00 UTC. The GitHub `status` job keeps its own, sparser log in `log.md`.
 
+Units: these rows come from the first AAPL instance, which treated the feed as a price per share and is superseded (REVIEWS.md, 2026-09-27). Its LIVE_FEED answers are the feed's own print and are unchanged under the corrected model; its ONCHAIN_TWAP answers are the pool's price divided by the token's uiMultiplier (1.00057 for AAPL), 0.057% under the per-token price the current contract gives. The current instance is recorded separately.
+
 | time | asset | session | AfterHours | Chainlink | feed age h | pool | liquidity |
 |---|---|---|---|---|---|---|---|
 | 2026-09-25 22:59 | AAPL | LIVE_FEED | 341.4532 | 341.4532 | 3.2 |  |  |

@@ -7,7 +7,8 @@ each stock, the oracle's parameters, and which instances are deployed.
 
 Sources:
   assets.json       discovery manifest (scripts/measure/discover_assets.py)
-  deployments.json  deployed AfterHours instances (written after a deploy)
+  deployments.json  deployed AfterHours instances (written after a deploy;
+                    entries marked "superseded" or "supersededBy" are skipped)
 
     python web/build_data.py
 """
@@ -36,7 +37,10 @@ def main():
     manifest = json.load(io.open(ROOT / "assets.json", encoding="utf-8"))
     deployed = {}
     for d in json.load(io.open(ROOT / "deployments.json", encoding="utf-8"))["deployments"]:
-        if d.get("chainId", 4663) == 4663:
+        # a superseded instance is kept in deployments.json as a record, never shown
+        # as the asset's oracle: the page checks the contract's answer against its own
+        # port of the current rules
+        if d.get("chainId", 4663) == 4663 and "superseded" not in d and "supersededBy" not in d:
             deployed[d["asset"].upper()] = d["address"]
 
     quote = manifest["quote"].lower()

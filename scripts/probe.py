@@ -4,15 +4,15 @@
     python scripts/probe.py --oracle 0x... [--rpc URL] [--watch 300]
 
 Prints, side by side: the Chainlink feed's last print and age, the primary
-pool's price per share (the median of three 10-minute averages, computed here
-from observe() and the token's uiMultiplier), the band that applies at the
-print's age and the hour, and what AfterHours returns (session, answer, band
-clamping). During a weekend the feed line goes stale while the AfterHours line
+pool's price of one token of raw balance (the median of three 10-minute
+averages, computed here from observe(); the unit the feed prices, so no share
+multiplier), the band that applies at the print's age and the hour, and what
+AfterHours returns (session, answer, band clamping). During a weekend the feed line goes stale while the AfterHours line
 keeps moving; that is the demo.
 
 Selectors computed with keccak (scripts/measure/keccak.py checks itself), not recalled:
   latestRoundData() 0xfeaf968c   decimals() 0x313ce567   description() 0x7284e416
-  observe(uint32[]) 0x883bdbfd   uiMultiplier() 0xa60bf13d
+  observe(uint32[]) 0x883bdbfd
   price() 0xa035b1fe   state() 0xc19d93fb   config() 0x79502c55   quietTier() 0x41fcfef0
 """
 import argparse
@@ -27,7 +27,8 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 SESSIONS = {0: "LIVE_FEED", 1: "ONCHAIN_TWAP", 2: "PAUSED", 3: "NO_DATA"}
 REASONS = {0: "", 1: "feed invalid", 2: "pool too thin", 3: "twap unavailable",
-           4: "last print older than maxAnchorAge", 5: "share multiplier changed since the last print",
+           4: "last print older than maxAnchorAge",
+           5: "reserved: raised only by the superseded per-share instance",
            6: "answer too large for Morpho's scale (price() only)"}
 
 # Function selectors used below, all computed with ethers.id() from the
@@ -37,7 +38,6 @@ SELECTORS = {
     "decimals()": "0x313ce567",
     "description()": "0x7284e416",
     "observe(uint32[])": "0x883bdbfd",
-    "uiMultiplier()": "0xa60bf13d",
     "price()": "0xa035b1fe",
     # AfterHours (ethers.id on the ABI exported by `cargo stylus export-abi`)
     "state()": "0xc19d93fb",
@@ -46,9 +46,19 @@ SELECTORS = {
 }
 
 
-def rpc_call(rpc, to, data):
+def rpc_call(rpc, to, data, block="latest"):
     body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": to, "data": data}, "latest"]}).encode()
+                       "params": [{"to": to, "data": data}, block]}).encode()
+    req = urllib.request.Request(rpc, body, {"content-type": "application/json",
+                                             "user-agent": "curl/8"})
+    out = json.load(urllib.request.urlopen(req, timeout=40))
+    if "error" in out:
+        return None, out["error"].get("message", "")
+    return out["result"], None
+
+
+def rpc_post(rpc, method, params):
+    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": method, "params": params}).encode()
     req = urllib.request.Request(rpc, body, {"content-type": "application/json",
                                              "user-agent": "curl/8"})
     out = json.load(urllib.request.urlopen(req, timeout=40))
@@ -75,10 +85,10 @@ def points(window):
     return [window, 2 * sub, sub, 0]
 
 
-def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, feed_dec, multiplier):
-    """(median sub-window price per share in feed decimals, median sub-window
-    liquidity) or (None, error). Float arithmetic: a cross-check, not the
-    contract's integer path."""
+def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, feed_dec):
+    """(median sub-window price of one token of raw balance in feed decimals,
+    median sub-window liquidity) or (None, error). Float arithmetic: a
+    cross-check, not the contract's integer path."""
     pts = points(window)
     data = ("0x883bdbfd" + format(32, "064x") + format(len(pts), "064x")
             + "".join(format(s, "064x") for s in pts))
@@ -101,7 +111,7 @@ def twap_from_pool(rpc, pool, window, stock_is_token0, stock_dec, quote_dec, fee
     for k in range(3):
         d = (spl[k + 1] - spl[k]) % (1 << 160)
         liq.append(((pts[k] - pts[k + 1]) << 128) // d if d else 0)
-    return (int(raw * 10 ** 18 / multiplier), sorted(liq)[1]), None
+    return (int(raw), sorted(liq)[1]), None
 
 
 def main():
@@ -122,7 +132,6 @@ def main():
     feed_dec, stock_dec, quote_dec = word(cfg, 7), word(cfg, 8), word(cfg, 9)
     live_max_age, twap_window, dev_bps = word(cfg, 10), word(cfg, 11), word(cfg, 12)
     min_liq, max_anchor = word(cfg, 13), word(cfg, 14)
-    stock = "0x" + cfg[2 + 64 * 4 + 24: 2 + 64 * 5]
     qt, qerr = rpc_call(args.rpc, args.oracle, SELECTORS["quietTier()"])
     heartbeat, quiet_bps = (word(qt, 0), word(qt, 1)) if qt and not qerr else (None, None)
     print("AfterHours %s  initialized=%s  feed=%s  primary pool=%s" % (args.oracle, initialized, feed, pool))
@@ -137,12 +146,15 @@ def main():
         feed_answer = word(r, 1) / 10 ** feed_dec
         feed_at = word(r, 3)
         age_h = (now - feed_at) / 3600
-        m, merr = rpc_call(args.rpc, stock, SELECTORS["uiMultiplier()"])
-        multiplier = word(m, 0) if m and not merr else 10 ** 18
         pooled, terr = twap_from_pool(args.rpc, pool, twap_window, stock_is_token0,
-                                      stock_dec, quote_dec, feed_dec, multiplier)
+                                      stock_dec, quote_dec, feed_dec)
         twap = pooled[0] if pooled else None
-        s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"])
+        # state() and price() at one block, so price() can be checked against the
+        # answer. Without a block number the two calls could land on different
+        # blocks, so the check is skipped rather than run at "latest".
+        head, _ = rpc_post(args.rpc, "eth_blockNumber", [])
+        at = head or "latest"
+        s, serr = rpc_call(args.rpc, args.oracle, SELECTORS["state()"], at)
         print("[%s]" % ts(now))
         # Monday to Friday 14:30-20:00 UTC: the US regular session is open in both
         # daylight-saving regimes (src/lib.rs, in_regular_session)
@@ -151,8 +163,8 @@ def main():
         print("  Chainlink : $%.4f  printed %s  (%.1f h ago; the band at this age and hour is %.1f%%)"
               % (feed_answer, ts(feed_at), age_h, band / 100))
         if twap is not None:
-            print("  primary pool: $%.4f per share  (median of three %d s averages, median liquidity %.3g, share multiplier %.8f; computed off-chain)"
-                  % (twap / 10 ** feed_dec, twap_window // 3, pooled[1], multiplier / 1e18))
+            print("  primary pool: $%.4f per token  (median of three %d s averages, median liquidity %.3g; computed off-chain)"
+                  % (twap / 10 ** feed_dec, twap_window // 3, pooled[1]))
         else:
             print("  primary pool: unavailable (%s)" % terr)
         if serr or not s:
@@ -171,12 +183,20 @@ def main():
             if session == 3:
                 line += "  (%s)" % REASONS.get(reason, reason)
             print(line)
-            p, perr = rpc_call(args.rpc, args.oracle, SELECTORS["price()"])
+            p, perr = rpc_call(args.rpc, args.oracle, SELECTORS["price()"], at)
             if perr:
                 print("  Morpho price(): reverted (%s)" % perr[:60])
+            elif not head:
+                print("  Morpho price(): %d  (not compared with the answer: the block number"
+                      " could not be read)" % word(p, 0))
             else:
                 scale = 36 + quote_dec - stock_dec - feed_dec
-                print("  Morpho price(): %d  (= answer x 1e%d x share multiplier %.8f)" % (word(p, 0), scale, multiplier / 1e18))
+                if session in (0, 1) and word(p, 0) != answer * 10 ** scale:
+                    # the superseded per-share instance multiplies by the token's uiMultiplier
+                    print("  Morpho price(): %d  (NOT answer x 1e%d = %d: this instance is not per token)"
+                          % (word(p, 0), scale, answer * 10 ** scale))
+                else:
+                    print("  Morpho price(): %d  (= answer x 1e%d)" % (word(p, 0), scale))
         if args.json:
             if serr or not s:
                 rec = {"session": "read failed", "answer": "", "feed_answer": "%.4f" % feed_answer,

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Gas per read of the deployed AfterHours AAPL instance on Robinhood Chain
-mainnet, measured the way e2e/run.sh measures it on the dev node (`cast
+"""Gas per read of the current AfterHours AAPL instance on Robinhood Chain
+mainnet (the newest AAPL entry in deployments.json not marked superseded, or
+--oracle), measured the way e2e/run.sh measures it on the dev node (`cast
 estimate`): eth_estimateGas for latestRoundData() and price(), sent from the
 zero address, at the latest block. Read-only: estimates and calls, no
 transaction, stdlib.
@@ -26,6 +27,7 @@ gasEstimateComponents(address,bool,bytes) 0xc94e6eeb.
 """
 import argparse
 import io
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,7 +38,7 @@ from jsonrpc import post  # noqa: E402
 from keccak import selector  # noqa: E402
 
 RPC = "https://rpc.mainnet.chain.robinhood.com"
-ORACLE = "0x69190621e300cd2bc4cbb80777b517691ee80f65"   # AfterHours AAPL, DEPLOYMENTS.md
+ROOT = Path(__file__).resolve().parents[2]
 NODE_INTERFACE = "0x00000000000000000000000000000000000000c8"
 ETH_USD = "0x78F3556b67E17Df817D51Ef5a990cDaF09E8d3A9"  # Chainlink ETH / USD, 8 decimals
 ZERO = "0x" + "00" * 20
@@ -58,11 +60,22 @@ def text(h):
     return bytes.fromhex(h[2 + 128: 2 + 128 + 2 * words(h)[1]]).decode()
 
 
+def current_instance(asset="AAPL"):
+    """The newest deployment of `asset` in deployments.json not marked superseded."""
+    deps = json.load(io.open(ROOT / "deployments.json", encoding="utf-8"))["deployments"]
+    live = [d for d in deps if d["asset"].upper() == asset and d.get("chainId", 4663) == 4663
+            and "superseded" not in d and "supersededBy" not in d]
+    return live[-1]["address"] if live else None
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--oracle", default=ORACLE)
+    ap.add_argument("--oracle", default=None, help="default: the current AAPL instance in deployments.json")
     ap.add_argument("--rpc", default=RPC)
     a = ap.parse_args()
+    a.oracle = a.oracle or current_instance()
+    if not a.oracle:
+        raise SystemExit("no current AAPL instance in deployments.json (every entry is superseded); pass --oracle")
 
     head = rpc(a.rpc, "eth_getBlockByNumber", ["latest", False])
     block, ts = int(head["number"], 16), int(head["timestamp"], 16)

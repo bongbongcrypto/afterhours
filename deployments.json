@@ -12,7 +12,8 @@
       "morphoMarketId": "0x516829adb04c8351c09747755eed21f4514370e2df11a73c89054fef7de316bc",
       "morphoCreateMarketTx": "0xe7cc78e6bce947d8b1d95f5853d9ce0f11b30fdb2bc730fc69c2d085ebb65419",
       "wasmSha256": "66848ef80af973d90ce715568723021ada8e2647cf0bef2d460d95e498acac2b",
-      "deployedAt": "2026-09-25T22:56:08Z"
+      "deployedAt": "2026-09-25T22:56:08Z",
+      "superseded": "per-share unit model: it divides the pool's price by the token's uiMultiplier and multiplies price() by it, while Chainlink's Robinhood feed already prices one token of raw balance (REVIEWS.md, 2026-09-27). Its Morpho market holds no supply. Do not integrate it."
     }
   ]
 }

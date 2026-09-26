@@ -373,7 +373,7 @@ expect "deploy + activate a second instance" "$r/$has_code" "passed/code"
 step initialize ADDR="$ADDR2"
 expect "initialize" "$r" "passed"
 step verify ADDR="$ADDR2" DEPLOYER="$DEPLOYER2"
-expect "read back and verify every field" "$r/$(echo "$o" | grep -c 'all fields verified' || true)" "passed/1"
+expect "read back and verify every field, and price() = answer x 1e16" "$r/$(echo "$o" | grep -c 'all fields verified' || true)/$(echo "$o" | grep -c '^price() = answer x 10^16 at block' || true)" "passed/1/1"
 step verify ADDR="$ADDR2" DEPLOYER="$DEPLOYER2" EXPECTED_DECIMALS=8/18/18
 expect "verify fails when a field differs" "$r/$(echo "$o" | grep -c 'decimals mismatch' || true)" "failed/1"
 

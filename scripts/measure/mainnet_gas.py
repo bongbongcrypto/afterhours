@@ -15,8 +15,8 @@ ETH / USD feed on this chain (address from Chainlink's feed directory, see
 feed_directory.py; the script checks its description()).
 
 The public RPC keeps recent state only, so each session is measured while
-the instance is in it: LIVE_FEED on a weekday while the feed is under six
-hours old, ONCHAIN_TWAP overnight and on weekends.
+the instance is in it: LIVE_FEED during a US trading session while the feed
+is under six hours old, ONCHAIN_TWAP overnight and on weekends.
 
     python scripts/measure/mainnet_gas.py [--oracle 0x...] [--rpc URL]
 

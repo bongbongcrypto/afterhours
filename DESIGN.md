@@ -509,9 +509,10 @@ from the zero address): `latestRoundData()` 257,152, `price()` 259,404. The
 real feed, pool and beacon-proxy token cost more per call than the doubles:
 the pool's `observe()` searches its observation buffer (3,000 slots at
 deployment) and the feed and token are proxies. LIVE_FEED is measured on
-mainnet on a weekday while the feed is fresh, since the public RPC keeps
-recent state only. On an Arbitrum chain the estimate also includes an L1 data
-component, the gas that pays for posting the calldata to the parent chain;
+mainnet during a US trading session, while the feed is fresh, since the
+public RPC keeps recent state only. On an Arbitrum chain the estimate also
+includes an L1 data component, the gas that pays for posting the calldata to
+the parent chain;
 Arbitrum's NodeInterface (`gasEstimateComponents`) put it at 0 in this
 measurement because Robinhood Chain's L1 base fee estimate read 0, so the
 whole figure is L2 gas. Five external reads (pause flag, multiplier, its

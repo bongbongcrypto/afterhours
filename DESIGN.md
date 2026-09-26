@@ -510,26 +510,26 @@ Gas per read, both measured with `eth_estimateGas` (which includes the 21k
 transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
 configured, the primary answering, Solidity test doubles): `latestRoundData()`
 107,540 in LIVE_FEED, 148,267 in ONCHAIN_TWAP; `price()` 109,632 / 150,349.
-On mainnet, the current AAPL instance (one pool) in ONCHAIN_TWAP, nine runs
-on 2026-09-26 from 22:59 to 23:10 UTC, blocks 73,459,093 to 73,465,934
+On mainnet, the current AAPL instance (one pool) in ONCHAIN_TWAP, ten runs
+on 2026-09-26 from 22:59 to 23:17 UTC, blocks 73,459,093 to 73,469,992
 (`scripts/measure/mainnet_gas.py`, from the zero address): `latestRoundData()`
-226,760 to 240,559, `price()` 228,842 to 242,643. The real feed, pool and
+214,652 to 240,559, `price()` 216,736 to 242,643. The real feed, pool and
 beacon-proxy token cost more per call than the doubles, and the pool's cost
 moves: Uniswap v3's `observe()` binary-searches the observation buffer (3,000
 slots) for each requested time older than the pool's latest observation, so a
 read soon after a swap searches more than one after a quiet half hour. On an
 Arbitrum chain the estimate also includes an L1 data component, the gas that
 pays for posting the calldata to the parent chain; Arbitrum's NodeInterface
-(`gasEstimateComponents`) put it at 10 to 140 gas in these runs, as Robinhood
-Chain's L1 base fee estimate read 90,309 to 1,229,595 wei. The contract makes
+(`gasEstimateComponents`) put it at 10 to 1,537 gas in these runs, as Robinhood
+Chain's L1 base fee estimate read 90,309 to 13,256,777 wei. The contract makes
 three external reads (pause flag, feed round, pool observe). The superseded
 first instance made five (it also read the token's multiplier and its
 effective time) and measured 257,152 / 259,404 at block 73,332,952 on
 2026-09-26 at 19:27 UTC. LIVE_FEED is measured on mainnet during a US trading
 session, while the feed is fresh, since the public RPC keeps recent state
-only. At base fees of 0.0256 to 0.0267 gwei and Chainlink's ETH / USD print
+only. At these runs' base fees and Chainlink's ETH / USD print
 ($2,690.47), a transaction that does nothing but read the oracle costs about
-$0.016 to $0.017, and a Morpho borrow or liquidation pays the read
+$0.015 to $0.017, and a Morpho borrow or liquidation pays the read
 once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design the

@@ -121,12 +121,12 @@
           "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
         ],
         [
-          "Seventy-six unit and property tests, and ninety assertions against the real wasm on a local Arbitrum node.",
-          "단위·속성 테스트 76개, 실제 아비트럼 노드 위 wasm 검증 90항목."
+          "Seventy-three unit and property tests, and ninety assertions against the real wasm on a local Arbitrum node.",
+          "단위·속성 테스트 73개, 실제 아비트럼 노드 위 wasm 검증 90항목."
         ],
         [
-          "Tick math is checked against eighty-digit reference values, and eleven review rounds are folded in.",
-          "틱 수학은 80자리 기준값으로 검증했고, 독립 검수 11회를 반영했습니다."
+          "Tick math is checked against eighty-digit reference values, and twelve review rounds by separate AI agents are folded in.",
+          "틱 수학은 80자리 기준값으로 검증했고, 별도 AI 에이전트 검수 12회를 반영했습니다."
         ],
         [
           "Fourteen stocks meet our bar for depth today, and eighteen pass the contract's checks.",

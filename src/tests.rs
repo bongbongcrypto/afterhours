@@ -718,15 +718,15 @@ fn initialize_asks_the_stock_only_for_decimals_and_the_pause_flag() {
     let w = World::new();
     w.vm.mock_static_call(STOCK, uiMultiplierCall {}.abi_encode(), Err(Vec::new()));
     let before = w.vm.call_log().len();
-    w.try_deploy().expect("a reverting uiMultiplier() is never read");
-    let stock_reads: Vec<Vec<u8>> = w
-        .vm
-        .call_log()
-        .split_off(before)
-        .into_iter()
-        .filter(|(to, _)| *to == STOCK)
-        .map(|(_, data)| data)
-        .collect();
+    w.try_deploy()
+        .expect("a reverting uiMultiplier() is never read");
+    let stock_reads: Vec<Vec<u8>> =
+        w.vm.call_log()
+            .split_off(before)
+            .into_iter()
+            .filter(|(to, _)| *to == STOCK)
+            .map(|(_, data)| data)
+            .collect();
     assert_eq!(
         stock_reads,
         vec![
@@ -850,9 +850,10 @@ fn fresh_feed_passes_through_verbatim() {
         "LIVE_FEED makes no pool read: {reads:?}"
     );
     assert!(
-        reads.iter().all(|(to, data)| (*to == STOCK
-            && *data == oraclePausedCall {}.abi_encode())
-            || (*to == FEED && *data == latestRoundDataCall {}.abi_encode())),
+        reads.iter().all(
+            |(to, data)| (*to == STOCK && *data == oraclePausedCall {}.abi_encode())
+                || (*to == FEED && *data == latestRoundDataCall {}.abi_encode())
+        ),
         "LIVE_FEED reads the pause flag and the feed round, nothing else: {reads:?}"
     );
 }
@@ -1284,7 +1285,10 @@ fn a_pool_price_that_rounds_to_zero_is_refused() {
     w.mock_observe(460_517, MIN_LIQUIDITY);
     let (session, reason, ans, _, _, twap, _, clamped, _) = c.state().unwrap();
     assert_eq!((session, reason), (SESSION_ONCHAIN_TWAP, REASON_NONE));
-    assert_eq!((ans, twap, clamped), (U256::from(1u64), U256::from(1u64), false));
+    assert_eq!(
+        (ans, twap, clamped),
+        (U256::from(1u64), U256::from(1u64), false)
+    );
 }
 
 #[test]
@@ -1434,17 +1438,13 @@ fn an_absurd_print_under_the_narrow_band_refuses_before_any_pool_read() {
         w.mock_feed_raw(I256::from_raw(print), now - 7 * 3600);
         let before = w.vm.call_log().len();
         let (session, reason, ans, _, _, twap, liq, clamped, pool) = c.state().unwrap();
-        let pool_reads = w
-            .vm
-            .call_log()
-            .split_off(before)
-            .iter()
-            .filter(|(to, _)| *to == POOL)
-            .count();
-        (
-            (session, reason, ans, twap, liq, clamped, pool),
-            pool_reads,
-        )
+        let pool_reads =
+            w.vm.call_log()
+                .split_off(before)
+                .iter()
+                .filter(|(to, _)| *to == POOL)
+                .count();
+        ((session, reason, ans, twap, liq, clamped, pool), pool_reads)
     };
     let no_data = (
         SESSION_NO_DATA,
@@ -1808,10 +1808,7 @@ fn a_reinvested_dividend_is_counted_once() {
     // before the ex-date: multiplier 1.0, the Friday print
     w.mock_multiplier(ONE_X);
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
-    assert_eq!(
-        c.price().unwrap(),
-        U256::from(FRIDAY_ANSWER) * scale
-    );
+    assert_eq!(c.price().unwrap(), U256::from(FRIDAY_ANSWER) * scale);
 
     // the ex-date: the feed prints the token price, about continuous, and the
     // pool keeps the token price; the answer is the same whatever the
@@ -1885,14 +1882,13 @@ fn the_share_multiplier_is_never_read() {
             let _ = c.latest_round_data();
         }
     }
-    let stock_reads: Vec<Vec<u8>> = w
-        .vm
-        .call_log()
-        .split_off(before)
-        .into_iter()
-        .filter(|(to, _)| *to == STOCK)
-        .map(|(_, data)| data)
-        .collect();
+    let stock_reads: Vec<Vec<u8>> =
+        w.vm.call_log()
+            .split_off(before)
+            .into_iter()
+            .filter(|(to, _)| *to == STOCK)
+            .map(|(_, data)| data)
+            .collect();
     assert!(!stock_reads.is_empty());
     assert!(
         stock_reads
@@ -1931,7 +1927,9 @@ fn the_reserved_codes_keep_their_numbers_and_5_is_never_raised() {
     // And no read raises 5, through state() or any surface that reverts, in
     // every session and refusal, with the token's multiplier at 10.
     let scenarios: [(&str, fn(&World)); 10] = [
-        ("live", |w: &World| w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120)),
+        ("live", |w: &World| {
+            w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120)
+        }),
         ("pool", |_: &World| {}),
         ("clamped", |w: &World| {
             w.mock_observe(AAPL_TICK + 2000, MIN_LIQUIDITY)
@@ -1948,7 +1946,9 @@ fn the_reserved_codes_keep_their_numbers_and_5_is_never_raised() {
         ("band overflow", |w: &World| {
             w.mock_feed_raw(I256::MAX, NOW - 40 * 3600)
         }),
-        ("price overflow", |w: &World| w.mock_feed_raw(I256::MAX, NOW - 60)),
+        ("price overflow", |w: &World| {
+            w.mock_feed_raw(I256::MAX, NOW - 60)
+        }),
     ];
     let mut raised = Vec::new();
     for (name, setup) in scenarios {
@@ -2369,16 +2369,7 @@ mod props {
         runner
             .run(
                 &strategy,
-                |(
-                    answer,
-                    updated_at,
-                    paused,
-                    cum_then,
-                    cum_delta,
-                    spl_then,
-                    spl_delta,
-                    mult,
-                )| {
+                |(answer, updated_at, paused, cum_then, cum_delta, spl_then, spl_delta, mult)| {
                     let w = World::new();
                     let c = w.deploy();
                     w.mock_paused(paused);

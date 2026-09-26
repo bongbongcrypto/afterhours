@@ -345,11 +345,14 @@ send "$STOCK" "setNewMultiplier(uint256)" "$((2 * ONE))"
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 2))" "$FRIDAY" "$T" "$T"
 mapfile -t s < <(call "$ADDR" "state()(uint8,uint8,uint256,uint256,uint256,uint256,uint128,bool,address)")
 expect "a fresh print passes through, the pool is not read" "${s[0]}/${s[1]}/$(num "${s[2]}")/$(num "${s[5]}")" "0/0/$FRIDAY/0"
-send "$STOCK" "setMultiplier(uint256,uint256)" "$ONE" 0
 send "$STOCK" "setNewMultiplier(uint256)" "$ONE"
 
 echo "== the deploy workflow's own steps (scripts/deploy.sh), run the way the mainnet deploy runs them"
 T=$(now)
+# The token carries AAPL's multiplier, not 1.0, through the read-back, so its
+# "price() = answer x 1e16" check would fail if a multiplier were applied again.
+send "$STOCK" "setMultiplier(uint256,uint256)" "$AAPL_MULT" "$((T - 86400))"
+expect "the token answers AAPL's multiplier during the read-back" "$(num "$(call "$STOCK" "uiMultiplier()(uint256)")")" "$AAPL_MULT"
 send "$FEED" "set(uint80,int256,uint256,uint256)" "$((ROUND + 4))" "$FRIDAY" "$T" "$T"
 send "$POOL" "$OBS" "$FLAT" "$SPL_FLOOR"
 send "$POOL" "setCardinality(uint16)" "$WINDOW"

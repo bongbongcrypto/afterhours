@@ -110,9 +110,11 @@ impl World {
         let w = World { vm };
         w.mock_tokens(false);
         w.mock_paused(false);
-        // uiMultiplier(), effectiveAt() and newUIMultiplier() are not mocked:
-        // MockVM panics on an unmocked call, so every test also proves the
-        // contract never reads them.
+        // uiMultiplier(), effectiveAt() and newUIMultiplier() are not mocked
+        // here: MockVM panics on an unmocked call, so every test that leaves
+        // them alone also proves the contract never reads them. A test that
+        // sets uiMultiplier() to show that nothing moves with it does not;
+        // `the_share_multiplier_is_never_read` proves it there from the call log.
         w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
         w.mock_cardinality(POOL, (TWAP_WINDOW + 1) as u16);
         w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
@@ -806,6 +808,7 @@ fn fresh_feed_passes_through_verbatim() {
     let w = World::new();
     let c = w.deploy();
     w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    let before = w.vm.call_log().len();
 
     let (round, answer, started, updated, answered_in) = c.latest_round_data().unwrap();
     assert_eq!(round, U80::from(ROUND));
@@ -834,6 +837,24 @@ fn fresh_feed_passes_through_verbatim() {
     assert_eq!(feed_answer, U256::from(FRIDAY_ANSWER));
     assert_eq!(feed_updated, U256::from(NOW - 120));
     assert_eq!((twap, liq, clamped), (U256::ZERO, 0, false));
+
+    // A fresh print needs no pool: across every surface above, the only reads
+    // are the stock's pause flag and the feed's round. No observe(), no slot0,
+    // no pool at all.
+    let reads = w.vm.call_log().split_off(before);
+    assert!(!reads.is_empty());
+    assert!(
+        reads.iter().all(|(to, data)| *to != POOL
+            && !data.starts_with(&observeCall::SELECTOR)
+            && !data.starts_with(&slot0Call::SELECTOR)),
+        "LIVE_FEED makes no pool read: {reads:?}"
+    );
+    assert!(
+        reads.iter().all(|(to, data)| (*to == STOCK
+            && *data == oraclePausedCall {}.abi_encode())
+            || (*to == FEED && *data == latestRoundDataCall {}.abi_encode())),
+        "LIVE_FEED reads the pause flag and the feed round, nothing else: {reads:?}"
+    );
 }
 
 #[test]
@@ -1400,6 +1421,86 @@ fn absurd_feed_answers_fail_closed_instead_of_overflowing() {
 }
 
 #[test]
+fn an_absurd_print_under_the_narrow_band_refuses_before_any_pool_read() {
+    // The same guard on the quiet tier: Friday 16:00 UTC, in the regular
+    // session, a print seven hours old (inside the heartbeat), so the band is
+    // QUIET_BAND_BPS. print x (10000 + 100) does not fit in 256 bits: NO_DATA 1,
+    // decided before any pool is read, with no TWAP and no pool named.
+    let w = World::new();
+    let c = w.deploy();
+    let quiet_edge = U256::from(10_000 + QUIET_BAND_BPS);
+    let read_at = |print: U256, now: u64| {
+        w.vm.set_block_timestamp(now);
+        w.mock_feed_raw(I256::from_raw(print), now - 7 * 3600);
+        let before = w.vm.call_log().len();
+        let (session, reason, ans, _, _, twap, liq, clamped, pool) = c.state().unwrap();
+        let pool_reads = w
+            .vm
+            .call_log()
+            .split_off(before)
+            .iter()
+            .filter(|(to, _)| *to == POOL)
+            .count();
+        (
+            (session, reason, ans, twap, liq, clamped, pool),
+            pool_reads,
+        )
+    };
+    let no_data = (
+        SESSION_NO_DATA,
+        REASON_FEED_INVALID,
+        U256::ZERO,
+        U256::ZERO,
+        0u128,
+        false,
+        Address::ZERO,
+    );
+    let absurd = I256::MAX.into_raw();
+    assert_eq!(read_at(absurd, NOW), (no_data, 0), "I256::MAX, quiet band");
+    assert!(matches!(
+        c.latest_round_data().expect_err("band overflow"),
+        AfterHoursError::NoData(NoData {
+            reason: REASON_FEED_INVALID
+        })
+    ));
+    assert!(matches!(
+        c.price().expect_err("band overflow"),
+        AfterHoursError::NoData(NoData {
+            reason: REASON_FEED_INVALID
+        })
+    ));
+
+    // The edge is exact: the largest print whose narrow upper edge fits reads the
+    // pool (its price sits far under the band and is clamped to the lower edge);
+    // one more refuses without reading it.
+    let largest = U256::MAX / quiet_edge;
+    let (read, pool_reads) = read_at(largest, NOW);
+    assert_eq!(
+        (read.0, read.1, read.2, read.5, read.6),
+        (
+            SESSION_ONCHAIN_TWAP,
+            REASON_NONE,
+            largest * U256::from(10_000 - QUIET_BAND_BPS) / U256::from(10_000u64),
+            true,
+            POOL
+        )
+    );
+    assert!(pool_reads > 0, "a print that fits reaches the pool");
+    assert_eq!(
+        read_at(largest + U256::from(1u64), NOW),
+        (no_data, 0),
+        "one more than the largest"
+    );
+    // At 22:00 UTC the wide band applies to the same print, and its upper edge
+    // (x 11000) does not fit: the guard uses the band that applies.
+    assert_eq!(
+        read_at(largest, NOW + 6 * 3600),
+        (no_data, 0),
+        "the wide band after the close"
+    );
+}
+
+#[test]
 fn price_refuses_exactly_when_answer_times_scale_does_not_fit() {
     // The largest answer whose product with the 1e16 scale fits in 256 bits is
     // priced; one more refuses with NoData(6) while latestRoundData() answers.
@@ -1684,51 +1785,70 @@ fn a_ten_for_one_split_moves_nothing() {
 
 #[test]
 fn a_reinvested_dividend_is_counted_once() {
-    // A 0.8% dividend reinvested: the multiplier goes from 1.0 to 1.008 and the
-    // token's price rises 0.8%, in the feed (33,252,000,000 x 1.008) and in the
-    // pool (80 ticks). price() is that price times the scale, not times 1.008
-    // again, and the pool's price meets the band as it is, not divided by 1.008.
+    // Chainlink's model of a reinvested 0.8% dividend: on the ex-date the equity
+    // drops by about the dividend ($332.52 -> $329.88) while the token's
+    // uiMultiplier rises from 1.0 to 1.008, so the token's price, the equity's
+    // times the multiplier, stays about continuous: the feed prints
+    // 32,988,000,000 x 1.008 = 33,251,904,000. The pool trades the same raw
+    // tokens and keeps its price. The dividend is inside the token price once:
+    // price() is the feed times the scale, not times 1.008 again, and the
+    // pool's price meets the band as it is, not divided by 1.008. (The
+    // superseded per-share model multiplied price() by 1.008 here.)
     let w = World::new();
     let c = w.deploy();
     let scale = u(MORPHO_SCALE);
-    let after: u64 = 33_518_016_000;
-    assert_eq!(after, FRIDAY_ANSWER * 1008 / 1000);
-    w.mock_multiplier(1_008_000_000_000_000_000);
-    w.mock_feed(after as i128, NOW - 120);
+    let dividend_x: u128 = 1_008_000_000_000_000_000;
+    let ex_equity: u64 = 32_988_000_000;
+    let token: u64 = 33_251_904_000;
     assert_eq!(
-        read_all(&c),
-        (
-            SESSION_LIVE_FEED,
-            REASON_NONE,
-            U256::from(after),
-            U256::ZERO,
-            false,
-            Some(U256::from(after) * scale)
-        )
+        u128::from(ex_equity) * dividend_x / ONE_X,
+        u128::from(token),
+        "the token price is the equity's times the multiplier"
     );
-    // the print ages; the pool has risen with the token
-    let up = crate::tickmath::stock_price(
-        crate::tickmath::ratio_q96((AAPL_TICK - 80) as i32).unwrap(),
+    // before the ex-date: multiplier 1.0, the Friday print
+    w.mock_multiplier(ONE_X);
+    w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120);
+    assert_eq!(
+        c.price().unwrap(),
+        U256::from(FRIDAY_ANSWER) * scale
+    );
+
+    // the ex-date: the feed prints the token price, about continuous, and the
+    // pool keeps the token price; the answer is the same whatever the
+    // multiplier says (1.0, the new 1.008, AAPL's 1.00057, or 10)
+    w.mock_observe(AAPL_TICK, MIN_LIQUIDITY);
+    let live = (
+        SESSION_LIVE_FEED,
+        REASON_NONE,
+        U256::from(token),
+        U256::ZERO,
         false,
-        18,
-        6,
-        8,
-    )
-    .unwrap();
-    assert_eq!(up, U256::from(33_362_317_856u64), "80 ticks up: +0.80%");
-    w.mock_observe(AAPL_TICK - 80, MIN_LIQUIDITY);
-    w.mock_feed(after as i128, NOW - 40 * 3600);
-    assert_eq!(
-        read_all(&c),
-        (
-            SESSION_ONCHAIN_TWAP,
-            REASON_NONE,
-            up,
-            up,
-            false,
-            Some(up * scale)
-        )
+        Some(U256::from(token) * scale),
     );
+    let pooled = (
+        SESSION_ONCHAIN_TWAP,
+        REASON_NONE,
+        U256::from(AAPL_TWAP),
+        U256::from(AAPL_TWAP),
+        false,
+        Some(U256::from(AAPL_TWAP) * scale),
+    );
+    for m in [ONE_X, dividend_x, AAPL_MULT, TEN_X] {
+        w.mock_multiplier(m);
+        w.mock_feed(token as i128, NOW - 120);
+        let before = w.vm.call_log().len();
+        assert_eq!(read_all(&c), live, "fresh print, multiplier {m}");
+        assert!(
+            w.vm.call_log()
+                .split_off(before)
+                .iter()
+                .all(|(to, _)| *to != POOL),
+            "LIVE_FEED reads no pool, multiplier {m}"
+        );
+        // the print ages past liveMaxAge: the pool's own price, not clamped
+        w.mock_feed(token as i128, NOW - 40 * 3600);
+        assert_eq!(read_all(&c), pooled, "print 40 h old, multiplier {m}");
+    }
 }
 
 #[test]
@@ -1780,6 +1900,97 @@ fn the_share_multiplier_is_never_read() {
             .all(|data| *data == oraclePausedCall {}.abi_encode()),
         "the stock is read for its pause flag only"
     );
+}
+
+#[test]
+fn the_reserved_codes_keep_their_numbers_and_5_is_never_raised() {
+    // Integrators, and the superseded instance's refusals, decode these numbers:
+    // renumbering would silently change what NoData(6) means.
+    for (name, code, pinned) in [
+        ("REASON_MULTIPLIER_CHANGED", REASON_MULTIPLIER_CHANGED, 5u8),
+        ("REASON_PRICE_OVERFLOW", REASON_PRICE_OVERFLOW, 6),
+        ("CONFIG_BAD_MULTIPLIER", CONFIG_BAD_MULTIPLIER, 14),
+    ] {
+        assert_eq!(code, pinned, "{name}");
+    }
+    // Outside comments, the contract's source names the two reserved codes only
+    // where it defines them: no code path raises either.
+    const SOURCE: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/src/lib.rs"));
+    for name in ["REASON_MULTIPLIER_CHANGED", "CONFIG_BAD_MULTIPLIER"] {
+        let uses: Vec<&str> = SOURCE
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.starts_with("//") && line.contains(name))
+            .collect();
+        assert_eq!(uses.len(), 1, "{name} outside its definition: {uses:?}");
+        assert!(
+            uses[0].starts_with(&format!("pub const {name}: u8 = ")),
+            "{uses:?}"
+        );
+    }
+    // And no read raises 5, through state() or any surface that reverts, in
+    // every session and refusal, with the token's multiplier at 10.
+    let scenarios: [(&str, fn(&World)); 10] = [
+        ("live", |w: &World| w.mock_feed(FRIDAY_ANSWER as i128, NOW - 120)),
+        ("pool", |_: &World| {}),
+        ("clamped", |w: &World| {
+            w.mock_observe(AAPL_TICK + 2000, MIN_LIQUIDITY)
+        }),
+        ("paused", |w: &World| w.mock_paused(true)),
+        ("feed invalid", |w: &World| w.mock_feed(0, NOW - 60)),
+        ("thin", |w: &World| {
+            w.mock_observe(AAPL_TICK, MIN_LIQUIDITY - 1)
+        }),
+        ("unobservable", |w: &World| w.mock_observe_reverts()),
+        ("anchor stale", |w: &World| {
+            w.mock_feed(FRIDAY_ANSWER as i128, NOW - MAX_ANCHOR_AGE - 1)
+        }),
+        ("band overflow", |w: &World| {
+            w.mock_feed_raw(I256::MAX, NOW - 40 * 3600)
+        }),
+        ("price overflow", |w: &World| w.mock_feed_raw(I256::MAX, NOW - 60)),
+    ];
+    let mut raised = Vec::new();
+    for (name, setup) in scenarios {
+        let w = World::new();
+        let c = w.deploy();
+        w.mock_multiplier(TEN_X);
+        w.mock_feed(FRIDAY_ANSWER as i128, NOW - 40 * 3600);
+        setup(&w);
+        let (_, reason, ..) = c.state().unwrap();
+        raised.push((name, reason));
+        let refusals = [
+            c.latest_round_data().err(),
+            c.latest_answer().err(),
+            c.latest_timestamp().err(),
+            c.latest_round().err(),
+            c.price().err(),
+            c.get_round_data(U80::from(ROUND)).err(),
+        ];
+        for err in refusals.into_iter().flatten() {
+            if let AfterHoursError::NoData(NoData { reason }) = err {
+                raised.push((name, reason));
+            }
+        }
+    }
+    assert!(
+        raised.iter().all(|(_, r)| *r != REASON_MULTIPLIER_CHANGED),
+        "{raised:?}"
+    );
+    // the scenarios reach every other code, so the check above covers them all
+    for code in [
+        REASON_NONE,
+        REASON_FEED_INVALID,
+        REASON_POOL_TOO_THIN,
+        REASON_TWAP_UNAVAILABLE,
+        REASON_ANCHOR_STALE,
+        REASON_PRICE_OVERFLOW,
+    ] {
+        assert!(
+            raised.iter().any(|(_, r)| *r == code),
+            "code {code} not reached: {raised:?}"
+        );
+    }
 }
 
 // ---- several pools ------------------------------------------------------------------

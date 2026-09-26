@@ -110,9 +110,9 @@ def main():
     BLOCK = head["number"]
     print("block %d (%s UTC)" % (int(BLOCK, 16), datetime.fromtimestamp(int(head["timestamp"], 16), timezone.utc).strftime("%Y-%m-%d %H:%M")))
 
-    s0, liq, spacing, fee, t0, mult = batch([
+    s0, liq, spacing, fee, t0 = batch([
         (pool, selector("slot0()")), (pool, selector("liquidity()")), (pool, selector("tickSpacing()")),
-        (pool, selector("fee()")), (pool, selector("token0()")), (a.stock, selector("uiMultiplier()"))])
+        (pool, selector("fee()")), (pool, selector("token0()"))])
     w = words(s0)
     sqrt_p = w[0] / 2 ** 96                      # sqrt(token1 raw per token0 raw)
     tick = signed(w[1], 256)
@@ -120,14 +120,13 @@ def main():
     spacing = signed(words(spacing)[0], 256)
     fee = words(fee)[0] / 1e6
     stock_is_token0 = ("0x" + t0[-40:]).lower() == a.stock.lower()
-    m = words(mult)[0] / 1e18
 
-    def usd_per_share(sp):
+    def usd_per_token(sp):
+        """USDG per token of raw balance (1e18 raw units), the unit the feed prices."""
         p = sp * sp                                # token1 raw per token0 raw
-        raw = p * 10 ** (STOCK_DEC - QUOTE_DEC) if stock_is_token0 else 10 ** (STOCK_DEC - QUOTE_DEC) / p
-        return raw / m
+        return p * 10 ** (STOCK_DEC - QUOTE_DEC) if stock_is_token0 else 10 ** (STOCK_DEC - QUOTE_DEC) / p
 
-    price0 = usd_per_share(sqrt_p)
+    price0 = usd_per_token(sqrt_p)
     # every initialized tick in the pool's range
     word_ids = list(range((-MAX_TICK // spacing) >> 8, (MAX_TICK // spacing >> 8) + 1))
     bitmaps = batch([(pool, selector("tickBitmap(int16)") + enc_int(wd)) for wd in word_ids])
@@ -139,10 +138,10 @@ def main():
                 ticks.append(((wd << 8) + bit) * spacing)
     nets = batch([(pool, selector("ticks(int24)") + enc_int(t)) for t in ticks])
     net = {t: signed(words(r)[1], 256) for t, r in zip(ticks, nets)}
-    print("pool %s  fee %.2f%%  spacing %d  tick %d  in-range L %.3e  share multiplier %.8f"
-          % (pool, fee * 100, spacing, tick, L, m))
-    span = sorted((usd_per_share(1.0001 ** (t / 2)) / price0 - 1) * 100 for t in (min(ticks), max(ticks)))
-    print("price now $%.4f per share; %d initialized ticks, from %+.4g%% to %+.4g%% of the price; floor %.0e\n"
+    print("pool %s  fee %.2f%%  spacing %d  tick %d  in-range L %.3e"
+          % (pool, fee * 100, spacing, tick, L))
+    span = sorted((usd_per_token(1.0001 ** (t / 2)) / price0 - 1) * 100 for t in (min(ticks), max(ticks)))
+    print("price now $%.4f per token; %d initialized ticks, from %+.4g%% to %+.4g%% of the price; floor %.0e\n"
           % (price0, len(ticks), span[0], span[1], a.floor))
 
     def swap_in(up, l, sp_from, sp_to):
@@ -158,13 +157,13 @@ def main():
         sp, l, a0, a1 = sqrt_p, L, 0.0, 0.0
         order = sorted((t for t in ticks if (t > tick if up else t <= tick)), reverse=not up)
         for t in order:
-            yield usd_per_share(sp) / price0 - 1, l, a0, a1, sp
+            yield usd_per_token(sp) / price0 - 1, l, a0, a1, sp
             nxt = 1.0001 ** (t / 2)
             d0, d1 = swap_in(up, l, sp, nxt)
             a0, a1 = a0 + d0, a1 + d1
             sp = nxt
             l = max(l + net[t] if up else l - net[t], 0)
-        yield usd_per_share(sp) / price0 - 1, l, a0, a1, sp
+        yield usd_per_token(sp) / price0 - 1, l, a0, a1, sp
 
     def sqrt_at(move):
         """sqrtP at which the stock's price is price0 * (1 + move)."""
@@ -174,8 +173,8 @@ def main():
     def cost(a0, a1):
         """USD value, at today's price, of what the swapper put in (token0/token1 raw amounts)."""
         if stock_is_token0:
-            return a0 / 10 ** STOCK_DEC * price0 * m + a1 / 10 ** QUOTE_DEC
-        return a0 / 10 ** QUOTE_DEC + a1 / 10 ** STOCK_DEC * price0 * m
+            return a0 / 10 ** STOCK_DEC * price0 + a1 / 10 ** QUOTE_DEC
+        return a0 / 10 ** QUOTE_DEC + a1 / 10 ** STOCK_DEC * price0
 
     def stay_needed(l):
         """Seconds at liquidity l (Uniswap counts max(l, 1)) that pull one 600 s

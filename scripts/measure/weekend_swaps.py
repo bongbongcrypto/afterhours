@@ -9,7 +9,6 @@ fill against those two true prints. Read-only, stdlib only, run from the PC.
 Selectors/topics computed with ethers on the server, not recalled:
   latestRoundData()     0xfeaf968c      getRoundData(uint80)  0x9a6fc8f5
   getPool(addr,addr,u24) 0x1698ee82     token0()              0x0dfe1681
-  uiMultiplier()        0xa60bf13d
   Swap(address,address,int256,int256,uint160,uint128,int24)
     topic0 0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67
 """
@@ -139,8 +138,6 @@ for fee in FEES:
         pool = "0x" + res[-40:]
         t0 = "0x" + call(pool, "0x0dfe1681")[-40:]
         pools.append((fee, pool, t0.lower() == USDG.lower()))
-mult = call(AAPL, "0xa60bf13d")
-print("AAPL uiMultiplier raw = %d" % int(mult, 16))
 for fee, pool, usdg_is_0 in pools:
     print("pool %.2f%% %s  token0=%s" % (fee / 1e4, pool, "USDG" if usdg_is_0 else "AAPL"))
 

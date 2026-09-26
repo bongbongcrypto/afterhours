@@ -7,15 +7,13 @@ price next to the Chainlink SPY feed. Read-only, stdlib; selectors from
 keccak.py.
 """
 import io
-import json
 import sys
-import time
-import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jsonrpc import post  # noqa: E402  (backs off on HTTP 429)
 from keccak import selector  # noqa: E402
 
 RPC = "https://rpc.mainnet.chain.robinhood.com"
@@ -24,12 +22,8 @@ SPY_FEED = "0x319724394D3A0e3669269846abE664Cd621f9f6A"
 
 
 def call(to, data):
-    time.sleep(0.3)
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": to, "data": data}, "latest"]}).encode()
-    req = urllib.request.Request(RPC, body, {"content-type": "application/json",
-                                             "user-agent": "curl/8"})
-    out = json.load(urllib.request.urlopen(req, timeout=40))
+    out = post(RPC, {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                     "params": [{"to": to, "data": data}, "latest"]}, pause=0.3)
     return out.get("result"), out.get("error")
 
 

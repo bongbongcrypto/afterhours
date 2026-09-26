@@ -7,12 +7,12 @@ Read-only, stdlib. Selectors computed with ethers on the server:
   description() 0x7284e416
 """
 import io
-import json
 import sys
-import time
-import urllib.request
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jsonrpc import post  # noqa: E402  (backs off on HTTP 429)
 RPC = "https://rpc.mainnet.chain.robinhood.com"
 POOL = "0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d"   # AAPL/USDG 0.05%
 STOCK = "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"
@@ -21,12 +21,8 @@ WINDOWS = [1800, 600, 60]
 
 
 def call(to, data):
-    time.sleep(0.3)
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": to, "data": data}, "latest"]}).encode()
-    req = urllib.request.Request(RPC, body, {"content-type": "application/json",
-                                             "user-agent": "curl/8"})
-    out = json.load(urllib.request.urlopen(req, timeout=40))
+    out = post(RPC, {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                     "params": [{"to": to, "data": data}, "latest"]}, pause=0.3)
     if "error" in out:
         raise RuntimeError(out["error"])
     return out["result"]

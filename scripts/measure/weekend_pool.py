@@ -10,12 +10,13 @@ Selectors computed with ethers on the server, not recalled:
   latestRoundData()                0xfeaf968c
 """
 import io
-import json
 import sys
-import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jsonrpc import post  # noqa: E402  (backs off on HTTP 429)
 RPC = "https://rpc.mainnet.chain.robinhood.com"
 AAPL = "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"
 USDG = "0x5fc5360D0400a0Fd4f2af552ADD042D716F1d168"
@@ -29,12 +30,8 @@ CALLS = 0
 def call(to, data):
     global CALLS
     CALLS += 1
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": to, "data": data}, "latest"]}).encode()
-    req = urllib.request.Request(RPC, body, {"content-type": "application/json",
-                                             "user-agent": "curl/8"})
-    out = json.load(urllib.request.urlopen(req, timeout=25))
-    return out.get("result")
+    return post(RPC, {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                      "params": [{"to": to, "data": data}, "latest"]}).get("result")
 
 
 def addr(a):

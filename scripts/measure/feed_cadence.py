@@ -7,12 +7,13 @@ the actual weekend cadence is visible instead of assumed. Read-only, stdlib.
   getRoundData(uint80)  0x9a6fc8f5
 """
 import io
-import json
 import sys
-import urllib.request
 from datetime import datetime, timezone
+from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from jsonrpc import post  # noqa: E402  (backs off on HTTP 429)
 RPC = "https://rpc.mainnet.chain.robinhood.com"
 FEED = "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0"  # AAPL/USD
 CALLS = 0
@@ -21,11 +22,8 @@ CALLS = 0
 def call(data):
     global CALLS
     CALLS += 1
-    body = json.dumps({"jsonrpc": "2.0", "id": 1, "method": "eth_call",
-                       "params": [{"to": FEED, "data": data}, "latest"]}).encode()
-    req = urllib.request.Request(RPC, body, {"content-type": "application/json",
-                                             "user-agent": "curl/8"})
-    return json.load(urllib.request.urlopen(req, timeout=25)).get("result")
+    return post(RPC, {"jsonrpc": "2.0", "id": 1, "method": "eth_call",
+                      "params": [{"to": FEED, "data": data}, "latest"]}).get("result")
 
 
 def dec(res):

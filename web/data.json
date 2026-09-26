@@ -40,7 +40,7 @@
    "stockDecimals": 18,
    "minLiquidity": "50000000000000000",
    "depth2pctUsd": 308123,
-   "oracle": null
+   "oracle": "0x88b628472e595725178cc3e5e2ec70ada67f80f0"
   },
   {
    "symbol": "NVDA",

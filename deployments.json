@@ -4,6 +4,22 @@
       "asset": "AAPL",
       "chainId": 4663,
       "network": "robinhood-mainnet",
+      "address": "0x88b628472e595725178cc3e5e2ec70ada67f80f0",
+      "rpc": "https://rpc.mainnet.chain.robinhood.com",
+      "deployTx": "0x6929dee2e3c399cd60d2f38d646f6634e810c0b07b585fff531737974695d572",
+      "activateTx": "0x63a37a1c65d090c9d0365c8174a6fe94b56636d7c23cf60b5617b3b710eaf3db",
+      "initializeTx": "0x1597e10caf4687593e54d0b9aacb4d5d41e4ce1f5daceb9fdca70052a953a83c",
+      "morphoMarketId": "0x3d9b0c04e374f7b50fa7a635393d2ecae23f45289e4e23f83793a6a611010918",
+      "morphoCreateMarketTx": "0x6ac7a5f03bd021d0b3cdc0d28ba76a4b8f43a1840cb7372fb9c95091df8ba09f",
+      "wasmSha256": "b44e30c8d4090187ac1203915963f8c2288dbfa3582ae9e84de82e203f1a0325",
+      "sourceCommit": "3388ded852ccad484d5cc0b4981ca98fbd9928c2",
+      "deployedAt": "2026-09-26T22:50:27Z",
+      "deployBlock": 73453764
+    },
+    {
+      "asset": "AAPL",
+      "chainId": 4663,
+      "network": "robinhood-mainnet",
       "address": "0x69190621e300cd2bc4cbb80777b517691ee80f65",
       "rpc": "https://rpc.mainnet.chain.robinhood.com",
       "deployTx": "0x6ee581c608ab8da6b27671e291024effd7b165007cff27ce377deb7e685a379e",
@@ -12,8 +28,10 @@
       "morphoMarketId": "0x516829adb04c8351c09747755eed21f4514370e2df11a73c89054fef7de316bc",
       "morphoCreateMarketTx": "0xe7cc78e6bce947d8b1d95f5853d9ce0f11b30fdb2bc730fc69c2d085ebb65419",
       "wasmSha256": "66848ef80af973d90ce715568723021ada8e2647cf0bef2d460d95e498acac2b",
+      "sourceCommit": "38ec3f9",
       "deployedAt": "2026-09-25T22:56:08Z",
-      "superseded": "per-share unit model: it divides the pool's price by the token's uiMultiplier and multiplies price() by it, while Chainlink's Robinhood feed already prices one token of raw balance (REVIEWS.md, 2026-09-27). Its Morpho market holds no supply. Do not integrate it."
+      "superseded": "per-share unit model: it divides the pool's price by the token's uiMultiplier and multiplies price() by it, while Chainlink's Robinhood feed already prices one token of raw balance (REVIEWS.md, 2026-09-27). Its Morpho market holds no supply. Do not integrate it.",
+      "supersededBy": "0x88b628472e595725178cc3e5e2ec70ada67f80f0"
     }
   ]
 }

@@ -6,3 +6,4 @@ Recorded every 10 minutes from a server with `scripts/probe.py --json` against t
 |---|---|---|---|---|---|---|---|
 | 2026-09-26 23:00 | AAPL | ONCHAIN_TWAP | 340.3284 | 341.4532 | 27.2 | 0xaae0d815 | 6.68e+17 |
 | 2026-09-26 23:10 | AAPL | ONCHAIN_TWAP | 340.3625 | 341.4532 | 27.3 | 0xaae0d815 | 6.68e+17 |
+| 2026-09-26 23:20 | AAPL | ONCHAIN_TWAP | 340.3625 | 341.4532 | 27.5 | 0xaae0d815 | 6.68e+17 |

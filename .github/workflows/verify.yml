@@ -1,0 +1,55 @@
+name: verify
+
+# Anyone can check that the contract on Robinhood Chain mainnet is this source.
+# Checks out the commit DEPLOYMENTS.md names, repeats the deploy job's build
+# setup (same toolchain, same cargo-stylus, same lockfile step), rebuilds it
+# in cargo-stylus' reproducible Docker image and compares the result byte for
+# byte with the deployment transaction (`cargo stylus verify`). Read-only: no
+# key, no transaction. Blockscout on this chain has no Stylus verifier, so
+# this job is the public verification.
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_STYLUS_VERSION: 0.10.9
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: the commit, transaction and endpoint the deployment record names
+        id: rec
+        run: |
+          commit=$(grep -oE 'from commit `[0-9a-f]{7,40}`' DEPLOYMENTS.md | grep -oE '[0-9a-f]{7,40}' | head -1)
+          tx=$(python3 -c 'import json; print(json.load(open("deployments.json"))["deployments"][0]["deployTx"])')
+          rpc=$(python3 -c 'import json; print(json.load(open("deployments.json"))["deployments"][0]["rpc"])')
+          addr=$(python3 -c 'import json; print(json.load(open("deployments.json"))["deployments"][0]["address"])')
+          test -n "$commit" && test -n "$tx" && test -n "$rpc"
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+          echo "tx=$tx" >> "$GITHUB_OUTPUT"
+          echo "rpc=$rpc" >> "$GITHUB_OUTPUT"
+          echo "verifying $addr: deployment tx $tx, source at commit $commit"
+      - name: check out the deployed source
+        run: git checkout --detach "${{ steps.rec.outputs.commit }}"
+      - uses: dtolnay/rust-toolchain@1.91.0
+        with:
+          targets: wasm32-unknown-unknown
+      - name: cache cargo-stylus
+        id: stylus-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-stylus
+          key: cargo-stylus-${{ env.CARGO_STYLUS_VERSION }}-${{ runner.os }}
+      - name: install cargo-stylus
+        if: steps.stylus-cache.outputs.cache-hit != 'true'
+        run: cargo install cargo-stylus --version "$CARGO_STYLUS_VERSION" --locked
+      - name: lockfile (the same minimal update the deploy job made)
+        run: cargo update --workspace
+      - name: cargo stylus verify against the mainnet deployment
+        run: |
+          cargo stylus verify --endpoint "${{ steps.rec.outputs.rpc }}" \
+            --deployment-tx "${{ steps.rec.outputs.tx }}" 2>&1 | tee verify.log
+          grep -q "Verification successful" verify.log

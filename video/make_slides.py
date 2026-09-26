@@ -212,7 +212,7 @@ def slides():
 
     S.append(demo_slide())
 
-    S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours-oracle</b></div>
+    S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours</b></div>
 <h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
   <div class="col"><div class="t">76 tests + 90 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a stock split asserted, gas per read measured.</p></div>
@@ -225,7 +225,7 @@ def slides():
     S.append("""<div class="kicker">What it unlocks</div>
 <h2>Lending that can liquidate on Saturday.<br>Automation that runs seven days.<br>One answer to what a stock is worth while the exchange is closed.</h2>
 <div class="grow"></div>
-<div class="sub">AfterHours — <span class="mono" style="color:var(--fog)">github.com/bongbongcrypto/afterhours-oracle</span></div>""")
+<div class="sub">AfterHours — <span class="mono" style="color:var(--fog)">github.com/bongbongcrypto/afterhours</span></div>""")
     return S
 
 

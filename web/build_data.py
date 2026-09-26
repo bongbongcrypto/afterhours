@@ -69,7 +69,7 @@ def main():
         "chainId": 4663,
         "rpc": "https://rpc.mainnet.chain.robinhood.com",
         "explorer": "https://robinhoodchain.blockscout.com",
-        "repo": "https://github.com/bongbongcrypto/afterhours-oracle",
+        "repo": "https://github.com/bongbongcrypto/afterhours",
         "quote": {"symbol": "USDG", "address": manifest["quote"], "decimals": 6},
         "params": {k: manifest["defaults"][k] for k in PARAM_KEYS},
         "hero": HERO,

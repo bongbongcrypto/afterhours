@@ -4,6 +4,15 @@
 Chainlink while the market is open; the on-chain pool, bounded, while it is closed.
 Arbitrum Stylus (Rust). Chainlink `AggregatorV3Interface` (+ v2 getters) and Morpho Blue `IOracle` compatible.
 
+## Start here
+
+| | |
+|---|---|
+| Live page (your browser reads Robinhood Chain directly) | https://bongbongcrypto.github.io/afterhours/ |
+| The AAPL instance on Robinhood Chain mainnet (4663) | [`0x69190621e300cd2bc4cbb80777b517691ee80f65`](https://robinhoodchain.blockscout.com/address/0x69190621e300cd2bc4cbb80777b517691ee80f65); deployment, activation, `initialize` and the Morpho AAPL/USDG market it prices: [DEPLOYMENTS.md](DEPLOYMENTS.md) |
+| Read it yourself (Python stdlib only) | `python scripts/probe.py --oracle 0x69190621e300cd2bc4cbb80777b517691ee80f65` prints the feed, the pool and what AfterHours answers, side by side |
+| Tests | 76 unit and property tests in CI; 90 on-chain assertions on a local ArbOS 61 node in e2e ([Actions](https://github.com/bongbongcrypto/afterhours/actions)) |
+
 ## Why
 
 Robinhood Chain trades tokenized US stocks 24/7. Their Chainlink feeds follow US

@@ -3,7 +3,7 @@
  "chainId": 4663,
  "rpc": "https://rpc.mainnet.chain.robinhood.com",
  "explorer": "https://robinhoodchain.blockscout.com",
- "repo": "https://github.com/bongbongcrypto/afterhours-oracle",
+ "repo": "https://github.com/bongbongcrypto/afterhours",
  "quote": {
   "symbol": "USDG",
   "address": "0x5fc5360d0400a0fd4f2af552add042d716f1d168",

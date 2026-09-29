@@ -21,3 +21,4 @@ Units: the AAPL rows up to 2026-09-26 19:51 come from the first instance (`0x691
 | 2026-09-29 01:57 | AAPL | ONCHAIN_TWAP | 338.1912 | 338.9518 | 6.7 | 0xaae0d815 | 6.79e+17 |
 | 2026-09-29 08:30 | AAPL | LIVE_FEED | 337.2158 | 337.2158 | 0.3 |  |  |
 | 2026-09-29 15:51 | AAPL | LIVE_FEED | 331.9978 | 331.9978 | 1.4 |  |  |
+| 2026-09-29 20:47 | AAPL | LIVE_FEED | 330.2568 | 330.2568 | 1.2 |  |  |

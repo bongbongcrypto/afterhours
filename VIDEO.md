@@ -1,16 +1,18 @@
 # Demo video
 
 The narration and its Korean gloss live in one place, `video/script.json`
-(8 slides, 30 lines, 2:40). This file only describes how the video is made and
+(9 slides, 33 lines, about three minutes). The submitted cut carries English
+subtitles only; the Korean gloss is for the owner's review copy. This file only describes how the video is made and
 what has to stay true when it is cut again.
 
 ## Pipeline
 
 | step | tool | output |
 |---|---|---|
-| slides | `video/make_slides.py` (Refero "Linear" mood, headless Edge). Slide 6 draws the weekend from `status/10min.md` and looks every figure up in `status/reopen_check.txt` before drawing it; its strip shows `video/probe.txt` | `video/out/slide-*.png` |
+| page captures | `video/capture_page.py` (headless Chrome over the DevTools protocol, stdlib): the published live page after its chain reads land, at the top, at the band gauge and at the stocks table | `video/out/page-1..3.png` |
+| slides | `video/make_slides.py` (Refero "Linear" mood, headless Edge). Slide 6 draws the weekend from `status/10min.md` and looks every figure up in `status/reopen_check.txt` before drawing it; its strip shows `video/probe.txt`. The tour frames put the page captures under a one-line caption | `video/out/slide-1..8.png`, `video/out/tour-1..3.png` |
 | narration | `video/make_narration.sh` (edge-tts `en-US-AndrewNeural`, run where edge-tts is installed: `REMOTE=<ssh host> bash video/make_narration.sh`) | `video/narration/SS-LL.mp3`, one per line |
-| assembly | `video/make_video.py` (ffmpeg; English line and Korean gloss in one subtitle event) | `video/afterhours-demo.mp4` |
+| assembly | `video/make_video.py` (ffmpeg; English subtitles; `--gloss` adds the Korean line under each). A script slide with `shots` shows one tour frame per narration line | `video/afterhours-demo.mp4` (`.gloss.mp4` with `--gloss`) |
 
 ## Rules for any cut
 
@@ -32,5 +34,10 @@ what has to stay true when it is cut again.
   (73 unit and property tests, 90 e2e assertions, mainnet gas, 14 stocks that meet
   the bar and 18 that pass `initialize`, eleven independent review rounds and one
   self-review).
+- The tour (slide 7) shows the published page, captured the day the cut is
+  made, with the current instance in its header; it is never a mock-up.
+- The Morpho figures on slide 4 are the `morpho_markets.py --borrows-since
+  2026-09-16` output kept in `status/morpho-2026-09-30.txt`; the weekend
+  flows on slide 3 are `weekend_swaps.py` for the four September weekends.
 - A changed line gets the english-slop pass and a Korean gloss in `script.json`;
   its narration clip and the assembled video are rendered again.

@@ -33,20 +33,20 @@
           "피드가 자는 동안에도 토큰은 계속 거래됩니다."
         ],
         [
-          "Four to five million dollars of Apple alone, every weekend, in tens of thousands of swaps, at prices that move.",
-          "애플 하나만 주말마다 400~500만 달러, 수만 건의 스왑, 그리고 가격은 움직입니다."
+          "Between half a million and five million dollars of Apple alone, every weekend in September, at prices that move.",
+          "애플 하나만 9월 주말마다 50만~500만 달러가, 움직이는 가격에 거래됐습니다."
         ]
       ]
     },
     {
       "lines": [
         [
-          "Lending against these tokens has started: eighty-three Morpho markets take them as collateral.",
-          "이 토큰을 담보로 한 대출은 이미 있습니다. Morpho 시장 83개."
+          "Borrowing against these tokens has arrived: seven hundred and thirty thousand dollars, across eighty-one Morpho markets.",
+          "이 토큰을 담보로 한 대출이 들어왔습니다. Morpho 시장 81개에 73만 달러."
         ],
         [
-          "But only six thousand dollars is borrowed, against eight hundred and eighty thousand supplied.",
-          "그런데 공급 88만 달러에 대출은 6천 달러뿐입니다."
+          "Three hundred thousand of it was borrowed on a Sunday, while Apple's feed had been silent since Friday.",
+          "그중 30만 달러는 일요일에 빌려졌습니다. 애플 피드는 금요일부터 멈춰 있었습니다."
         ],
         [
           "Their oracles keep Friday's price all weekend, or read a raw pool price with no bound.",
@@ -107,6 +107,27 @@
         [
           "AfterHours' last weekend answer was zero point one nine percent below it; Friday's price was zero point three percent above.",
           "AfterHours의 주말 마지막 답은 그보다 0.19% 낮았고, 금요일 가격은 0.3% 높았습니다."
+        ]
+      ]
+    },
+    {
+      "shots": [
+        "tour-1.png",
+        "tour-2.png",
+        "tour-3.png"
+      ],
+      "lines": [
+        [
+          "You can check it from your own browser: the live page reads Robinhood Chain directly.",
+          "직접 확인할 수 있습니다. 라이브 페이지는 브라우저에서 로빈후드 체인을 바로 읽습니다."
+        ],
+        [
+          "It shows Chainlink's last print next to the deployed contract's answer, and runs the contract's rules on the same block to check that they agree.",
+          "체인링크의 마지막 가격 옆에 배포된 컨트랙트의 답을 보여 주고, 같은 블록에서 컨트랙트 규칙을 돌려 둘이 같은지 확인합니다."
+        ],
+        [
+          "Below, the same rules price every stock that qualifies; only Apple is deployed so far.",
+          "아래 표는 조건을 갖춘 모든 종목에 같은 규칙을 돌립니다. 배포된 것은 아직 애플뿐입니다."
         ]
       ]
     },

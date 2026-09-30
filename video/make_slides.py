@@ -9,6 +9,10 @@ server's 10-minute record of the deployed instance (status/10min.md).
 
     python video/make_slides.py            # writes video/out/slide-N.html + .png
     python video/make_slides.py --html     # html only (no Edge)
+
+The live-page tour (video/out/tour-N.png) frames screenshots of the published
+page that video/capture_page.py saved as video/out/page-N.png; without them
+the tour is skipped and make_video.py stops at the slide that needs it.
 """
 import io
 import os
@@ -47,6 +51,9 @@ h2 { font-size:64px; line-height:1; letter-spacing:-0.022em; font-weight:510; ma
 .grow { flex:1; }
 .foot { display:flex; justify-content:space-between; align-items:flex-end; font-size:20px; color:var(--ash); letter-spacing:-0.012em; }
 .foot .n { color:var(--fog); }
+table.tight { margin-top:28px; } table.tight td { padding:10px 40px 10px 0; }
+.shot { margin-top:28px; flex:1; min-height:0; display:flex; justify-content:center; align-items:flex-start; }
+.shot img { max-width:100%; max-height:100%; border:0.5px solid var(--smoke); border-radius:12px; }
 .big { font-size:240px; line-height:1; letter-spacing:-0.03em; font-weight:510; margin-top:40px; }
 .big small { font-size:64px; color:var(--mist); letter-spacing:-0.012em; margin-left:24px; font-weight:400; }
 table { border-collapse:collapse; margin-top:40px; font-size:28px; line-height:1.4; letter-spacing:-0.012em; }
@@ -245,33 +252,36 @@ def slides():
 <div class="sub">A 24/7 price oracle for tokenized stocks.<br>Chainlink while the market is open; the on-chain pool, held near Chainlink's last price, while it is closed.</div>
 <div class="grow"></div>""")
 
-    S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed rounds · <b>scripts/measure/feed_cadence.py</b></div>
+    S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed rounds · <b>scripts/measure/feed_cadence.py</b> · <b>weekend_swaps.py</b></div>
 <h2>The feed stops every weekend.</h2>
 <div class="big">52–57<small>hours silent, every weekend</small></div>
 <table><tr><th>window</th><th>last print → first print</th><th>silence</th></tr>
 <tr><td class="k">Ordinary weekend</td><td>Fri 09-11 19:51 → Mon 09-14 00:00 UTC</td><td class="num">52.2 h</td></tr>
 <tr><td class="k">Ordinary weekend</td><td>Fri 09-18 15:11 → Mon 09-21 00:00 UTC</td><td class="num">56.8 h</td></tr>
+<tr><td class="k">Ordinary weekend</td><td>Fri 09-25 19:49 → Mon 09-28 00:00 UTC</td><td class="num">52.2 h</td></tr>
 <tr><td class="k">Labor Day weekend</td><td>Fri 09-04 19:51 → Tue 09-08 00:00 UTC</td><td class="num">76.2 h</td></tr></table>
 <div class="note">The 24 h heartbeat is not honoured during the closure. That is by design: <b>us_equities_24/5</b>.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">Swap events of the three AAPL/USDG pools inside the silent windows · <b>scripts/measure/weekend_swaps.py</b></div>
 <h2>The token keeps trading while the feed sleeps.</h2>
-<div class="big">$9.3M<small>of one stock, two weekends</small></div>
-<table><tr><th>weekend</th><th>swaps</th><th>volume</th><th>fill vs Monday's opening print</th></tr>
+<div class="big" style="margin-top:24px">$11.9M<small>of one stock, four weekends</small></div>
+<table class="tight"><tr><th>weekend</th><th>swaps</th><th>volume</th><th>fill vs Monday's opening print</th></tr>
 <tr><td class="k">Labor Day (76 h)</td><td class="num">44,338</td><td class="num">$5.14M</td><td>median 0.35% · p90 0.56% · max 1.67%</td></tr>
-<tr><td class="k">09-11 → 09-14 (52 h)</td><td class="num">26,331</td><td class="num">$4.17M</td><td>median 0.45% · p90 0.59% · max 2.26%</td></tr></table>
-<div class="note">The pool price moved through the weekend (+0.56% → −0.23% against the open). <b>Lending contracts ignore it or read it raw.</b></div>
+<tr><td class="k">09-11 → 09-14 (52 h)</td><td class="num">26,331</td><td class="num">$4.17M</td><td>median 0.45% · p90 0.59% · max 2.26%</td></tr>
+<tr><td class="k">09-18 → 09-21 (57 h)</td><td class="num">5,324</td><td class="num">$2.03M</td><td>median 0.15% · p90 0.41% · max 2.63%</td></tr>
+<tr><td class="k">09-25 → 09-28 (52 h)</td><td class="num">1,770</td><td class="num">$0.58M</td><td>median 0.08% · p90 0.25% · max 0.56%</td></tr></table>
+<div class="note">Flow fell through September; every weekend the token still traded at prices that moved. <b>Lending contracts ignore that price or read it raw.</b></div>
 <div class="grow"></div>""")
 
-    S.append("""<div class="kicker">83 funded Morpho markets on stock collateral · <b>scripts/measure/morpho_markets.py</b> · 2026-09-23</div>
+    S.append("""<div class="kicker">81 funded Morpho markets on stock collateral · <b>scripts/measure/morpho_markets.py --borrows-since 2026-09-16</b> · 2026-09-30</div>
 <h2>Lending against stocks lives with the stale price.</h2>
-<div class="big">$6.4k<small>borrowed of $0.88M supplied</small></div>
-<table><tr><th>oracle behind the market</th><th>markets</th><th>supplied</th><th>on a weekend it answers</th></tr>
-<tr><td class="k">custom, reads the Chainlink feed</td><td class="num">16</td><td class="num">$852k</td><td>Friday's print</td></tr>
-<tr><td class="k">Morpho ChainlinkOracleV2</td><td class="num">52</td><td class="num">$27.1k</td><td>Friday's print, no staleness check</td></tr>
-<tr><td class="k">raw Uniswap pool price</td><td class="num">15</td><td class="num">$2.0k</td><td>the pool, no band</td></tr></table>
-<div class="note">Two small custom oracles allow a four-day-old print. Outside these markets, PARE accepts a <b>five-day-old</b> one.</div>
+<div class="big">$732k<small>borrowed of $756k supplied</small></div>
+<table><tr><th>borrowed (UTC)</th><th>amount</th><th>collateral</th><th>AAPL's Chainlink feed</th></tr>
+<tr><td class="k">Sun 09-27 04:57 · one transaction</td><td class="num">$300k</td><td>NVDA · SPCX · AAPL</td><td>silent since Friday 19:49</td></tr>
+<tr><td class="k">Mon 09-28 17:27 · one transaction</td><td class="num">$300k</td><td>GOOGL · AAPL · SPCX</td><td>market open</td></tr>
+<tr><td class="k">the rest since 09-16</td><td class="num">$132k</td><td>mostly NVDA</td><td></td></tr></table>
+<div class="note">A week earlier, $6.4k was borrowed. These markets' oracles answer <b>Friday's print</b> all weekend; outside them, PARE accepts a <b>five-day-old</b> one.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">The product · one contract per asset · <b>drop-in</b> for a Chainlink address</div>
@@ -307,7 +317,7 @@ def slides():
   <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
   <div class="col"><div class="t">11 reviews + 1 self-review</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, units that match Chainlink's per-token feed through dividends and splits. 14 stocks meet the bar today; 18 pass initialize.</p></div>
 </div>
-<div><span class="pill on">live on mainnet · 0x88b6…80f0 · oracle of a Morpho AAPL/USDG market</span><span class="pill">gas per read on mainnet: 118,426 (feed) · 214,652–240,559 (pool)</span><span class="pill">cargo stylus check ✓ 38 KB</span></div>
+<div><span class="pill on">live on mainnet · 0x88b6…80f0 · oracle of a Morpho AAPL/USDG market</span><span class="pill">gas per read on mainnet: 118,426 (feed) · 214,652–247,505 (pool)</span><span class="pill">cargo stylus check ✓ 38 KB</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>
@@ -317,43 +327,68 @@ def slides():
     return S
 
 
+TOUR = [
+    ("The live page · <b>bongbongcrypto.github.io/afterhours</b> · read from Robinhood Chain by your browser", "page-1.png"),
+    ("Chainlink's last print, the deployed instance's <b>state()</b>, and the contract's rules re-run in the page on the same block", "page-2.png"),
+    ("The same rules on every stock that qualifies · <b>only AAPL is deployed</b>", "page-3.png"),
+]
+
+
+def tour_slides():
+    """One framed screenshot per narration line of the tour slide."""
+    out = []
+    for kicker, shot in TOUR:
+        if not (OUT / shot).exists():
+            return []
+        out.append("""<div class="kicker">%s</div>
+<div class="shot"><img src="%s" alt=""></div>""" % (kicker, shot))
+    return out
+
+
+def shoot(html, png):
+    if png.exists():
+        png.unlink()
+    # fresh profile per capture: a reused profile serves the cached old page
+    profile = tempfile.mkdtemp(prefix="afterhours-edge-")
+    url = html.resolve().as_uri() + "?v=%d" % int(time.time() * 1000)
+    # --no-default-browser-check: without it, a current Edge exits before capturing
+    cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
+           "--user-data-dir=" + profile, "--window-size=1920,1080",
+           "--screenshot=" + str(png), url]
+    subprocess.run(cmd, capture_output=True, timeout=120)
+    # the launcher can return before its child has written the file
+    for _ in range(40):
+        if png.exists() and png.stat().st_size >= 10_000:
+            break
+        time.sleep(0.25)
+    shutil.rmtree(profile, ignore_errors=True)
+    if not png.exists() or png.stat().st_size < 10_000:
+        sys.exit("capture failed for %s" % png)
+    return png.stat().st_size
+
+
 def render(html_only):
     OUT.mkdir(parents=True, exist_ok=True)
     S = slides()
+    T = tour_slides()
     for i, body in enumerate(S, 1):
         html = OUT / f"slide-{i}.html"
         io.open(html, "w", encoding="utf-8", newline="\n").write(slide(i, len(S), body))
-    print("html: %d slides in %s" % (len(S), OUT))
+    for i, body in enumerate(T, 1):
+        html = OUT / f"tour-{i}.html"
+        io.open(html, "w", encoding="utf-8", newline="\n").write(slide(i, len(T), body))
+    print("html: %d slides and %d tour frames in %s" % (len(S), len(T), OUT))
     if html_only:
         return
     if not os.path.exists(EDGE):
         sys.exit("Edge not found at %s" % EDGE)
     sizes = set()
-    for i in range(1, len(S) + 1):
-        html = OUT / f"slide-{i}.html"
-        png = OUT / f"slide-{i}.png"
-        if png.exists():
-            png.unlink()
-        # fresh profile per capture: a reused profile serves the cached old page
-        profile = tempfile.mkdtemp(prefix="afterhours-edge-")
-        url = html.resolve().as_uri() + "?v=%d" % int(time.time() * 1000)
-        # --no-default-browser-check: without it, a current Edge exits before capturing
-        cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
-               "--user-data-dir=" + profile, "--window-size=1920,1080",
-               "--screenshot=" + str(png), url]
-        subprocess.run(cmd, capture_output=True, timeout=120)
-        # the launcher can return before its child has written the file
-        for _ in range(40):
-            if png.exists() and png.stat().st_size >= 10_000:
-                break
-            time.sleep(0.25)
-        shutil.rmtree(profile, ignore_errors=True)
-        if not png.exists() or png.stat().st_size < 10_000:
-            sys.exit("capture failed for slide %d (%s)" % (i, png))
-        size = png.stat().st_size
+    names = [f"slide-{i}" for i in range(1, len(S) + 1)] + [f"tour-{i}" for i in range(1, len(T) + 1)]
+    for name in names:
+        size = shoot(OUT / (name + ".html"), OUT / (name + ".png"))
         assert size not in sizes, "two slides rendered to byte-identical PNGs (cached page?)"
         sizes.add(size)
-        print("  slide-%d.png  %d bytes" % (i, size))
+        print("  %s.png  %d bytes" % (name, size))
 
 
 if __name__ == "__main__":

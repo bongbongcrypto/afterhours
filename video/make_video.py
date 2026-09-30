@@ -2,16 +2,21 @@
 """Assemble the demo video: slides + neural narration + burned-in subtitles.
 
 Inputs
-  video/out/slide-N.png        from make_slides.py
+  video/out/slide-N.png        from make_slides.py (N counts the script's slides
+                               that have no "shots")
+  video/out/tour-N.png         from make_slides.py, for a script slide with
+                               "shots": one image per line, cut at each line
   video/script.json            one source for narration lines and Korean gloss
   video/narration/SS-LL.mp3    from make_narration.sh (edge-tts on a remote host)
 
 Each slide is held for the sum of its line durations plus gaps plus a tail.
-Subtitles are one ASS event per line, English (44px, white) over Korean
-(34px, grey) in Malgun Gothic, timed to the synthesised audio's real length,
-not to a slot, so a caption never outlives its sentence. ffmpeg only.
+Subtitles are one ASS event per line, timed to the synthesised audio's real
+length, not to a slot, so a caption never outlives its sentence: English
+(44px, white) in the submitted cut; with --gloss the Korean gloss (34px,
+grey) goes under it, for the owner's review copy. ffmpeg only.
 
-    python video/make_video.py
+    python video/make_video.py            # video/afterhours-demo.mp4
+    python video/make_video.py --gloss    # video/afterhours-demo.gloss.mp4
 """
 import io
 import json
@@ -90,16 +95,25 @@ def esc(text):
 
 
 def main():
+    gloss = "--gloss" in sys.argv
     ffmpeg = find_ffmpeg()
     sibling = Path(ffmpeg).with_name("ffprobe" + Path(ffmpeg).suffix)
     ffprobe = str(sibling) if sibling.exists() else (shutil.which("ffprobe") or "ffprobe")
     script = json.load(io.open(HERE / "script.json", encoding="utf-8"))
     segments = []
     total = 0.0
+    plain = 0
     for si, slide in enumerate(script["slides"], 1):
-        png = OUT / f"slide-{si}.png"
-        if not png.exists():
-            sys.exit(f"missing {png}; run make_slides.py")
+        if slide.get("shots"):
+            pngs = [OUT / s for s in slide["shots"]]
+            if len(pngs) != len(slide["lines"]):
+                sys.exit(f"slide {si}: {len(pngs)} shots for {len(slide['lines'])} lines")
+        else:
+            plain += 1
+            pngs = [OUT / f"slide-{plain}.png"]
+        for png in pngs:
+            if not png.exists():
+                sys.exit(f"missing {png}; run make_slides.py")
         # narration track for this slide: lead, lines separated by gaps, tail
         clips, events = [], []
         t = LEAD
@@ -116,7 +130,7 @@ def main():
         inputs, filters = [], []
         for k, (mp3, start) in enumerate(clips):
             inputs += ["-i", str(mp3)]
-            filters.append(f"[{k + 1}:a]adelay={int(start * 1000)}|{int(start * 1000)}[a{k}]")
+            filters.append(f"[{k + len(pngs)}:a]adelay={int(start * 1000)}|{int(start * 1000)}[a{k}]")
         mix = "".join(f"[a{k}]" for k in range(len(clips)))
         filters.append(f"{mix}amix=inputs={len(clips)}:normalize=0:duration=longest,apad=whole_dur={length:.3f}[aout]")
         ass = OUT / f"sub-{si}.ass"
@@ -125,14 +139,23 @@ def main():
             for start, end, en, ko in events:
                 # One event, two styles: two events at the same time collide and
                 # libass stacks the second above the first (Korean ended up on top).
-                text = esc(wrap(en, MAX_EN)) + "\\N{\\rKo}" + esc(wrap(ko, MAX_KO))
+                text = esc(wrap(en, MAX_EN))
+                if gloss:
+                    text += "\\N{\\rKo}" + esc(wrap(ko, MAX_KO))
                 f.write(f"Dialogue: 0,{ass_time(start)},{ass_time(end)},En,,0,0,0,,{text}\n")
         ass_arg = str(ass).replace("\\", "/").replace(":", "\\:")
         seg = OUT / f"seg-{si}.mp4"
-        cmd = [ffmpeg, "-y", "-loglevel", "error", "-loop", "1", "-framerate", "30", "-i", str(png)] + inputs + [
+        # video: one still, or one still per line, each held from its line's start to the next
+        cuts = [0.0] + [start for start, _, _, _ in events[1:]] + [length]
+        vin, vlab = [], []
+        for k, png in enumerate(pngs):
+            hold = (cuts[k + 1] - cuts[k]) if len(pngs) > 1 else length
+            vin += ["-loop", "1", "-framerate", "30", "-t", f"{hold:.3f}", "-i", str(png)]
+            vlab.append(f"[{k}:v]")
+        filters.append("".join(vlab) + f"concat=n={len(pngs)}:v=1:a=0,ass='{ass_arg}'[vout]")
+        cmd = [ffmpeg, "-y", "-loglevel", "error"] + vin + inputs + [
             "-filter_complex", ";".join(filters),
-            "-vf", f"ass='{ass_arg}'",
-            "-map", "0:v", "-map", "[aout]", "-t", f"{length:.3f}",
+            "-map", "[vout]", "-map", "[aout]", "-t", f"{length:.3f}",
             "-c:v", "libx264", "-pix_fmt", "yuv420p", "-preset", "medium", "-crf", "18",
             "-c:a", "aac", "-b:a", "160k", "-ar", "48000", str(seg)]
         subprocess.run(cmd, check=True)
@@ -141,7 +164,7 @@ def main():
         print(f"  slide {si}: {len(clips)} lines, {length:5.1f}s")
     lst = OUT / "segments.txt"
     lst.write_text("".join(f"file '{s.name}'\n" for s in segments), encoding="utf-8")
-    final = HERE / "afterhours-demo.mp4"
+    final = HERE / ("afterhours-demo.gloss.mp4" if gloss else "afterhours-demo.mp4")
     subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-f", "concat", "-safe", "0",
                     "-i", str(lst), "-c", "copy", str(final)], check=True, cwd=str(OUT))
     print(f"wrote {final} ({total:.0f} s, {final.stat().st_size // 1024} KB)")

@@ -10,10 +10,15 @@ oracle is probed: its feeds (Morpho's standard ChainlinkOracleV2 getters),
 any staleness bound it exposes, and whether price() answers right now while
 the underlying feed is silent.
 
-Read-only, stdlib, JSON-RPC batches. Selectors come from keccak.py, which
-checks itself against selectors observed on-chain.
+With --borrows-since DATE it also lists every Borrow in those markets since
+DATE (UTC), with the day of the week and whether the US regular session was
+open, and totals the borrowing done while it was closed.
 
-    python scripts/measure/morpho_markets.py [--json out.json]
+Read-only, stdlib, JSON-RPC batches. Selectors come from keccak.py, which
+checks itself against selectors observed on-chain. The public RPC refuses an
+eth_getLogs span over 10,000,000 blocks, so logs are read in ranges.
+
+    python scripts/measure/morpho_markets.py [--borrows-since 2026-09-16] [--json out.json]
 """
 import argparse
 import io
@@ -33,6 +38,9 @@ RPC = "https://rpc.mainnet.chain.robinhood.com"
 MORPHO = "0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010"
 AAPL = "0xaF3D76f1834A1d425780943C99Ea8A608f8a93f9"
 BEACON_SLOT = "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50"
+# loan tokens counted as US dollars in the totals; any other loan token is listed apart
+USD_LOANS = {"USDG", "USDC", "USDT", "USDC.e", "PYUSD"}
+LOG_SPAN = 9_000_000
 CALLS = 0
 
 
@@ -61,6 +69,47 @@ def batch(calls, size=25):
     return out
 
 
+def rpc(method, params):
+    r = post({"jsonrpc": "2.0", "id": 1, "method": method, "params": params})
+    if "error" in r:
+        raise RuntimeError("%s: %s" % (method, r["error"]))
+    return r["result"]
+
+
+def get_logs(flt, lo, hi, span=LOG_SPAN):
+    out = []
+    while lo <= hi:
+        top = min(hi, lo + span - 1)
+        out += rpc("eth_getLogs", [dict(flt, fromBlock=hex(lo), toBlock=hex(top))])
+        lo = top + 1
+    return out
+
+
+def block_time(n, cache={}):
+    if n not in cache:
+        cache[n] = int(rpc("eth_getBlockByNumber", [hex(n), False])["timestamp"], 16)
+    return cache[n]
+
+
+def block_at(ts, head):
+    """First block at or after unix time ts (binary search)."""
+    lo, hi = 0, head
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if block_time(mid) < ts:
+            lo = mid + 1
+        else:
+            hi = mid
+    return lo
+
+
+def session(ts):
+    """'regular' Mon-Fri 13:30-20:00 UTC (the US regular session in daylight time), else 'closed'."""
+    d = datetime.fromtimestamp(ts, timezone.utc)
+    minute = d.hour * 60 + d.minute
+    return "regular" if d.weekday() < 5 and 13 * 60 + 30 <= minute < 20 * 60 else "closed"
+
+
 def eth_call(to, data):
     return ("eth_call", [{"to": to, "data": data}, "latest"])
 
@@ -85,14 +134,47 @@ def text(res):
         return None
 
 
+def borrows_since(day, live_stock, head):
+    since = int(datetime.strptime(day, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+    start = block_at(since, head)
+    by_id = {m["id"]: m for m in live_stock}
+    # Borrow(Id indexed id, address caller, address indexed onBehalf, address indexed receiver, uint256 assets, uint256 shares)
+    # several market ids in one topic position: the RPC then allows 100,000 blocks per query
+    evs = get_logs({"address": MORPHO, "topics": [topic("Borrow(bytes32,address,address,address,uint256,uint256)"),
+                                                  sorted(by_id)]}, start, head, span=100_000)
+    print("\nBorrow events in these markets since %s (block %d): %d" % (day, start, len(evs)))
+    days, closed, total = {}, 0.0, 0.0
+    for e in sorted(evs, key=lambda e: (int(e["blockNumber"], 16), int(e["logIndex"], 16))):
+        m = by_id[e["topics"][1]]
+        if m["loanSymbol"] not in USD_LOANS:
+            continue
+        w = words(e["data"])
+        amount = w[1] / 10 ** m["loanDecimals"]
+        ts = block_time(int(e["blockNumber"], 16))
+        d = datetime.fromtimestamp(ts, timezone.utc)
+        s = session(ts)
+        total += amount
+        closed += amount if s == "closed" else 0
+        key = d.strftime("%a %m-%d")
+        days[key] = days.get(key, 0.0) + amount
+        if amount >= 1000:
+            print("  %s UTC  %-6s %-4s %12s  caller %s  %s  tx %s" % (
+                d.strftime("%a %m-%d %H:%M"), (m["collSymbol"] or "?")[:6], m["loanSymbol"][:4], format(round(amount), ","),
+                addr(w[0]), "US session closed" if s == "closed" else "US regular session", e["transactionHash"]))
+    for k, v in days.items():
+        print("  %s  $%s borrowed" % (k, format(round(v), ",")))
+    print("  total $%s, of which $%s while the US regular session was closed" % (format(round(total), ","), format(round(closed), ",")))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--json")
+    ap.add_argument("--borrows-since", help="YYYY-MM-DD (UTC): list Borrow events in the funded stock markets since then")
     a = ap.parse_args()
 
-    logs = post({"jsonrpc": "2.0", "id": 1, "method": "eth_getLogs", "params": [{
-        "address": MORPHO, "topics": [topic("CreateMarket(bytes32,(address,address,address,address,uint256))")],
-        "fromBlock": "0x0", "toBlock": "latest"}]})["result"]
+    head = int(rpc("eth_blockNumber", []), 16)
+    logs = get_logs({"address": MORPHO, "topics": [topic("CreateMarket(bytes32,(address,address,address,address,uint256))")]},
+                    0, head)
     markets = []
     for lg in logs:
         w = words(lg["data"])
@@ -143,12 +225,17 @@ def main():
         finfo[f] = {"description": text(d) if d else None, "age_h": (now - w[3]) / 3600 if len(w) >= 5 else None}
 
     tot_s = tot_b = 0.0
+    other = {}
     print("\n%-6s %-10s %-8s %6s %14s %14s  %-44s %s" % ("block", "collateral", "loan", "lltv", "supplied", "borrowed", "oracle / feed", "price() now | bound"))
     for m in sorted(live_stock, key=lambda m: -m["supply"]):
         k = 10 ** m["loanDecimals"]
         s, b = m["supply"] / k, m["borrow"] / k
-        tot_s += s
-        tot_b += b
+        if m["loanSymbol"] in USD_LOANS:
+            tot_s += s
+            tot_b += b
+        else:
+            o_s, o_b = other.get(m["loanSymbol"], (0.0, 0.0))
+            other[m["loanSymbol"]] = (o_s + s, o_b + b)
         o = oinfo[m["oracle"]]
         feed = finfo.get(o["base_feed"] or "", {})
         m.update({"oracle_info": o, "feed_info": feed})
@@ -159,8 +246,13 @@ def main():
                           ("%.1fh old" % feed["age_h"]) if feed.get("age_h") is not None else ""),
             "answers" if o["price_answers_now"] else "reverts",
             ("%.1f d" % (o["staleness_bound_s"] / 86400)) if o["staleness_bound_s"] else "none exposed"))
-    print("\nstock-collateral markets with money: %d; supplied %s, borrowed %s (loan-token units, mostly USDG)"
-          % (len(live_stock), format(round(tot_s), ","), format(round(tot_b), ",")))
+    print("\nstock-collateral markets with money: %d; supplied $%s, borrowed $%s (%s loans), utilization %.0f%%"
+          % (len(live_stock), format(round(tot_s), ","), format(round(tot_b), ","), "/".join(sorted(USD_LOANS)),
+             100 * tot_b / tot_s if tot_s else 0))
+    for s_, (o_s, o_b) in sorted(other.items()):
+        print("  plus %s-loan markets: supplied %.4f %s, borrowed %.4f %s (not in the dollar totals)" % (s_, o_s, s_, o_b, s_))
+    if a.borrows_since:
+        borrows_since(a.borrows_since, live_stock, head)
     print("rpc calls %d; %s UTC" % (CALLS, datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")))
     if a.json:
         io.open(a.json, "w", encoding="utf-8").write(json.dumps({"markets": markets, "oracles": oinfo, "feeds": finfo}, indent=1))

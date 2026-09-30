@@ -29,9 +29,11 @@ FEED = "0x6B22A786bAa607d76728168703a39Ea9C99f2cD0"
 FACTORY = "0x1f7d7550b1b028f7571e69a784071f0205fd2efa"
 SWAP_TOPIC = "0xc42079f94a6350d7e6235f29174924f928cc2ac818eb64fed8004e115fbcca67"
 FEES = [100, 500, 3000, 10000]
-# Saturday noon inside each weekend we want to bracket.
-WEEKENDS = [datetime(2026, 9, 5, 12, tzinfo=timezone.utc),
-            datetime(2026, 9, 12, 12, tzinfo=timezone.utc)]
+# Saturday noon inside each weekend we want to bracket: the Saturdays given as
+# arguments (YYYY-MM-DD), else every weekend since Labor Day.
+#   python scripts/measure/weekend_swaps.py [2026-09-26 ...]
+WEEKENDS = ([datetime.strptime(d, "%Y-%m-%d").replace(hour=12, tzinfo=timezone.utc) for d in sys.argv[1:]]
+            or [datetime(2026, 9, d, 12, tzinfo=timezone.utc) for d in (5, 12, 19, 26)])
 CALLS = 0
 
 

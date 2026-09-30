@@ -1,0 +1,12 @@
+$ python scripts/measure/mainnet_gas.py
+Robinhood Chain mainnet, block 76187902, 2026-09-30 03:17 UTC
+AfterHours 0x88b628472e595725178cc3e5e2ec70ada67f80f0, session ONCHAIN_TWAP; ETH / USD 2667.27 (Chainlink)
+
+  read                estimate  L1 part  base+exec cost at base fee      USD
+  latestRoundData()    247,505      142    247,363      6.1e-06 ETH   0.0163
+  price()              249,587      142    249,445     6.15e-06 ETH   0.0164
+
+  base fee 0.0246 gwei; the chain's L1 base fee estimate 1183016 wei. The L1 part pays for posting the
+  calldata to the parent chain and is priced from that estimate; base+exec includes the 21,000
+  transaction base, which a transaction reading the oracle (a Morpho borrow or liquidation)
+  pays once for all its work.

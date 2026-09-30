@@ -247,10 +247,13 @@ def demo_slide():
 
 def slides():
     S = []
+    # the opening states the result up front, with the same figures slide 6 checks against reopen_check.txt
+    _, _, fig = weekend(load_record())
     S.append("""<div class="kicker">Robinhood Chain · Arbitrum Stylus · <b>Rust</b></div>
 <h1>AfterHours</h1>
 <div class="sub">A 24/7 price oracle for tokenized stocks.<br>Chainlink while the market is open; the on-chain pool, held near Chainlink's last price, while it is closed.</div>
-<div class="grow"></div>""")
+<div class="note" style="font-size:28px;margin-top:40px"><b>Live on Robinhood Chain mainnet</b> as the oracle of a Morpho AAPL/USDG market. Its first weekend, recorded to <b>Monday's reopening</b>: last answer <b>%+.2f%%</b> from Monday's first Chainlink print; Friday's price was %+.2f%%.</div>
+<div class="grow"></div>""" % (fig["e_ah"], fig["e_fri"]))
 
     S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed rounds · <b>scripts/measure/feed_cadence.py</b> · <b>weekend_swaps.py</b></div>
 <h2>The feed stops every weekend.</h2>

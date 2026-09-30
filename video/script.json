@@ -11,6 +11,14 @@
         [
           "Their Chainlink price feeds don't.",
           "가격을 알려주는 체인링크 피드는 그렇지 않습니다."
+        ],
+        [
+          "AfterHours fills that gap. It is already live on mainnet, as the oracle of a Morpho lending market.",
+          "AfterHours가 그 빈틈을 메웁니다. 이미 메인넷에서 Morpho 대출 시장의 오라클로 돌고 있습니다."
+        ],
+        [
+          "Over its first weekend, its last answer landed closer to Monday's price than Chainlink's Friday price did.",
+          "첫 주말, 마지막 답이 체인링크의 금요일 가격보다 월요일 가격에 더 가까웠습니다."
         ]
       ]
     },

@@ -281,7 +281,7 @@ def slides():
 <tr><td class="k">Sun 09-27 04:57 · one transaction</td><td class="num">$300k</td><td>NVDA · SPCX · AAPL</td><td>silent since Friday 19:49</td></tr>
 <tr><td class="k">Mon 09-28 17:27 · one transaction</td><td class="num">$300k</td><td>GOOGL · AAPL · SPCX</td><td>market open</td></tr>
 <tr><td class="k">the rest since 09-16</td><td class="num">$132k</td><td>mostly NVDA</td><td></td></tr></table>
-<div class="note">A week earlier, $6.4k was borrowed. These markets' oracles answer <b>Friday's print</b> all weekend; outside them, PARE accepts a <b>five-day-old</b> one.</div>
+<div class="note">A week earlier, $6.4k was borrowed. These markets' oracles answer <b>Friday's print</b> all weekend; outside them, PARE's pSPY lending oracle accepts a <b>five-day-old</b> one.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">The product · one contract per asset · <b>drop-in</b> for a Chainlink address</div>
@@ -322,6 +322,7 @@ def slides():
 
     S.append("""<div class="kicker">What it unlocks</div>
 <h2>Lending that can liquidate on Saturday.<br>Automation that runs seven days.<br>One answer to what a stock is worth while the exchange is closed.</h2>
+<div class="note" style="font-size:28px;margin-top:48px">Live on Robinhood Chain mainnet since 2026-09-26 as <b>the oracle of a Morpho AAPL/USDG market</b>; its first weekend was recorded every 10 minutes up to <b>Monday's reopening</b>.</div>
 <div class="grow"></div>
 <div class="sub">AfterHours — <span class="mono" style="color:var(--fog)">github.com/bongbongcrypto/afterhours</span></div>""")
     return S

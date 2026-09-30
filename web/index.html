@@ -152,6 +152,7 @@ table.stocks { width: 100%; border-collapse: collapse; min-width: 760px; }
 .stocks td.num { font-size: 13px; font-stretch: 87.5%; color: var(--paper); }
 .stocks th.r, .stocks td.r { text-align: right; }
 .stocks .sym { font-family: var(--num); font-stretch: 87.5%; font-size: 13px; color: var(--paper); }
+.stocks .sym .tag { font-family: var(--ui); font-stretch: 100%; margin-left: 10px; }
 .stocks .hero-row td { background: var(--row-hi); }
 .cell-state { display: inline-flex; align-items: center; gap: 8px; color: var(--mist); }
 .muted { color: var(--fog); }
@@ -245,6 +246,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       </dl>
       <div class="panel__foot">
         <p id="deploy-note"></p>
+        <p id="verify-note">Blockscout on this chain has no Stylus verifier; the build is checked against the deployment with cargo stylus verify in <a href="https://github.com/bongbongcrypto/afterhours/actions/runs/36297607270">run 36297607270</a>.</p>
         <p id="selftest" class="muted"></p>
         <p id="status" class="status" role="status"></p>
         <details class="raw">
@@ -266,7 +268,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
 
   <section class="wrap block" aria-labelledby="stocks-h">
     <h2 id="stocks-h">Every stock AfterHours can price today</h2>
-    <p class="block__sub" id="stocks-sub">The stocks whose main pool meets the bar for depth and observation history. Each row is read at the same block as the panel above and run through the same rules.</p>
+    <p class="block__sub" id="stocks-sub">The stocks whose main pool meets the bar for depth and observation history. Each row is read at the same block as the panel above and run through the contract's rules in your browser; only AAPL is a deployed instance.</p>
     <div class="table-wrap" tabindex="0" role="region" aria-labelledby="stocks-h">
       <table class="stocks">
         <thead>
@@ -276,7 +278,7 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
             <th scope="col" class="r">Last print</th>
             <th scope="col" class="r">Pool price, per token</th>
             <th scope="col" class="r">Pool vs print</th>
-            <th scope="col">AfterHours now</th>
+            <th scope="col">AfterHours rules now</th>
           </tr>
         </thead>
         <tbody id="stocks-body"><tr><td colspan="6" class="muted">Reading the feeds and pools from Robinhood Chain…</td></tr></tbody>
@@ -288,9 +290,9 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     <h2 id="why-h">Why it exists</h2>
     <p class="block__sub">Measured on Robinhood Chain mainnet with the read-only scripts in the repository.</p>
     <ul class="evidence">
-      <li><span class="fig">52.2 h</span><p>The AAPL/USD feed went without a print over an ordinary weekend, and 76.2 h over Labor Day. <code>scripts/measure/feed_cadence.py</code></p></li>
-      <li><span class="fig">$4.2M</span><p>AAPL changed hands in the chain's Uniswap pools during that one weekend, in 26,331 swaps, at prices that moved. <code>scripts/measure/weekend_swaps.py</code></p></li>
-      <li><span class="fig">$6.4k</span><p>Borrowed against $0.88M supplied in the 83 Morpho markets that take these stock tokens as collateral. Their oracles keep Friday's price through the weekend or read a raw pool price. <code>scripts/measure/morpho_markets.py</code></p></li>
+      <li><span class="fig">52.2 h</span><p>The AAPL/USD feed went without a print over an ordinary weekend <code>scripts/measure/feed_cadence.py</code>, and 76.2 h over Labor Day <code>scripts/measure/weekend_swaps.py</code></p></li>
+      <li><span class="fig">$4.2M</span><p>AAPL changed hands in the chain's Uniswap pools over the 09-11 weekend, in 26,331 swaps, at prices that moved; over the four September weekends, from $5.1M down to $0.58M. <code>scripts/measure/weekend_swaps.py</code></p></li>
+      <li><span class="fig">$732k</span><p>Borrowed against $756k supplied in the 81 funded Morpho markets that take these stock tokens as collateral (2026-09-30). $300k of it was borrowed in one transaction on Sunday 09-27, while AAPL's feed had been silent since Friday. Their oracles keep Friday's price through the weekend or read a raw pool price. <code>scripts/measure/morpho_markets.py --borrows-since 2026-09-16</code></p></li>
     </ul>
   </section>
 
@@ -577,54 +579,76 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     return SEL.observe + pad(32) + pad(4) + observePoints(window).map(pad).join("");
   }
 
-  // ---- JSON-RPC, batched, every call logged for the "raw calls" view ----
+  // ---- JSON-RPC in small, paced batches ----
   var nextId = 1;
-  var rawLog = [];
   function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
-  // The public RPC rate-limits bursts (about 280 calls in two seconds; measured
-  // 2026-09-23), and its rate-limit response carries a doubled CORS header, so
-  // the browser reports a network error instead of a 429. One batch every
-  // 750 ms, shared by every reader on the page, stays under the limit.
+  // The public RPC rate-limits by address. Its rate-limit answer is HTTP 429 with a
+  // doubled CORS header, so the browser reports only a network error ("Failed to
+  // fetch") and never the status. Batches of 20 or more calls drew that answer
+  // where batches of 10 did not (measured 2026-09-30): no batch carries more than
+  // 10 calls, and one batch a second, shared by every reader on the page, is the
+  // most the page sends. A failed batch is not resent here; refresh() waits longer
+  // after each failure instead.
+  var MAX_BATCH = 10, GAP_MS = 1000;
   var paceChain = Promise.resolve(), lastPost = 0;
   function pace() {
     paceChain = paceChain.then(function () {
-      return sleep(Math.max(0, lastPost + 750 - Date.now()));
+      return sleep(Math.max(0, lastPost + GAP_MS - Date.now()));
     }).then(function () { lastPost = Date.now(); });
     return paceChain;
   }
+  // limited: a rate limit, or a network error, which is how the browser reports
+  // the rate limiter's answer
+  function rpcError(message, limited) { var e = new Error(message); e.limited = !!limited; return e; }
+  function isLimit(err) { return !!err && (err.code === 429 || err.code === -32005 || /rate.?limit|too many requests/i.test(err.message || "")); }
+  // what a lagging node says, or a call it dropped: not an answer from the chain
+  var TRANSIENT = /header not found|unknown block|missing trie|no response for this call|timed? ?out/i;
   async function postJson(body) {
-    var delay = 1500;
-    for (var attempt = 0; attempt < 4; attempt++) {
-      var resp;
-      await pace();
-      try {
-        resp = await fetch(DATA.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-      } catch (e) {
-        if (attempt === 3) throw new Error("the RPC could not be reached (" + e.message + ")");
-        await sleep(delay); delay *= 2; continue;
-      }
-      if (resp.status === 429 || resp.status >= 500) {
-        if (attempt === 3) throw new Error("the RPC answered HTTP " + resp.status + (resp.status === 429 ? " (rate limited)" : ""));
-        await sleep(delay); delay *= 2; continue;
-      }
-      if (!resp.ok) throw new Error("the RPC answered HTTP " + resp.status);
-      return resp.json();
+    await pace();
+    var resp, json;
+    try {
+      resp = await fetch(DATA.rpc, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    } catch (e) {
+      throw rpcError("the browser reported " + e.name + ": " + e.message, true);
     }
+    if (!resp.ok) throw rpcError("HTTP " + resp.status, resp.status === 429);
+    try { json = await resp.json(); } catch (e) { throw rpcError("an unreadable answer (" + e.message + ")", false); }
+    if (Array.isArray(json)) return json;
+    if (json && json.id !== undefined && json.id !== null) return [json];
+    var err = (json && json.error) || {};
+    throw rpcError(err.message || "an answer that is not a batch", isLimit(err));
   }
   async function batch(calls) {
     var results = [];
-    for (var s = 0; s < calls.length; s += 40) {
-      var chunk = calls.slice(s, s + 40);
+    for (var s = 0; s < calls.length; s += MAX_BATCH) {
+      var chunk = calls.slice(s, s + MAX_BATCH);
       var body = chunk.map(function (c) { return { jsonrpc: "2.0", id: nextId++, method: c.method, params: c.params }; });
       var res = await postJson(body);
-      var byId = new Map((Array.isArray(res) ? res : [res]).map(function (r) { return [r.id, r]; }));
-      body.forEach(function (b, i) {
+      var byId = new Map(res.map(function (r) { return [r.id, r]; }));
+      body.forEach(function (b) {
         var r = byId.get(b.id) || { error: { message: "no response for this call" } };
-        rawLog.push({ call: chunk[i], r: r });
+        if (isLimit(r.error)) throw rpcError(r.error.message || "rate limited", true);
         results.push(r);
       });
     }
     return results;
+  }
+  // Calls pinned to one block. A load-balanced node can lag a block behind the one
+  // that served the head, or drop a call: only those calls are sent once more.
+  // Every call is logged for the "raw calls" view.
+  async function readAt(calls, log) {
+    var res = await batch(calls);
+    var again = [];
+    res.forEach(function (x, i) { if (x.error && TRANSIENT.test(x.error.message || "")) again.push(i); });
+    if (again.length) {
+      await sleep(1500);
+      var res2 = await batch(again.map(function (i) { return calls[i]; }));
+      again.forEach(function (i, j) { res[i] = res2[j]; });
+    }
+    calls.forEach(function (c, i) { log.push({ call: c, r: res[i] }); });
+    var bad = res.find(function (x) { return x.error && TRANSIENT.test(x.error.message || ""); });
+    if (bad) throw rpcError(bad.error.message, false);
+    return res;
   }
   function ethCall(to, data, blockHex, label) { return { method: "eth_call", params: [{ to: to, data: data }, blockHex], label: label }; }
 
@@ -667,78 +691,114 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     return { text: "Refusing: " + why, dot: "refuse", short: shortWhy };
   }
 
-  // ---- state ----
-  var S = { feedDecimals: {}, hero: null, head: null, fetchedAt: 0, rounds: null, busy: false };
+  // ---- state: the last good read of each part, kept when a later read fails ----
+  var S = {
+    feedDecimals: {},
+    hero: null,       // { head, read, fetchedAt, log }: the AAPL panel
+    table: null,      // { head, reads, fetchedAt, log }: every row of the table, AAPL's included
+    rounds: null,     // the seven-day tape, read at tapeHead
+    tapeHead: null, tapeLog: null,
+    busy: false, fails: 0, failure: null, nextAt: 0, timer: 0, due: false
+  };
+  // a read every 30 s; after a failure 30 s, then 60, 120, 240 and at most 300 s
+  var REFRESH_S = 30, BACKOFF_CAP_S = 300;
 
-  async function readHead() {
-    var r = await batch([{ method: "eth_getBlockByNumber", params: ["latest", false] }]);
-    if (!r[0].result) throw new Error("no latest block (" + ((r[0].error && r[0].error.message) || "empty") + ")");
-    return { number: BigInt(r[0].result.number), timestamp: BigInt(r[0].result.timestamp) };
+  async function readHead(log) {
+    var call = { method: "eth_getBlockByNumber", params: ["latest", false], label: "latest block" };
+    var r = (await batch([call]))[0];
+    log.push({ call: call, r: r });
+    if (!r.result) throw rpcError("no latest block (" + ((r.error && r.error.message) || "empty") + ")", false);
+    return { number: BigInt(r.result.number), timestamp: BigInt(r.result.timestamp) };
   }
 
+  // The rules' inputs for these stocks at one block: the token's pause flag, the
+  // feed's latest round, the primary pool's observations and, for a deployed
+  // instance, its own state().
+  async function readAssets(assets, blockHex, log) {
+    var calls = [];
+    assets.forEach(function (a) {
+      if (S.feedDecimals[a.symbol] === undefined) calls.push(ethCall(a.feed, SEL.decimals, blockHex, a.symbol + " feed decimals()"));
+      calls.push(ethCall(a.stock, SEL.oraclePaused, blockHex, a.symbol + " oraclePaused()"));
+      calls.push(ethCall(a.feed, SEL.latestRoundData, blockHex, a.symbol + " feed latestRoundData()"));
+      calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,1200,600,0])"));
+      if (a.oracle) calls.push(ethCall(a.oracle, SEL.state, blockHex, a.symbol + " AfterHours state()"));
+    });
+    var res = await readAt(calls, log);
+    var k = 0, reads = {};
+    assets.forEach(function (a) {
+      if (S.feedDecimals[a.symbol] === undefined) {
+        var d = res[k++];
+        if (d.result) S.feedDecimals[a.symbol] = Number(words(d.result)[0]);
+      }
+      var paused = res[k++], round = res[k++], obs = res[k++];
+      var st = a.oracle ? res[k++] : null;
+      reads[a.symbol] = {
+        pausedOk: !!paused.result,
+        paused: paused.result ? words(paused.result)[0] !== 0n : false,
+        round: round.result ? decodeRound(round.result) : null,
+        obs: [obs.result ? decodeObserve(obs.result) : null],
+        state: st && st.result ? decodeState(st.result) : null,
+        stateErr: st && st.error ? st.error.message : null
+      };
+    });
+    // Standbys are read only while every earlier pool cannot be observed, as in the contract.
+    for (var tier = 1; tier < 3; tier++) {
+      var more = [], who = [];
+      assets.forEach(function (a) {
+        var r = reads[a.symbol];
+        if (a.pools.length > tier && r.obs.length === tier && r.obs.every(function (o) { return !o; })) {
+          more.push(ethCall(a.pools[tier], observeData(DATA.params.twapWindow), blockHex, a.symbol + " standby pool " + tier + " observe([1800,1200,600,0])"));
+          who.push(a.symbol);
+        }
+      });
+      if (!more.length) break;
+      var mres = await readAt(more, log);
+      mres.forEach(function (m, i) { reads[who[i]].obs.push(m.result ? decodeObserve(m.result) : null); });
+    }
+    return reads;
+  }
+
+  // One read cycle: the AAPL panel first, so the headline fills before the table,
+  // then the table, then the tape. A failure ends the cycle, replaces nothing on
+  // screen, and makes the next cycle wait longer.
   async function refresh() {
     if (S.busy) return;
     S.busy = true;
-    rawLog = [];
+    S.due = false;
+    clearTimeout(S.timer);
+    tickCountdown();
+    var hero = DATA.assets[0], stage = "panel", failure = null;
     try {
-      var head = await readHead();
+      var log = [];
+      var head = await readHead(log);
       var blockHex = "0x" + head.number.toString(16);
-      var assets = DATA.assets;
-      var calls = [];
-      assets.forEach(function (a) {
-        if (S.feedDecimals[a.symbol] === undefined) calls.push(ethCall(a.feed, SEL.decimals, blockHex, a.symbol + " feed decimals()"));
-        calls.push(ethCall(a.stock, SEL.oraclePaused, blockHex, a.symbol + " oraclePaused()"));
-        calls.push(ethCall(a.feed, SEL.latestRoundData, blockHex, a.symbol + " feed latestRoundData()"));
-        calls.push(ethCall(a.pools[0], observeData(DATA.params.twapWindow), blockHex, a.symbol + " primary pool observe([1800,1200,600,0])"));
-        if (a.oracle) calls.push(ethCall(a.oracle, SEL.state, blockHex, a.symbol + " AfterHours state()"));
-      });
-      // A load-balanced RPC node can lag a block behind the one that served the head: retry once.
-      var res = await batch(calls);
-      var lagging = res.filter(function (x) { return x.error && /header not found|unknown block|missing trie/i.test(x.error.message || ""); }).length;
-      if (lagging > 0) { await sleep(1500); rawLog = []; res = await batch(calls); }
-      var k = 0, reads = {};
-      assets.forEach(function (a) {
-        if (S.feedDecimals[a.symbol] === undefined) {
-          var d = res[k++];
-          if (d.result) S.feedDecimals[a.symbol] = Number(words(d.result)[0]);
-        }
-        var paused = res[k++], round = res[k++], obs = res[k++];
-        var st = a.oracle ? res[k++] : null;
-        reads[a.symbol] = {
-          pausedOk: !!paused.result,
-          paused: paused.result ? words(paused.result)[0] !== 0n : false,
-          round: round.result ? decodeRound(round.result) : null,
-          obs: [obs.result ? decodeObserve(obs.result) : null],
-          state: st && st.result ? decodeState(st.result) : null,
-          stateErr: st && st.error ? st.error.message : null
-        };
-      });
-      // Standbys are read only while every earlier pool cannot be observed, as in the contract.
-      for (var tier = 1; tier < 3; tier++) {
-        var more = [], who = [];
-        assets.forEach(function (a) {
-          var r = reads[a.symbol];
-          if (a.pools.length > tier && r.obs.length === tier && r.obs.every(function (o) { return !o; })) {
-            more.push(ethCall(a.pools[tier], observeData(DATA.params.twapWindow), blockHex, a.symbol + " standby pool " + tier + " observe([1800,1200,600,0])"));
-            who.push(a.symbol);
-          }
-        });
-        if (!more.length) break;
-        var mres = await batch(more);
-        mres.forEach(function (m, i) { reads[who[i]].obs.push(m.result ? decodeObserve(m.result) : null); });
-      }
-      S.head = head;
-      S.fetchedAt = Date.now();
-      S.reads = reads;
-      render();
-      setStatus("", false);
-      if (!S.rounds || S.roundsAt < Date.now() - 10 * 60 * 1000) readTape().catch(function (e) { $("tape-legend").textContent = "Could not read the feed's history: " + e.message + "."; });
+      var heroReads = await readAssets([hero], blockHex, log);
+      if (S.feedDecimals[hero.symbol] === undefined) throw rpcError("the AAPL feed's decimals() gave no answer", false);
+      S.hero = { head: head, read: heroReads[hero.symbol], fetchedAt: Date.now(), log: log };
+      renderHero();
+      // the panel is current again: the previous failure's note no longer describes it
+      if (S.failure) setStatus("", false);
+      stage = "table";
+      if (!S.table) setPlaceholder("Reading the feeds and pools from Robinhood Chain…");
+      var tlog = [];
+      var reads = await readAssets(DATA.assets.slice(1), blockHex, tlog);
+      reads[hero.symbol] = S.hero.read;
+      S.table = { head: head, reads: reads, fetchedAt: Date.now(), log: tlog };
+      renderTable();
+      stage = "tape";
+      await readTape();
     } catch (e) {
-      setStatus("Could not read Robinhood Chain: " + e.message + ". Trying again in 30 s.", true);
-    } finally {
-      S.busy = false;
-      renderRaw();
+      if (typeof e.limited !== "boolean") console.error(e);
+      failure = { stage: stage, error: e, at: Date.now() };
     }
+    S.busy = false;
+    S.failure = failure;
+    S.fails = failure ? S.fails + 1 : 0;
+    var wait = failure ? Math.min(REFRESH_S * Math.pow(2, S.fails - 1), BACKOFF_CAP_S) : REFRESH_S;
+    S.nextAt = Date.now() + wait * 1000;
+    S.timer = setTimeout(function () { if (document.hidden) S.due = true; else refresh(); }, wait * 1000);
+    renderNotes();
+    renderRaw();
   }
 
   function setStatus(text, err) {
@@ -746,20 +806,85 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
     el.textContent = text;
     el.className = "status" + (err ? " status--err" : "");
   }
-
-  function render() {
-    var nowTs = S.head.timestamp;
-    var hero = DATA.assets[0];
-    var r = S.reads[hero.symbol];
-    var fd = S.feedDecimals[hero.symbol];
-    if (fd === undefined) {
-      setStatus("Could not read the AAPL feed's decimals; trying again in 30 s.", true);
-      return;
+  function blockAt(head) { return "block " + Number(head.number).toLocaleString("en-US") + " at " + utc(head.timestamp).slice(-9); }
+  function clock(ms) { var d = new Date(ms); return two(d.getUTCHours()) + ":" + two(d.getUTCMinutes()) + ":" + two(d.getUTCSeconds()) + " UTC"; }
+  function causeText(e) {
+    if (typeof e.limited !== "boolean") return "this page could not show the read (" + e.message + ")";
+    return e.limited ? "Robinhood Chain's public RPC is rate-limiting this connection" : "Robinhood Chain's public RPC could not be read (" + e.message + ")";
+  }
+  function setPlaceholder(text) {
+    var td = document.createElement("td");
+    td.colSpan = 6;
+    td.className = "muted";
+    td.style.whiteSpace = "normal";
+    td.textContent = text;
+    var tr = document.createElement("tr");
+    tr.appendChild(td);
+    $("stocks-body").replaceChildren(tr);
+  }
+  // After a failed read: which read is on screen, why the new one failed, and when
+  // the next one goes out. The countdown is for the eye; a screen reader gets the time.
+  function renderNotes() {
+    var f = S.failure;
+    if (!f) { setStatus("", false); return; }
+    var cause = causeText(f.error), next = "the next try is at " + clock(S.nextAt), lead;
+    if (!S.hero) {
+      lead = "Nothing could be read yet: " + cause;
+      $("ah-session").textContent = "Not read yet";
+      $("feed-at").textContent = "not read yet";
+    } else if (f.stage === "panel") {
+      lead = "Showing the read from " + blockAt(S.hero.head) + "; " + cause;
+    } else if (f.stage === "table") {
+      lead = "The panel is read at " + blockAt(S.hero.head) + ". " +
+        (S.table ? "The table below still shows the read from " + blockAt(S.table.head) : "The table below is not read yet") + "; " + cause;
+    } else {
+      lead = "The panel and table are read at " + blockAt(S.hero.head) + ". " +
+        (S.rounds ? "The seven-day tape still shows the read from " + blockAt(S.tapeHead) : "The seven-day tape is not read yet") + "; " + cause;
     }
+    if (!S.table) setPlaceholder("Not read yet: " + cause + "; " + next + ".");
+    if (!S.rounds) $("tape-legend").textContent = "Not read yet: " + cause + "; " + next + ".";
+    var cd = document.createElement("span");
+    cd.id = "countdown";
+    cd.setAttribute("aria-hidden", "true");
+    var sr = document.createElement("span");
+    sr.className = "sr-only";
+    sr.textContent = " at " + clock(S.nextAt);
+    var st = $("status");
+    st.className = "status" + (typeof f.error.limited !== "boolean" ? " status--err" : "");
+    st.replaceChildren(lead + ", retrying ", cd, sr, ".");
+    tickCountdown();
+  }
+  function tickCountdown() {
+    var cd = $("countdown");
+    if (cd) cd.textContent = S.busy ? "now" : "in " + dur(Math.ceil((S.nextAt - Date.now()) / 1000), true);
+  }
+
+  // the panel's view of the last good read
+  function heroView() {
+    var h = S.hero, hero = DATA.assets[0], r = h.read, fd = S.feedDecimals[hero.symbol], nowTs = h.head.timestamp;
     var q = evaluate(hero, r, fd, nowTs);
+    // the contract's own state() when deployed, else the rules run here
+    var shown = q, fromContract = false;
+    if (hero.oracle && r.state) { shown = { session: r.state.session, reason: r.state.reason, answer: r.state.answer, clamped: r.state.clamped, twap: r.state.twap }; fromContract = true; }
+    // the pool the rules read: the primary unless it cannot be observed
+    var usedIdx = 0;
+    while (usedIdx < r.obs.length - 1 && !r.obs[usedIdx]) usedIdx++;
+    var usedObs = r.obs[usedIdx] || null;
+    return {
+      hero: hero, r: r, fd: fd, nowTs: nowTs, q: q, shown: shown, fromContract: fromContract,
+      refusing: shown.session === "PAUSED" || shown.session === "NO_DATA",
+      usedIdx: usedIdx, usedObs: usedObs, poolTwap: usedObs ? twapOf(usedObs, hero, fd) : null
+    };
+  }
+  function drawHeroGauge(v) {
+    drawGauge(v.r.round ? v.r.round.answer : null, v.poolTwap, v.refusing ? null : v.shown.answer, v.fd, gaugeBand(v.r, v.nowTs));
+  }
+
+  function renderHero() {
+    var v = heroView(), hero = v.hero, r = v.r, fd = v.fd, q = v.q, shown = v.shown;
 
     // Chainlink readout
-    if (r.round && r.round.answer > 0n && fd !== undefined) {
+    if (r.round && r.round.answer > 0n) {
       $("feed-price").textContent = money(r.round.answer, fd);
       $("feed-at").textContent = "printed " + utc(r.round.updatedAt) + " · round " + (r.round.roundId & ((1n << 64n) - 1n)).toString();
     } else {
@@ -767,75 +892,60 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       $("feed-at").textContent = "the feed returned no usable round";
     }
 
-    // AfterHours readout: the contract's own state() when deployed, else the rules run here
-    var shown = q, fromContract = false;
-    if (hero.oracle && r.state) { shown = { session: r.state.session, reason: r.state.reason, answer: r.state.answer, clamped: r.state.clamped, twap: r.state.twap }; fromContract = true; }
+    // AfterHours readout
     var sst = sessionText(shown);
-    var refusing = shown.session === "PAUSED" || shown.session === "NO_DATA";
-    $("ah-price").textContent = refusing ? "no price" : money(shown.answer, fd);
-    $("ah-price").className = "read__value num" + (refusing ? " read__value--refuse" : "");
+    $("ah-price").textContent = v.refusing ? "no price" : money(shown.answer, fd);
+    $("ah-price").className = "read__value num" + (v.refusing ? " read__value--refuse" : "");
     $("ah-session").textContent = sst.text;
-    $("ah-session").className = refusing ? "refuse" : "";
+    $("ah-session").className = v.refusing ? "refuse" : "";
     $("ah-dot").className = "dot dot--" + sst.dot + (sst.dot === "pool" ? " breathe" : "");
     var detail = "";
-    if (!refusing && r.round) {
+    if (!v.refusing && r.round) {
       var off = toNum(shown.answer, fd) / toNum(r.round.answer, fd) - 1;
       detail = shown.session === "LIVE_FEED" ? "identical to the feed's round, no delay added" :
         pct(off) + " vs the last print" + (shown.clamped ? ", clamped to the " : ", inside the ") + bandText(q.bandBps) + " band";
-    } else if (refusing) {
+    } else if (v.refusing) {
       detail = "latestRoundData() and price() revert; state() keeps explaining why";
     }
     $("ah-detail").textContent = detail;
-    $("ah-source").textContent = fromContract ? "state() of " + shortAddr(hero.oracle) : "rules run in your browser";
+    $("ah-source").textContent = v.fromContract ? "state() of " + shortAddr(hero.oracle) : "rules run in your browser";
 
-    // gauge and facts: the pool the rules read (the primary unless it cannot be observed)
-    var usedIdx = 0;
-    while (usedIdx < r.obs.length - 1 && !r.obs[usedIdx]) usedIdx++;
-    var usedObs = r.obs[usedIdx] || null;
-    var poolTwap = usedObs ? twapOf(usedObs, hero, fd) : null;
-    drawGauge(r.round ? r.round.answer : null, poolTwap, refusing ? null : shown.answer, fd, gaugeBand(r, nowTs));
-
-    $("pool-name").textContent = (usedIdx === 0 ? "primary, " : "standby, ") + (hero.poolFees[usedIdx] || "") + " AAPL/USDG " + shortAddr(hero.pools[usedIdx]) +
-      (usedObs ? "" : " (cannot be observed)");
-    $("pool-twap").textContent = poolTwap === null ? "unavailable" : money(poolTwap, fd) + (r.round && r.round.answer > 0n ? "  (" + pct(toNum(poolTwap, fd) / toNum(r.round.answer, fd) - 1) + " vs print)" : "");
-    var liq = usedObs ? medianLiquidity(usedObs) : null;
+    // gauge and facts: the pool the rules read
+    drawHeroGauge(v);
+    $("pool-name").textContent = (v.usedIdx === 0 ? "primary, " : "standby, ") + (hero.poolFees[v.usedIdx] || "") + " AAPL/USDG " + shortAddr(hero.pools[v.usedIdx]) +
+      (v.usedObs ? "" : " (cannot be observed)");
+    $("pool-twap").textContent = v.poolTwap === null ? "unavailable" : money(v.poolTwap, fd) + (r.round && r.round.answer > 0n ? "  (" + pct(toNum(v.poolTwap, fd) / toNum(r.round.answer, fd) - 1) + " vs print)" : "");
+    var liq = v.usedObs ? medianLiquidity(v.usedObs) : null;
     $("pool-liq").textContent = liq === null ? "unavailable" : sci(liq) + ", floor " + sci(BigInt(hero.minLiquidity));
-    $("read-at").textContent = Number(S.head.number).toLocaleString("en-US") + " · " + utc(S.head.timestamp).slice(-9);
+    $("read-at").textContent = Number(S.hero.head.number).toLocaleString("en-US") + " · " + utc(S.hero.head.timestamp).slice(-9);
 
-    // deployment note and cross-check
-    if (hero.oracle) {
+    // the cross-check against the deployed contract (its address is written at boot)
+    var m = $("deploy-match");
+    if (m) {
       var same = r.state && r.state.session === q.session && r.state.answer === q.answer;
-      $("deploy-note").replaceChildren();
-      var a = document.createElement("a");
-      a.href = DATA.explorer + "/address/" + hero.oracle;
-      a.textContent = hero.oracle;
-      $("deploy-note").append("AfterHours AAPL is deployed at ", a, ". ");
-      var m = document.createElement("span");
       m.className = same ? "match" : "refuse";
       m.textContent = r.state ? (same ? "Your browser recomputed its answer from the same block's feed and pool data: identical." :
         "Your browser's recomputation differs: contract " + r.state.session + " " + r.state.answer + ", browser " + q.session + " " + q.answer + ".") :
         "state() could not be read: " + (r.stateErr || "no answer") + ".";
-      $("deploy-note").append(m);
-    } else {
-      $("deploy-note").textContent = "No current AAPL instance is listed (a first deployment that modelled the feed per share is superseded; see DEPLOYMENTS.md). The AfterHours readout is the contract's decision rules, ported to this page with the same integer math, run on the feed and pool data your browser read at this block. Once an instance is listed, this panel reads the contract's own state() and checks it against this computation.";
     }
-
-    renderTable(nowTs);
+    if (S.table) renderTableSub();
     tickAges();
   }
 
-  function renderTable(nowTs) {
-    var body = $("stocks-body");
-    var rows = [];
+  function renderTable() {
+    var t = S.table, nowTs = t.head.timestamp, body = $("stocks-body"), rows = [];
     DATA.assets.forEach(function (a, idx) {
-      var r = S.reads[a.symbol], fd = S.feedDecimals[a.symbol];
+      var r = t.reads[a.symbol], fd = S.feedDecimals[a.symbol];
       var tr = document.createElement("tr");
       if (idx === 0) tr.className = "hero-row";
       function td(text, cls) { var c = document.createElement("td"); c.textContent = text; if (cls) c.className = cls; tr.appendChild(c); return c; }
       var th = document.createElement("th");
       th.scope = "row";
       th.className = "sym";
-      th.textContent = a.symbol;
+      var tag = document.createElement("span");
+      tag.className = "tag";
+      tag.textContent = a.oracle ? "deployed instance" : "simulated, not deployed";
+      th.append(a.symbol, " ", tag);
       tr.appendChild(th);
       if (!r || fd === undefined || !r.round) {
         td("—", "num r"); td("—", "num r"); td("—", "num r"); td("—", "num r"); td("feed unreadable", "muted");
@@ -863,10 +973,18 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       rows.push(tr);
     });
     body.replaceChildren.apply(body, rows);
-    var open = DATA.assets.filter(function (a) { var r = S.reads[a.symbol]; return r && r.round && Number(nowTs - r.round.updatedAt) <= DATA.params.liveMaxAge; }).length;
+    renderTableSub();
+    tickAges();
+  }
+  function renderTableSub() {
+    var t = S.table, nowTs = t.head.timestamp;
+    var open = DATA.assets.filter(function (a) { var r = t.reads[a.symbol]; return r && r.round && Number(nowTs - r.round.updatedAt) <= DATA.params.liveMaxAge; }).length;
+    var deployed = DATA.assets.filter(function (a) { return a.oracle; }).map(function (a) { return a.symbol; });
+    var at = S.hero && S.hero.head.number === t.head.number ? "the same block as the panel above" : blockAt(t.head) + ", before the panel's latest read";
     $("stocks-sub").textContent = DATA.assets.length + " of the " + DATA.counts.passInitialize + " stocks that pass the contract's checks today meet the bar for pool depth and observation history. " +
-      "Right now " + open + " of these feeds printed in the last 6 hours. Every row is read at the same block as the panel above and run through the same rules" +
-      (DATA.assets.some(function (a) { return a.oracle; }) ? "." : "; no current instance is listed.");
+      "Right now " + open + " of these feeds printed in the last 6 hours. Every row is read at " + at + " and run through the contract's rules in your browser. " +
+      (deployed.length ? deployed.join(", ") + (deployed.length === 1 ? " is the deployed instance" : " are deployed instances") + "; every other row is simulated, with no contract deployed for it." :
+        "No current instance is listed.");
   }
 
   // "9 h 27 m 58 s" with the numbers in the numeric face and the units in the text face
@@ -883,10 +1001,10 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
   }
 
   function tickAges() {
-    if (!S.head) return;
-    var hero = DATA.assets[0], r = S.reads[hero.symbol];
-    var nowSec = Number(S.head.timestamp) + (Date.now() - S.fetchedAt) / 1000;
-    if (r && r.round) setAge($("feed-age"), nowSec - Number(r.round.updatedAt));
+    if (!S.hero) return;
+    var r = S.hero.read;
+    var nowSec = Number(S.hero.head.timestamp) + (Date.now() - S.hero.fetchedAt) / 1000;
+    if (r.round) setAge($("feed-age"), nowSec - Number(r.round.updatedAt));
     document.querySelectorAll("#stocks-body td[data-updated]").forEach(function (c) {
       c.textContent = dur(nowSec - Number(c.dataset.updated), false);
     });
@@ -938,42 +1056,56 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
   }
 
   // ---- the print tape ----
+  var MASK64 = (1n << 64n) - 1n;
+  // The feed's rounds over the last seven days, read at the panel's block. Rounds
+  // already on the tape are kept, so after the first read only the rounds newer
+  // than the tape's newest are read: usually none.
   async function readTape() {
-    var hero = DATA.assets[0], r = S.reads[hero.symbol];
-    if (!r || !r.round) return;
-    var blockHex = "0x" + S.head.number.toString(16);
-    var nowTs = S.head.timestamp, from = nowTs - 7n * 86400n;
-    var phase = r.round.roundId >> 64n, agg = r.round.roundId & ((1n << 64n) - 1n);
-    var rounds = [r.round];
-    var step = 60n;
-    for (var pass = 0; pass < 3 && agg > 1n; pass++) {
+    var h = S.hero, r = h.read, hero = DATA.assets[0];
+    if (!r.round) {
+      if (!S.rounds) $("tape-legend").textContent = "The feed returned no round to start its history from.";
+      return;
+    }
+    if (!S.rounds) $("tape-legend").textContent = "Reading the feed's history…";
+    var blockHex = "0x" + h.head.number.toString(16);
+    var nowTs = h.head.timestamp, from = nowTs - 7n * 86400n;
+    var phase = r.round.roundId >> 64n, agg = r.round.roundId & MASK64;
+    var known = new Map(), floor = 0n;
+    (S.rounds || []).forEach(function (d) { if (d.roundId >> 64n === phase) known.set(d.roundId, d); });
+    known.forEach(function (d, rid) { if ((rid & MASK64) > floor) floor = rid & MASK64; });
+    if (floor >= agg) floor = agg - 1n;
+    known.set(r.round.roundId, r.round);
+    var log = [], top = agg;
+    for (var pass = 0; pass < 3; pass++) {
       var calls = [];
-      for (var i = 1n; i <= step && agg - i >= 1n; i++) {
-        var id = (phase << 64n) | (agg - i);
+      for (var i = 1n; i <= 60n && top - i > floor && top - i >= 1n; i++) {
+        var id = (phase << 64n) | (top - i);
         calls.push(ethCall(hero.feed, SEL.getRoundData + pad(id), blockHex, "AAPL feed getRoundData(" + id + ")"));
       }
-      var res = await batch(calls);
+      if (!calls.length) break;
+      var res = await readAt(calls, log);
       var oldest = null;
-      res.forEach(function (x) { var d = x.result ? decodeRound(x.result) : null; if (d && d.updatedAt > 0n) { rounds.push(d); oldest = d.updatedAt; } });
-      agg -= step;
+      res.forEach(function (x) { var d = x.result ? decodeRound(x.result) : null; if (d && d.updatedAt > 0n) { known.set(d.roundId, d); oldest = d.updatedAt; } });
+      top -= 60n;
       if (oldest === null || oldest < from) break;
     }
+    var rounds = Array.from(known.values()).filter(function (d) { return d.updatedAt <= nowTs; });
     rounds.sort(function (a, b) { return a.updatedAt < b.updatedAt ? -1 : 1; });
     // keep the last print before the window: the first gap is measured from it, not from the window edge
     var firstIn = rounds.findIndex(function (d) { return d.updatedAt >= from; });
     S.rounds = firstIn < 0 ? rounds.slice(-1) : rounds.slice(Math.max(0, firstIn - 1));
-    S.roundsAt = Date.now();
+    S.tapeHead = h.head;
+    if (log.length) S.tapeLog = { head: h.head, log: log };
     drawTape();
-    renderRaw();
   }
 
   function drawTape() {
-    if (!S.rounds || !S.head) return;
+    if (!S.rounds || !S.tapeHead) return;
     var svg = $("tape");
     var W = Math.max(300, svg.clientWidth || 900), narrow = W < 560;
     var H = 124, padL = 0, padR = 10;
     svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-    var nowTs = Number(S.head.timestamp), from = nowTs - 7 * 86400;
+    var nowTs = Number(S.tapeHead.timestamp), from = nowTs - 7 * 86400;
     function x(t) { return padL + (W - padL - padR) * (t - from) / (nowTs - from); }
     var yChain = 30, yFeed = 78, kids = [];
     // day grid (UTC midnights)
@@ -1029,16 +1161,39 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
   }
 
   function renderRaw() {
-    var lines = rawLog.map(function (x, i) {
-      var c = x.call, r = x.r;
-      var head = "#" + (i + 1) + "  " + (c.label || c.method) + "\n    " + c.method + " " + JSON.stringify(c.params);
-      var body = r.result !== undefined ? (typeof r.result === "string" ? r.result : JSON.stringify({ number: r.result.number, timestamp: r.result.timestamp })) : "error: " + ((r.error && r.error.message) || "unknown");
-      return head + "\n    → " + body;
-    });
-    $("raw").textContent = lines.length ? "RPC " + DATA.rpc + ", " + lines.length + " calls in the last refresh\n\n" + lines.join("\n\n") : "No calls yet.";
+    var parts = [], n = 0;
+    if (S.hero) parts.push(["The panel, " + blockAt(S.hero.head), S.hero.log]);
+    if (S.table) parts.push(["The table, " + blockAt(S.table.head) + " (AAPL's row is the panel's read)", S.table.log]);
+    if (S.tapeLog) parts.push(["The tape's most recently read rounds, " + blockAt(S.tapeLog.head), S.tapeLog.log]);
+    var text = parts.map(function (p) {
+      return "-- " + p[0] + "\n\n" + p[1].map(function (x) {
+        var c = x.call, r = x.r;
+        var head = "#" + (++n) + "  " + (c.label || c.method) + "\n    " + c.method + " " + JSON.stringify(c.params);
+        var body = r.result !== undefined ? (typeof r.result === "string" ? r.result : JSON.stringify({ number: r.result.number, timestamp: r.result.timestamp })) : "error: " + ((r.error && r.error.message) || "unknown");
+        return head + "\n    → " + body;
+      }).join("\n\n");
+    }).join("\n\n");
+    var top = "RPC " + DATA.rpc + (n ? ", " + n + " calls behind the numbers shown, sent in batches of at most " + MAX_BATCH + "." : ": no read has succeeded yet.");
+    if (S.failure) top += "\nThe last read, at " + clock(S.failure.at) + ", failed and replaced nothing: " + S.failure.error.message + ".";
+    $("raw").textContent = n || S.failure ? top + (text ? "\n\n" + text : "") : "No calls yet.";
   }
 
   // ---- boot ----
+  // The deployed address comes from data.json, so it shows before any read.
+  function renderDeployNote() {
+    var hero = DATA.assets[0];
+    if (!hero.oracle) {
+      $("deploy-note").textContent = "No current AAPL instance is listed (a first deployment that modelled the feed per share is superseded; see DEPLOYMENTS.md). The AfterHours readout is the contract's decision rules, ported to this page with the same integer math, run on the feed and pool data your browser read at this block. Once an instance is listed, this panel reads the contract's own state() and checks it against this computation.";
+      $("verify-note").hidden = true;
+      return;
+    }
+    var a = document.createElement("a");
+    a.href = DATA.explorer + "/address/" + hero.oracle;
+    a.textContent = hero.oracle;
+    var m = document.createElement("span");
+    m.id = "deploy-match";
+    $("deploy-note").replaceChildren("AfterHours AAPL is deployed at ", a, ". ", m);
+  }
   async function boot() {
     try {
       var resp = await fetch("data.json", { cache: "no-store" });
@@ -1054,20 +1209,16 @@ footer { margin-top: 96px; border-top: 1px solid var(--graphite); }
       "Self-check passed: this page's port of the contract reproduces exact results of the contract's tests (33096497304 and 31482440784, 33096497304 again with a ten-minute spike to 7.4x ignored, four band and 10:1-split decisions, and the band's overflow edge)." :
       "Self-check FAILED: this page's math does not reproduce the contract's end-to-end prices. Do not trust the AfterHours readout.";
     if (!ok) $("selftest").className = "refuse";
-    await refresh();
-    setInterval(function () { if (!document.hidden) refresh(); }, 30000);
-    setInterval(function () { if (!document.hidden) tickAges(); }, 1000);
-    document.addEventListener("visibilitychange", function () { if (!document.hidden) refresh(); });
+    renderDeployNote();
+    setInterval(function () { if (!document.hidden) { tickAges(); tickCountdown(); } }, 1000);
+    // back on the page: read now only if a read fell due while it was hidden
+    document.addEventListener("visibilitychange", function () { if (!document.hidden && S.due) refresh(); });
     var ro = new ResizeObserver(function () {
-      if (!S.head) return;
-      var hero = DATA.assets[0], r = S.reads[hero.symbol], fd = S.feedDecimals[hero.symbol];
-      var q = evaluate(hero, r, fd, S.head.timestamp);
-      var shown = hero.oracle && r.state ? r.state : q;
-      var refusing = shown.session === "PAUSED" || shown.session === "NO_DATA";
-      drawGauge(r.round ? r.round.answer : null, r.obs[0] ? twapOf(r.obs[0], hero, fd) : null, refusing ? null : shown.answer, fd, gaugeBand(r, S.head.timestamp));
+      if (S.hero) drawHeroGauge(heroView());
       drawTape();
     });
     ro.observe($("tape"));
+    await refresh();
   }
   boot();
 })();

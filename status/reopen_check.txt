@@ -1,0 +1,34 @@
+$ python scripts/measure/reopen_check.py   # run 2026-09-30 on status/10min.md as committed alongside
+
+10min.md: 439 rows, Sat 09-26 23:00 to Wed 09-30 00:00 UTC, asset AAPL
+  199 rows in LIVE_FEED, 237 not, 3 without a read (probe or read failed); no missing 10-minute slot
+
+Closure 1: Sat 09-26 23:00 to Mon 09-28 00:00 UTC, 151 rows (the record starts inside it)
+  last print before     $341.4532  Chainlink, printed ~Fri 09-25 19:48 UTC
+  AfterHours last       $339.7844  ONCHAIN_TWAP at Mon 09-28 00:00 UTC
+  first new print       $340.4326  Chainlink, printed ~Mon 09-28 00:00 UTC (first LIVE_FEED row Mon 09-28 00:10 UTC)
+  error vs the new print: last print +0.300%, AfterHours -0.190% (AfterHours closer)
+  AfterHours answers    min $339.5466 (Sun 09-27 23:20), max $340.9756 (Sun 09-27 09:20); -0.558% to -0.140% of the last print
+  clamped rows 0, NO_DATA rows 0, PAUSED rows 0; rows without a read 1 (Sun 09-27 19:30 probe failed (IndexError))
+
+Closure 2: Mon 09-28 06:10 to Mon 09-28 13:30 UTC, 45 rows
+  last print before     $340.4326  Chainlink, printed ~Mon 09-28 00:00 UTC
+  AfterHours last       $340.6008  ONCHAIN_TWAP at Mon 09-28 13:30 UTC
+  first new print       $342.4287  Chainlink, printed ~Mon 09-28 13:40 UTC (first LIVE_FEED row Mon 09-28 13:40 UTC)
+  error vs the new print: last print -0.583%, AfterHours -0.534% (AfterHours closer)
+  AfterHours answers    min $340.0223 (Mon 09-28 11:30), max $340.8734 (Mon 09-28 08:20); -0.121% to +0.129% of the last print
+  clamped rows 0, NO_DATA rows 0, PAUSED rows 0; rows without a read 0
+
+Closure 3: Tue 09-29 01:20 to Tue 09-29 08:10 UTC, 42 rows
+  last print before     $338.9518  Chainlink, printed ~Mon 09-28 19:10 UTC
+  AfterHours last       $337.9208  ONCHAIN_TWAP at Tue 09-29 08:10 UTC
+  first new print       $337.2158  Chainlink, printed ~Tue 09-29 08:14 UTC (first LIVE_FEED row Tue 09-29 08:20 UTC)
+  error vs the new print: last print +0.515%, AfterHours +0.209% (AfterHours closer)
+  AfterHours answers    min $337.5493 (Tue 09-29 05:50), max $338.2927 (Tue 09-29 01:20); -0.414% to -0.194% of the last print
+  clamped rows 0, NO_DATA rows 0, PAUSED rows 0; rows without a read 0
+
+Summary (error = (price - first new print) / first new print)
+  #   last print at      last print AfterHours  new print new print at        err last    err AH
+  1   Fri 09-25 19:48      341.4532   339.7844   340.4326 Mon 09-28 00:00      +0.300%   -0.190%
+  2   Mon 09-28 00:00      340.4326   340.6008   342.4287 Mon 09-28 13:40      -0.583%   -0.534%
+  3   Mon 09-28 19:10      338.9518   337.9208   337.2158 Tue 09-29 08:14      +0.515%   +0.209%

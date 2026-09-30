@@ -23,10 +23,6 @@
         [
           "Every weekend the Apple feed goes silent for fifty-two to fifty-seven hours; seventy-six on a holiday weekend.",
           "주말마다 애플 피드가 52~57시간 멈춥니다. 연휴가 끼면 76시간."
-        ],
-        [
-          "On weeknights it can hold back a move of almost one percent until the open.",
-          "평일 밤에도 1% 가까운 움직임을 개장 때까지 찍지 않기도 합니다."
         ]
       ]
     },
@@ -39,10 +35,6 @@
         [
           "Four to five million dollars of Apple alone, every weekend, in tens of thousands of swaps, at prices that move.",
           "애플 하나만 주말마다 400~500만 달러, 수만 건의 스왑, 그리고 가격은 움직입니다."
-        ],
-        [
-          "The contracts that lend against it either ignore that price or read it raw.",
-          "이 토큰으로 대출하는 컨트랙트들은 그 가격을 무시하거나, 날것 그대로 읽습니다."
         ]
       ]
     },
@@ -59,10 +51,6 @@
         [
           "Their oracles keep Friday's price all weekend, or read a raw pool price with no bound.",
           "그 오라클들은 금요일 가격을 주말 내내 쓰거나, 풀 가격을 한도 없이 그대로 읽습니다."
-        ],
-        [
-          "Another protocol here already trusts a pool's thirty-minute average; nobody prices the stock from its pool with a bound.",
-          "이 체인의 다른 프로토콜은 이미 풀의 30분 평균을 한쪽 가격에 믿고 씁니다. 한도를 걸고 주식 가격을 풀에서 읽는 곳은 없습니다."
         ]
       ]
     },
@@ -81,16 +69,12 @@
           "피드가 조용하면, 고정된 주 거래 풀 하나의 가격. 10분 평균 세 개 중 가운데 값을 씁니다."
         ],
         [
-          "Refused if the pool is thin; held within one percent of the last print while the exchange is open, ten at every other hour.",
-          "풀이 얕으면 거부하고, 정규장이 열려 있는 동안은 마지막 프린트의 1% 안, 그 밖의 시간엔 10% 안으로 묶습니다."
+          "Refused if the pool is thin, and held within one percent of Chainlink's last price while the exchange is open, ten percent at other hours.",
+          "풀이 얕으면 거부하고, 정규장이 열려 있는 동안은 체인링크 마지막 가격의 1% 안, 그 밖의 시간엔 10% 안으로 묶습니다."
         ],
         [
           "Corporate actions: refuse while the issuer pauses; the feed already prices the token, splits included.",
           "배당·분할 처리로 발행사가 멈추면 거부합니다. 분할은 피드가 이미 토큰 가격에 반영합니다."
-        ],
-        [
-          "A print older than five days: refuse; the feed is gone, not closed.",
-          "마지막 프린트가 5일을 넘으면 거부. 피드가 닫힌 게 아니라 죽은 겁니다."
         ],
         [
           "Same interface as Chainlink, plus Morpho's.",
@@ -101,36 +85,48 @@
     {
       "lines": [
         [
-          "This is the live page, reading Robinhood Chain mainnet.",
-          "로빈후드 체인 메인넷을 읽고 있는 라이브 페이지입니다."
+          "AfterHours is live on Robinhood Chain mainnet, as the oracle of a Morpho lending market.",
+          "AfterHours는 로빈후드 체인 메인넷에서 실제로 돌고 있고, Morpho 대출 시장의 오라클로 연결돼 있습니다."
         ],
         [
-          "Chainlink's last print is hours old.",
-          "체인링크의 마지막 프린트는 몇 시간 전 것입니다."
+          "A server read it every ten minutes through the weekend.",
+          "서버가 주말 내내 10분마다 이 오라클을 읽었습니다."
         ],
         [
-          "The contract's rules answer from the pool, inside the band, and say which mode they are in.",
-          "컨트랙트의 규칙이 풀 가격으로 답하고, 밴드 안이며, 지금 어떤 모드인지도 알려줍니다."
+          "Chainlink stayed on Friday's price the whole time.",
+          "그동안 체인링크는 금요일 가격에 그대로 머물렀습니다."
+        ],
+        [
+          "AfterHours kept answering from the pool, close to that price and well inside its ten percent limit.",
+          "AfterHours는 풀 가격으로 계속 답했고, 그 값은 금요일 가격 가까이, 10% 한도 한참 안쪽이었습니다."
+        ],
+        [
+          "On Monday, Chainlink came back with a new price.",
+          "월요일, 체인링크가 새 가격을 내며 돌아왔습니다."
+        ],
+        [
+          "AfterHours' last weekend answer was zero point one nine percent below it; Friday's price was zero point three percent above.",
+          "AfterHours의 주말 마지막 답은 그보다 0.19% 낮았고, 금요일 가격은 0.3% 높았습니다."
         ]
       ]
     },
     {
       "lines": [
         [
-          "It is a Rust contract on Arbitrum Stylus, with no owner and no upgrade.",
-          "아비트럼 Stylus 위의 러스트 컨트랙트, 소유자 없음, 업그레이드 없음."
+          "AfterHours is a Rust contract on Arbitrum Stylus, with no owner and no upgrade.",
+          "AfterHours는 아비트럼 Stylus 위의 러스트 컨트랙트입니다. 소유자도, 업그레이드도 없습니다."
         ],
         [
           "Seventy-three unit and property tests, and ninety assertions against the real wasm on a local Arbitrum node.",
           "단위·속성 테스트 73개, 실제 아비트럼 노드 위 wasm 검증 90항목."
         ],
         [
-          "Tick math is checked against eighty-digit reference values, and twelve review rounds by separate AI agents are folded in.",
-          "틱 수학은 80자리 기준값으로 검증했고, 별도 AI 에이전트 검수 12회를 반영했습니다."
+          "Tick math is checked against eighty-digit reference values, and eleven reviews by separate AI agents are folded in.",
+          "틱 수학은 80자리 기준값으로 검증했고, 별도 AI 에이전트의 검수 11회를 반영했습니다."
         ],
         [
-          "Fourteen stocks meet our bar for depth today, and eighteen pass the contract's checks.",
-          "오늘 기준 깊이 조건을 채운 종목 14개, 컨트랙트 검사를 통과하는 종목 18개."
+          "Fourteen stocks meet our depth bar today.",
+          "지금 깊이 기준을 채우는 종목은 14개입니다."
         ],
         [
           "Every number in the docs comes from a script you can run.",

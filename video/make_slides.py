@@ -4,11 +4,11 @@
 Design direction: Refero Styles "Linear — midnight precision instrument"
 — void canvas #08090a, paper type,
 hairline borders, one acid-lime accent used sparingly, mono for numbers.
-Every number on the slides comes from scripts/measure/ or the CI log.
+Every number on the slides comes from scripts/measure/, the CI log or the
+server's 10-minute record of the deployed instance (status/10min.md).
 
     python video/make_slides.py            # writes video/out/slide-N.html + .png
     python video/make_slides.py --html     # html only (no Edge)
-    python video/make_slides.py --capture-page http://localhost:8745/   # + a capture of the live page for slide 6
 """
 import io
 import os
@@ -17,12 +17,15 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
+RECORD = HERE.parent / "status" / "10min.md"
+REOPEN = HERE.parent / "status" / "reopen_check.txt"
 
 CSS = """
 :root {
@@ -68,8 +71,10 @@ pre.code .c { color:var(--fog); } pre.code .k { color:var(--lime); } pre.code .s
 .term { margin-top:36px; margin-bottom:32px; background:#000; border:0.5px solid var(--smoke); border-radius:12px; padding:32px 40px;
   font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; font-size:25px; line-height:1.5; color:var(--mist); white-space:pre; overflow:hidden; flex:1; }
 .term .stale { color:var(--coral); } .term .live { color:var(--lime); } .term .dim { color:var(--ash); }
-.shot { margin-top:32px; border:0.5px solid var(--smoke); border-radius:12px; overflow:hidden; flex:1; min-height:0; }
-.shot img { display:block; width:100%; height:100%; object-fit:cover; object-position:50% 100%; }
+.chart { margin-top:24px; display:block; flex-shrink:0; }
+.probe { margin-top:14px; background:#000; border:0.5px solid var(--smoke); border-radius:12px; padding:14px 32px; flex-shrink:0;
+  font-family:"JetBrains Mono","Cascadia Mono","Consolas",ui-monospace,monospace; font-size:18px; line-height:1.4; color:var(--mist); white-space:pre; overflow:hidden; }
+.probe .stale { color:var(--coral); } .probe .live { color:var(--lime); } .probe .dim { color:var(--ash); }
 .pill { display:inline-block; border:0.5px solid var(--smoke); border-radius:9999px; padding:8px 18px; font-size:22px; color:var(--mist); margin-right:12px; margin-top:20px; }
 .pill.on { border-color:var(--lime); color:var(--lime); }
 .cols { display:grid; grid-template-columns:1fr 1fr 1fr; gap:48px; margin-top:56px; }
@@ -96,65 +101,149 @@ def demo_terminal(txt):
             esc = f'<span class="stale">{esc}</span>'
         elif "AfterHours:" in esc:
             esc = f'<span class="live">{esc}</span>'
-        elif esc.startswith("[") or "placeholder" in esc:
+        elif esc.startswith("["):
             esc = f'<span class="dim">{esc}</span>'
         out.append(esc)
     return "\n".join(out)
 
 
+def load_record():
+    """Rows of status/10min.md: the server's 10-minute reads of the deployed instance."""
+    rows = []
+    for line in io.open(RECORD, encoding="utf-8"):
+        if not line.startswith("| 20"):
+            continue
+        f = [c.strip() for c in line.strip().strip("|").split("|")] + [""] * 8
+        num = lambda v: float(v) if v else None  # noqa: E731
+        rows.append({"t": datetime.strptime(f[0], "%Y-%m-%d %H:%M").replace(tzinfo=timezone.utc),
+                     "session": f[2], "answer": num(f[3]), "feed": num(f[4])})
+    return rows
+
+
+def weekend(rows):
+    """The record's first closure, as scripts/measure/reopen_check.py defines it
+    (every row before the first LIVE_FEED row), and the figures it prints for it.
+    Each figure is looked up in status/reopen_check.txt, so the slide cannot
+    drift from the script's output."""
+    k = next(i for i, r in enumerate(rows) if r["session"] == "LIVE_FEED")
+    closure, nxt = rows[:k], rows[k]
+    twap = [r for r in closure if r["session"].startswith("ONCHAIN_TWAP")]
+    pct = lambda a, b: (a - b) / b * 100  # noqa: E731
+    fig = {"friday": [r for r in closure if r["feed"] is not None][-1]["feed"],
+           "last": twap[-1]["answer"], "monday": nxt["feed"], "rows": len(closure),
+           "lo": min(r["answer"] for r in twap), "hi": max(r["answer"] for r in twap),
+           "failed": sum(r["session"].startswith(("probe failed", "read failed")) for r in closure),
+           "clamped": sum("clamped" in r["session"] for r in closure),
+           "refused": sum(r["session"].startswith(("NO_DATA", "PAUSED")) for r in closure)}
+    fig["e_fri"] = pct(fig["friday"], fig["monday"])
+    fig["e_ah"] = pct(fig["last"], fig["monday"])
+    fig["lo_pct"] = pct(fig["lo"], fig["friday"])
+    fig["hi_pct"] = pct(fig["hi"], fig["friday"])
+    said = io.open(REOPEN, encoding="utf-8").read()
+    for key, fmt in (("friday", "$%.4f"), ("last", "$%.4f"), ("monday", "$%.4f"), ("lo", "$%.4f"),
+                     ("hi", "$%.4f"), ("e_fri", "%+.3f%%"), ("e_ah", "%+.3f%%"),
+                     ("lo_pct", "%+.3f%%"), ("hi_pct", "%+.3f%%")):
+        assert fmt % fig[key] in said, "%s %s is not in %s" % (key, fmt % fig[key], REOPEN.name)
+    assert "Closure 1: Sat 09-26 23:00 to Mon 09-28 00:00 UTC, %d rows" % fig["rows"] in said
+    for gap in ("last print -0.583%, AfterHours -0.534%", "last print +0.515%, AfterHours +0.209%"):
+        assert gap in said, gap
+    return closure, nxt, fig
+
+
+def record_svg(rows, closure, nxt, fig):
+    """The weekend as recorded: Chainlink's last print (coral) against AfterHours'
+    answers (lime), to the feed's first print on Monday (white dot). Direct labels
+    in the right margin carry the numbers; label text stays in text colours."""
+    W, H, L, R, T, B = 1664, 290, 104, 440, 44, 40
+    t0, t1 = closure[0]["t"], nxt["t"] + timedelta(minutes=30)
+    y0, y1 = 339.3, 341.7
+    span = (t1 - t0).total_seconds()
+    X = lambda t: L + (t - t0).total_seconds() / span * (W - L - R)  # noqa: E731
+    Y = lambda v: T + (y1 - v) / (y1 - y0) * (H - T - B)  # noqa: E731
+    shown = [r for r in rows if t0 <= r["t"] <= t1]
+    g = []
+    for v in (339.5, 340.0, 340.5, 341.0, 341.5):
+        g.append(f'<line x1="{L}" x2="{W - R}" y1="{Y(v):.1f}" y2="{Y(v):.1f}" stroke="#23252a" stroke-width="1"/>'
+                 f'<text x="{L - 16}" y="{Y(v) + 6:.1f}" text-anchor="end" class="ax">${v:.2f}</text>')
+    for t, lab, anchor in ((t0, "Sat 23:00 UTC", "start"),
+                           (datetime(2026, 9, 27, 6, tzinfo=timezone.utc), "Sun 06:00", "middle"),
+                           (datetime(2026, 9, 27, 12, tzinfo=timezone.utc), "Sun 12:00", "middle"),
+                           (datetime(2026, 9, 28, tzinfo=timezone.utc), "Mon 00:00", "end")):
+        g.append(f'<text x="{X(t):.1f}" y="{H - 6}" text-anchor="{anchor}" class="ax">{lab}</text>')
+    # Chainlink: the print the feed holds, as a step line
+    pts = [r for r in shown if r["feed"] is not None]
+    d = f"M{X(pts[0]['t']):.1f},{Y(pts[0]['feed']):.1f}"
+    for r in pts[1:]:
+        d += f" H{X(r['t']):.1f} V{Y(r['feed']):.1f}"
+    d += f" H{X(t1):.1f}"
+    g.append(f'<path d="{d}" fill="none" stroke="#eb5757" stroke-width="2.5"/>')
+    # AfterHours in ONCHAIN_TWAP; a row the recorder failed to read breaks the line
+    d, pen = "", False
+    for r in closure:
+        if r["session"].startswith("ONCHAIN_TWAP"):
+            d += ("L" if pen else "M") + f"{X(r['t']):.1f},{Y(r['answer']):.1f} "
+            pen = True
+        else:
+            pen = False
+    g.append(f'<path d="{d.strip()}" fill="none" stroke="#e4f222" stroke-width="2.5" stroke-linejoin="round"/>')
+    # the feed's first print after the weekend, as the record first saw it
+    xm = X(nxt["t"])
+    g.append(f'<line x1="{xm:.1f}" x2="{xm:.1f}" y1="{T - 8}" y2="{H - B}" stroke="#62666d" stroke-width="1" stroke-dasharray="4 5"/>')
+    last_t = closure[-1]["t"]
+    for x, y, c in ((X(last_t), Y(fig["friday"]), "#eb5757"), (X(last_t), Y(fig["last"]), "#e4f222"),
+                    (xm, Y(fig["monday"]), "#ffffff")):
+        g.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="7" fill="{c}" stroke="#08090a" stroke-width="2"/>')
+    # legend, top left
+    g.append(f'<rect x="{L}" y="4" width="28" height="4" rx="2" fill="#eb5757"/>'
+             f'<text x="{L + 38}" y="13" class="lg">Chainlink AAPL/USD, last price</text>'
+             f'<rect x="{L + 420}" y="4" width="28" height="4" rx="2" fill="#e4f222"/>'
+             f'<text x="{L + 458}" y="13" class="lg">AfterHours answer, from the pool</text>')
+    # direct labels, right margin
+    lx = W - R + 40
+    # the last two labels sit about 55 px apart, so each is nudged away from the other
+    for v, nudge, name, val, c in ((fig["friday"], 0, "Chainlink, Friday's price", "$%.4f  %+.3f%%" % (fig["friday"], fig["e_fri"]), "#eb5757"),
+                                   (fig["monday"], -8, "Chainlink, back on Monday", "$%.4f" % fig["monday"], "#ffffff"),
+                                   (fig["last"], 10, "AfterHours, last weekend answer", "$%.4f  %+.3f%%" % (fig["last"], fig["e_ah"]), "#e4f222")):
+        y = Y(v) + nudge
+        g.append(f'<rect x="{lx - 22}" y="{y - 22:.1f}" width="6" height="46" rx="3" fill="{c}"/>'
+                 f'<text x="{lx}" y="{y - 4:.1f}" class="ln">{name}</text>'
+                 f'<text x="{lx}" y="{y + 24:.1f}" class="lv">{val}</text>')
+    g.append(f'<text x="{lx - 22}" y="13" class="lg">vs Chainlink\'s new price on Monday</text>')
+    style = ('<style>.ax{font:18px "JetBrains Mono","Cascadia Mono",Consolas,monospace;fill:#8a8f98}'
+             '.lg{font:19px "Inter","Segoe UI",sans-serif;fill:#d0d6e0}'
+             '.ln{font:19px "Inter","Segoe UI",sans-serif;fill:#8a8f98}'
+             '.lv{font:500 25px "JetBrains Mono","Cascadia Mono",Consolas,monospace;fill:#ffffff}</style>')
+    return f'<svg class="chart" width="{W}" height="{H}" viewBox="0 0 {W} {H}">{style}{"".join(g)}</svg>'
+
+
 def demo_slide():
-    """Slide 6 shows only real reads. With a deployed instance: scripts/probe.py's
-    output saved to video/probe.txt. Before that: a capture of the live page,
-    which runs the contract's rules on mainnet data in the browser (made with
-    --capture-page). With neither, the slide says so and shows no numbers."""
+    """Slide 6 shows only real reads: the weekend from the server's 10-minute
+    record of the deployed instance, and one scripts/probe.py read saved to
+    video/probe.txt. Without probe.txt the strip says the read is pending."""
+    rows = load_record()
+    closure, nxt, fig = weekend(rows)
     probe = HERE / "probe.txt"
-    shot = OUT / "page-capture.png"
-    when = OUT / "page-capture.txt"
     if probe.exists():
-        txt = io.open(probe, encoding="utf-8").read().rstrip()
-        return f"""<div class="kicker">Robinhood Chain mainnet · <b>scripts/probe.py</b> against the deployed instance · the feed asleep, the oracle awake</div>
-<h2>The print is hours old. AfterHours answers.</h2>
-<div class="term">{demo_terminal(txt)}</div>"""
-    if shot.exists() and when.exists():
-        at = io.open(when, encoding="utf-8").read().strip()
-        return f"""<div class="kicker">Robinhood Chain mainnet, {at} · <b>the live page</b> · the contract's rules run in the browser; not deployed yet</div>
-<h2>The print is hours old. The pool answers.</h2>
-<div class="shot"><img src="page-capture.png" alt="The live page at {at}"></div>"""
-    return """<div class="kicker">Robinhood Chain mainnet · capture pending</div>
-<h2>The live capture goes here.</h2>
-<div class="note">Run <b>python video/make_slides.py --capture-page http://localhost:8745/</b> with the page served, or save scripts/probe.py output to video/probe.txt after deployment.</div>
+        txt = io.open(probe, encoding="utf-8").read().rstrip().splitlines()
+        k = next(i for i, line in enumerate(txt) if line.startswith("["))
+        strip = demo_terminal("\n".join(txt[k:]))
+    else:
+        strip = ('<span class="dim">read pending: python scripts/probe.py --oracle '
+                 '0x88b628472e595725178cc3e5e2ec70ada67f80f0 &gt; video/probe.txt</span>')
+    return f"""<div class="kicker">Robinhood Chain mainnet · AfterHours 0x88b6…80f0, the oracle of a Morpho AAPL/USDG market · read every 10 minutes from a server · <b>status/10min.md</b> · <b>reopen_check.py</b></div>
+<h2>A real weekend, up to Monday's reopening.</h2>
+{record_svg(rows, closure, nxt, fig)}
+<div class="note" style="margin-top:12px;font-size:22px">{fig['rows']} weekend rows · answers ${fig['lo']:.4f} to ${fig['hi']:.4f} ({fig['lo_pct']:+.3f}% to {fig['hi_pct']:+.3f}% of Friday's price) · {fig['clamped']} clamped · {fig['refused']} refused · {fig['failed']} read lost on the recorder's side.<br><b>Two weekday gaps after it, vs Chainlink's next price: its last price -0.583% and +0.515%, AfterHours -0.534% and +0.209%.</b></div>
+<div class="kicker" style="margin-top:18px">The same instance today · <b>python scripts/probe.py --oracle 0x88b6…80f0</b></div>
+<div class="probe">{strip}</div>
 <div class="grow"></div>"""
-
-
-def capture_page(url):
-    """Screenshot the live page for slide 6. The page reads Robinhood Chain from
-    the browser, so Edge gets a virtual-time budget to finish its reads."""
-    OUT.mkdir(parents=True, exist_ok=True)
-    png = OUT / "page-capture.png"
-    if png.exists():
-        png.unlink()
-    profile = tempfile.mkdtemp(prefix="afterhours-edge-")
-    cmd = [EDGE, "--headless=new", "--disable-gpu", "--hide-scrollbars", "--no-first-run", "--no-default-browser-check",
-           "--user-data-dir=" + profile, "--window-size=1600,1000", "--virtual-time-budget=30000",
-           "--screenshot=" + str(png), url]
-    subprocess.run(cmd, capture_output=True, timeout=180)
-    for _ in range(80):
-        if png.exists() and png.stat().st_size >= 10_000:
-            break
-        time.sleep(0.25)
-    shutil.rmtree(profile, ignore_errors=True)
-    if not png.exists() or png.stat().st_size < 10_000:
-        sys.exit("page capture failed (%s)" % png)
-    at = time.strftime("%a %d %b %Y %H:%M UTC", time.gmtime())
-    io.open(OUT / "page-capture.txt", "w", encoding="utf-8").write(at + "\n")
-    print("page capture %s  %d bytes  %s" % (png, png.stat().st_size, at))
 
 
 def slides():
     S = []
     S.append("""<div class="kicker">Robinhood Chain · Arbitrum Stylus · <b>Rust</b></div>
 <h1>AfterHours</h1>
-<div class="sub">A 24/7 price for tokenized stocks.<br>Chainlink while the market is open — the on-chain pool, bounded, while it is closed.</div>
+<div class="sub">A 24/7 price oracle for tokenized stocks.<br>Chainlink while the market is open; the on-chain pool, held near Chainlink's last price, while it is closed.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">Measured on mainnet · AAPL/USD feed rounds · <b>scripts/measure/feed_cadence.py</b></div>
@@ -183,12 +272,12 @@ def slides():
 <tr><td class="k">custom, reads the Chainlink feed</td><td class="num">16</td><td class="num">$852k</td><td>Friday's print</td></tr>
 <tr><td class="k">Morpho ChainlinkOracleV2</td><td class="num">52</td><td class="num">$27.1k</td><td>Friday's print, no staleness check</td></tr>
 <tr><td class="k">raw Uniswap pool price</td><td class="num">15</td><td class="num">$2.0k</td><td>the pool, no band</td></tr></table>
-<div class="note">Two small custom oracles allow a four-day-old print. Outside these markets PARE accepts a <b>five-day-old</b> one, and already trusts a 30-minute pool TWAP for its other leg.</div>
+<div class="note">Two small custom oracles allow a four-day-old print. Outside these markets, PARE accepts a <b>five-day-old</b> one.</div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">The product · one contract per asset · <b>drop-in</b> for a Chainlink address</div>
 <h2>AfterHours sits in front of the feed.</h2>
-<div class="boxes">
+<div class="boxes" style="margin-top:36px">
   <div class="stack">
     <div class="box"><div class="t">Chainlink feed</div>24/5 · last print per token</div>
     <div class="box"><div class="t">Uniswap v3 pool</div>fixed venue · 24/7 TWAP</div>
@@ -204,7 +293,7 @@ def slides():
 </div>
 <div class="rules">
   <div><b>Fresh feed</b> → pass it through, verbatim.</div>
-  <div><b>Quiet feed</b> → median 10-min pool price, <span class="m">±1% first day, ±10% after</span>.</div>
+  <div><b>Quiet feed</b> → pool median, <span class="m">±1% / ±10%</span> of Chainlink's last price.</div>
   <div><b>Thin pool</b> (3-window median) → refuse, never switch venue.</div>
   <div><b>Paused, or print &gt;5 days</b> → refuse.</div>
 </div>
@@ -212,14 +301,14 @@ def slides():
 
     S.append(demo_slide())
 
-    S.append("""<div class="kicker">Contract quality · <b>github.com/bongbongcrypto/afterhours</b></div>
-<h2>Rust on Arbitrum Stylus. No owner, no upgrade, every number traceable.</h2>
+    S.append("""<div class="kicker">Contract quality · Rust on Arbitrum Stylus · live on Robinhood Chain mainnet since 2026-09-26 · <b>github.com/bongbongcrypto/afterhours</b></div>
+<h2>No owner, no upgrade, every number traceable.</h2>
 <div class="cols">
   <div class="col"><div class="t">73 tests + 90 on-chain assertions</div><p>Unit and property tests with exact calldata mocks; the real wasm deployed on a local Arbitrum node (ArbOS 61), every session, both bands, a one-window spike, the venue rule and a 10:1 split priced continuously, gas per read measured.</p></div>
   <div class="col"><div class="t">Tick math vs 80-digit references</div><p>1.0001^tick in Q96 with 512-bit intermediates, checked against independently computed vectors — no magic constants.</p></div>
-  <div class="col"><div class="t">Twelve review rounds folded in</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, units that match Chainlink's per-token feed through dividends and splits. 14 stocks meet the bar today; 18 pass initialize.</p></div>
+  <div class="col"><div class="t">11 reviews + 1 self-review</div><p>Anchor-age cap, a fixed venue an attacker cannot redirect, price and liquidity judged over three sub-windows, a narrow band only while the exchange is open, units that match Chainlink's per-token feed through dividends and splits. 14 stocks meet the bar today; 18 pass initialize.</p></div>
 </div>
-<div><span class="pill on">cargo stylus check ✓ about 38 KB</span><span class="pill">clippy −D warnings ✓</span><span class="pill">AggregatorV3 + Morpho IOracle</span><span class="pill">USDG quote</span></div>
+<div><span class="pill on">live on mainnet · 0x88b6…80f0 · oracle of a Morpho AAPL/USDG market</span><span class="pill">gas per read on mainnet: 118,426 (feed) · 214,652–240,559 (pool)</span><span class="pill">cargo stylus check ✓ 38 KB</span></div>
 <div class="grow"></div>""")
 
     S.append("""<div class="kicker">What it unlocks</div>
@@ -269,6 +358,4 @@ def render(html_only):
 
 
 if __name__ == "__main__":
-    if "--capture-page" in sys.argv:
-        capture_page(sys.argv[sys.argv.index("--capture-page") + 1])
     render(html_only="--html" in sys.argv)

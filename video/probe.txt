@@ -1,0 +1,8 @@
+AfterHours 0x88b628472e595725178cc3e5e2ec70ada67f80f0  initialized=True  feed=0x6b22a786baa607d76728168703a39ea9c99f2cd0  primary pool=0xaae0d815ee56e4092a5e5c2911e676fea50b2d6d
+  liveMaxAge=21600s twapWindow=1800s band=10.0% (1.0% in the regular session while the print is under 86400s old) minLiquidity=5e+16 maxAnchorAge=432000s  decimals feed/stock/quote=8/18/6
+
+[Wed 09-30 01:36:31 UTC]
+  Chainlink : $330.2568  printed Tue 09-29 19:35:06 UTC  (6.0 h ago; the band at this age and hour is 10.0%)
+  primary pool: $330.1716 per token  (median of three 600 s averages, median liquidity 6.1e+17; computed off-chain)
+  AfterHours: ONCHAIN_TWAP  answer $330.1716  (twap $330.1716, inside band, median liquidity 6.1e+17, pool 0xaae0d815)
+  Morpho price(): 330171649140000000000000000  (= answer x 1e16)

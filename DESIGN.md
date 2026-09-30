@@ -47,7 +47,10 @@ AAPL/USDG Uniswap v3 pools inside each silent window (`weekend_swaps.py`):
 
 One stock. The pool price moved during the weekend (six-hour averages ran from
 +0.56% to -0.23% against the Monday open) and, on these quiet weekends,
-tracked the next real print to within ~0.6%.
+tracked the next real print to within ~0.6%. The deployed instance, read every
+10 minutes through the 09-26/27 weekend (`status/10min.md`,
+`reopen_check.py`): its last answer before Monday's first print ($340.4326)
+was $339.7844, -0.190%, where Friday's print ($341.4532) was +0.300%.
 
 **Lending against the tokens exists, and lives with the stale price.** Morpho
 Blue on this chain (`0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010`) had 275
@@ -425,6 +428,9 @@ on mainnet and testnet, and the average block time (`stylus_params.py`);
 pool observation cardinality per fee tier for every stock (`assets.json`;
 AAPL: 1,801 on the 0.05% primary, 1,500 on the standbys);
 the window harmonic-mean liquidity against spot (`pool_harmonic.py`); the
+deployed instance's answers every 10 minutes through a weekend and three
+reopenings of the feed, against the feed's next print (`status/10min.md`,
+`reopen_check.py`); the
 feed's `description()` (`Robinhood AAPL / USD`) and the stock's
 `oraclePaused()`; the absence of the StylusDeployer on mainnet
 (`stylus_params.py`).
@@ -503,34 +509,38 @@ re-activate it, and reads revert until someone does.
 | tick-math reference vectors | 1.0001^tick against 80-digit decimal arithmetic within the module's bound (1e-23 relative, one unit below tick 0), and AAPL's prices exactly | `src/tickmath.rs`, `scripts/measure/tick_vectors.py` |
 | `abi/IAfterHours.sol` against `cargo stylus export-abi` | the interface integrators are pointed at declares exactly the functions, return types and errors the contract exports | `scripts/abi_check.py`, `.github/workflows/ci.yml` |
 | `cargo stylus check` against Robinhood testnet | the wasm compiles, fits and activates on Stylus v3 / ArbOS 61 | `.github/workflows/ci.yml` |
-| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC; each `result.txt` says which band it asserted), a 10:1 split (the issuer's pause, the multiplier going to 10, the print continuous) with every answer and `price()` unchanged, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail (it also checks that `price()` is the answer times the scale, with AAPL's multiplier on the token so a multiplier applied again would fail it); 90 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
+| end-to-end on a local Nitro node (ArbOS 61, Stylus 3, the same as Robinhood Chain) | the real wasm deployed, activated and initialised; ABI dispatch, storage, external calls, every session, the venue rule, sub-window dips, a spike inside one sub-window and a move held through two, both bands (the narrow one on runs inside the regular session: a scheduled run every weekday, first asserted on chain on 2026-09-23 at 18:58 UTC, and on the deployed instance's contract source by the scheduled run of 2026-09-29 ([36620343814](https://github.com/bongbongcrypto/afterhours/actions/runs/36620343814), block time 19:37 UTC); each `result.txt` says which band it asserted), a 10:1 split (the issuer's pause, the multiplier going to 10, the print continuous) with every answer and `price()` unchanged, and every revert's exact data asserted through `cast`, and a Solidity contract reading the oracle the way Morpho does, and the deploy workflow's own steps (`scripts/deploy.sh`) run against a second instance, with a preflight that must refuse and a read-back that must fail (it also checks that `price()` is the answer times the scale, with AAPL's multiplier on the token so a multiplier applied again would fail it); 90 assertions | `.github/workflows/e2e.yml`, `e2e/run.sh`, `e2e/src/Mocks.sol` |
 | eleven independent review rounds, from round 4 against a fixed rubric; rounds 6 to 11 read a clean copy of the repository as it will be published, with no earlier scores; round 12 a self-review against Chainlink's documentation that corrected the unit model, then a review of that fix | every finding and its fix, with the commit | `REVIEWS.md` |
 
 Gas per read, both measured with `eth_estimateGas` (which includes the 21k
 transaction base). On the dev node (`cast estimate` in `e2e/run.sh`, two pools
 configured, the primary answering, Solidity test doubles): `latestRoundData()`
 107,540 in LIVE_FEED, 148,267 in ONCHAIN_TWAP; `price()` 109,632 / 150,349.
-On mainnet, the current AAPL instance (one pool) in ONCHAIN_TWAP, ten runs
-on 2026-09-26 from 22:59 to 23:17 UTC, blocks 73,459,093 to 73,469,992
-(`scripts/measure/mainnet_gas.py`, from the zero address): `latestRoundData()`
-214,652 to 240,559, `price()` 216,736 to 242,643. The real feed, pool and
-beacon-proxy token cost more per call than the doubles, and the pool's cost
-moves: Uniswap v3's `observe()` binary-searches the observation buffer (3,000
+On mainnet, the current AAPL instance (one pool), from the zero address
+(`scripts/measure/mainnet_gas.py`): in LIVE_FEED at block 76,073,475
+(2026-09-30 00:06 UTC), `latestRoundData()` 118,426 and `price()` 120,519,
+the same `price()` in all four runs from 00:04 to 00:06 UTC; in ONCHAIN_TWAP,
+ten runs on 2026-09-26 from 22:59 to 23:17 UTC, blocks 73,459,093 to
+73,469,992, `latestRoundData()` 214,652 to 240,559, `price()` 216,736 to
+242,643. The real feed, pool and beacon-proxy token cost more per call than
+the doubles, and the pool's cost moves: Uniswap v3's `observe()` binary-searches the observation buffer (3,000
 slots) for each requested time older than the pool's latest observation, so a
 read soon after a swap searches more than one after a quiet half hour. On an
 Arbitrum chain the estimate also includes an L1 data component, the gas that
 pays for posting the calldata to the parent chain; Arbitrum's NodeInterface
-(`gasEstimateComponents`) put it at 10 to 1,537 gas in these runs, as Robinhood
-Chain's L1 base fee estimate read 90,309 to 13,256,777 wei. The contract makes
-three external reads (pause flag, feed round, pool observe). The superseded
+(`gasEstimateComponents`) put it at 10 to 1,537 gas in the ONCHAIN_TWAP runs,
+as Robinhood Chain's L1 base fee estimate read 90,309 to 13,256,777 wei, and at
+0 in the LIVE_FEED runs. The contract makes three external reads in
+ONCHAIN_TWAP (pause flag, feed round, pool observe) and the first two in
+LIVE_FEED, where a fresh print reads no pool. The superseded
 first instance made five (it also read the token's multiplier and its
 effective time) and measured 257,152 / 259,404 at block 73,332,952 on
-2026-09-26 at 19:27 UTC. LIVE_FEED is measured on mainnet during a US trading
-session, while the feed is fresh, since the public RPC keeps recent state
-only. At these runs' base fees and Chainlink's ETH / USD print
-($2,690.47), a transaction that does nothing but read the oracle costs about
-$0.015 to $0.017, and a Morpho borrow or liquidation pays the read
-once. Latency
+2026-09-26 at 19:27 UTC. Each session is measured while the instance is in
+it, since the public RPC keeps recent state only. A transaction that does
+nothing but read the oracle costs about $0.0076 to $0.0080 in LIVE_FEED (base
+fee 0.0241 gwei, Chainlink's ETH / USD print $2,680.94) and about $0.015 to
+$0.017 in ONCHAIN_TWAP (at those runs' base fees and ETH / USD $2,690.47), and
+a Morpho borrow or liquidation pays the read once. Latency
 is not a network property here: in LIVE_FEED the answer is the feed's own
 round with no added delay; in ONCHAIN_TWAP the answer is by design the
 median of three 10-minute averages, so a genuine move starts to show after

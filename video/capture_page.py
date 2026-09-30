@@ -29,7 +29,7 @@ HERE = Path(__file__).resolve().parent
 CHROME = [r"C:\Program Files\Google\Chrome\Application\chrome.exe",
           r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"]
 PORT = 9341
-TARGETS = [None, "#band", "#stocks"]
+TARGETS = [None, "#gauge", "#stocks-h"]
 
 
 class Tab:

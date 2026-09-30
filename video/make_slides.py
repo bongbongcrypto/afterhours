@@ -89,8 +89,7 @@ FOOT = ("AfterHours — Arbitrum Open House Singapore 2026", "{n} / {total}")
 def slide(n, total, body):
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>AfterHours slide {n}</title>
 <style>{CSS}</style></head><body><div class="slide">{body}
-<div class="foot"><span>{FOOT[0]}</span><span class="n">{FOOT[1].format(n=n, total=total)}</span></div>
-</div></body></html>"""
+</div></body></html>"""  # no footer line: it sat right above the burned-in subtitles
 
 
 def demo_terminal(txt):
@@ -231,7 +230,7 @@ def demo_slide():
         strip = ('<span class="dim">read pending: python scripts/probe.py --oracle '
                  '0x88b628472e595725178cc3e5e2ec70ada67f80f0 &gt; video/probe.txt</span>')
     return f"""<div class="kicker">Robinhood Chain mainnet · AfterHours 0x88b6…80f0, the oracle of a Morpho AAPL/USDG market · read every 10 minutes from a server · <b>status/10min.md</b> · <b>reopen_check.py</b></div>
-<h2>A real weekend, up to Monday's reopening.</h2>
+<h2>Live on mainnet, pricing a Morpho market.<br>A real weekend, up to Monday's reopening.</h2>
 {record_svg(rows, closure, nxt, fig)}
 <div class="note" style="margin-top:12px;font-size:22px">{fig['rows']} weekend rows · answers ${fig['lo']:.4f} to ${fig['hi']:.4f} ({fig['lo_pct']:+.3f}% to {fig['hi_pct']:+.3f}% of Friday's price) · {fig['clamped']} clamped · {fig['refused']} refused · {fig['failed']} read lost on the recorder's side.<br><b>Two weekday gaps after it, vs Chainlink's next price: its last price -0.583% and +0.515%, AfterHours -0.534% and +0.209%.</b></div>
 <div class="kicker" style="margin-top:18px">The same instance today · <b>python scripts/probe.py --oracle 0x88b6…80f0</b></div>

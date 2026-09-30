@@ -1,34 +1,36 @@
 # Demo video
 
 The narration and its Korean gloss live in one place, `video/script.json`
-(8 slides, about 2:20). This file only describes how the video is made and
-what has to be true before the final cut.
+(8 slides, 30 lines, 2:40). This file only describes how the video is made and
+what has to stay true when it is cut again.
 
 ## Pipeline
 
 | step | tool | output |
 |---|---|---|
-| slides | `video/make_slides.py` (Refero "Linear" mood, headless Edge); `--capture-page <url>` screenshots the live page for slide 6 | `video/out/slide-*.png` |
-| narration | `video/make_narration.sh` (edge-tts `en-US-AndrewNeural`, run where edge-tts is installed) | `video/narration/SS-LL.mp3`, one per line |
+| slides | `video/make_slides.py` (Refero "Linear" mood, headless Edge). Slide 6 draws the weekend from `status/10min.md` and looks every figure up in `status/reopen_check.txt` before drawing it; its strip shows `video/probe.txt` | `video/out/slide-*.png` |
+| narration | `video/make_narration.sh` (edge-tts `en-US-AndrewNeural`, run where edge-tts is installed: `REMOTE=<ssh host> bash video/make_narration.sh`) | `video/narration/SS-LL.mp3`, one per line |
 | assembly | `video/make_video.py` (ffmpeg; English line and Korean gloss in one subtitle event) | `video/afterhours-demo.mp4` |
 
-## Before the final cut
+## Rules for any cut
 
-- Slide 6 only ever shows a real read. The final cut uses `scripts/probe.py --oracle
-  0x88b628472e595725178cc3e5e2ec70ada67f80f0` (the current instance, DEPLOYMENTS.md)
-  output saved to `video/probe.txt`, read while
-  the feed is silent and the oracle is in ONCHAIN_TWAP; the probe also checks that
-  `price()` is the answer times Morpho's scale. The first instance
-  (`0x69190621…0f65`, live since 2026-09-25 22:56 UTC and read every 10 minutes
-  until 2026-09-26 23:00 UTC in `status/10min-0x6919-superseded.md`) treated the feed as a price per
-  share and is superseded, so neither its probe output nor that record is for the
-  final cut. The live-page capture branch of `make_slides.py` was written for the
-  days before the deployment and its caption says so, so it is not for the final cut
-  either. With neither, the slide says the capture is pending and shows no numbers.
-- Slide 5's corporate-action line changed on 2026-09-27 (the unit correction), so its
-  narration clip (`narration/05-05.mp3`) and the assembled video are rendered again.
-- Slide 7's narration says the instance is deployed on Robinhood Chain mainnet.
-  `video/script.json` does not say it yet: the line and its audio are added before
-  the final cut.
+- Slide 6 shows only real reads of the current instance
+  `0x88b628472e595725178cc3e5e2ec70ada67f80f0` (DEPLOYMENTS.md): the server's
+  10-minute record of the 09-26/27 weekend up to Monday's first print, and one
+  `scripts/probe.py --oracle 0x88b628472e595725178cc3e5e2ec70ada67f80f0` read saved
+  to `video/probe.txt`, taken while the feed is past `liveMaxAge` and the oracle
+  answers in ONCHAIN_TWAP (the final cut: 2026-09-30 01:36:31 UTC, the feed 6.0 h
+  old, ONCHAIN_TWAP $330.1716 inside the band). Without `probe.txt` the strip says
+  the read is pending.
+  The first instance (`0x69190621…0f65`) treated the feed as a price per share and is
+  superseded; neither its probe output nor `status/10min-0x6919-superseded.md` is
+  shown.
+- The narration's weekend figures are the ones `reopen_check.py` printed, spoken
+  in words: AfterHours' last answer 0.19% below Monday's first print, Friday's
+  print 0.3% above it.
 - Every number on screen matches the current README, DESIGN and CI results
-  (tests, e2e assertions, gas, asset tiers).
+  (73 unit and property tests, 90 e2e assertions, mainnet gas, 14 stocks that meet
+  the bar and 18 that pass `initialize`, eleven independent review rounds and one
+  self-review).
+- A changed line gets the english-slop pass and a Korean gloss in `script.json`;
+  its narration clip and the assembled video are rendered again.

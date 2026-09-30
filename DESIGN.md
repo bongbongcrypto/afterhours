@@ -17,13 +17,14 @@ contracts rely on comes from Chainlink feeds that follow US market hours.
 
 **The feed stops every weekend.** AAPL/USD rounds (`feed_cadence.py`, which reads the
 last 60 rounds: the Labor Day row is from its 2026-09-19 run, the 09-18 row from
-2026-09-23; `weekend_swaps.py` reproduces both weekend windows):
+2026-09-23; `weekend_swaps.py` reproduces every weekend window):
 
 | period | feed silent | note |
 |---|---|---|
 | Fri 09-04 19:51 -> Tue 09-08 00:00 UTC | **76.2 h** | Labor Day weekend |
 | Fri 09-11 19:51 -> Mon 09-14 00:00 UTC | **52.2 h** | ordinary weekend |
 | Fri 09-18 15:11 -> Mon 09-21 00:00 UTC | **56.8 h** | ordinary weekend; Friday's last print came mid-session, the price then moved less than 0.5% before the close (re-measured 2026-09-23) |
+| Fri 09-25 19:49 -> Mon 09-28 00:00 UTC | **52.2 h** | ordinary weekend; the deployed instance's first (`weekend_swaps.py`, 2026-09-30) |
 | weekdays | 13-21 h between prints (longest: Mon 09-21 16:43 -> Tue 13:30 UTC, 20.8 h), with prints at 02:24, 03:55, 08:05, 10:32 UTC on other nights | not closed; outside the regular session the next print often lands at the open, for AAPL up to 0.84% from the last (`session_prints.py`, see "Two bands") |
 
 The feed's 24 h heartbeat is not honoured during the closure: the silence is
@@ -44,18 +45,34 @@ AAPL/USDG Uniswap v3 pools inside each silent window (`weekend_swaps.py`):
 |---|---|---|---|
 | Labor Day (76 h) | 44,338 | $5.14M | median 0.35%, p90 0.56%, max 1.67% |
 | 09-11 -> 09-14 (52 h) | 26,331 | $4.17M | median 0.45%, p90 0.59%, max 2.26% |
+| 09-18 -> 09-21 (57 h) | 5,324 | $2.03M | median 0.15%, p90 0.41%, max 2.63% |
+| 09-25 -> 09-28 (52 h) | 1,770 | $0.58M | median 0.08%, p90 0.25%, max 0.56% |
 
-One stock. The pool price moved during the weekend (six-hour averages ran from
+One stock, and its weekend flow fell through September, from $5.14M to
+$0.58M (the last two rows measured 2026-09-30); every weekend it still traded. The pool price moved during the weekend (six-hour averages ran from
 +0.56% to -0.23% against the Monday open) and, on these quiet weekends,
 tracked the next real print to within ~0.6%. The deployed instance, read every
 10 minutes through the 09-26/27 weekend (`status/10min.md`,
 `reopen_check.py`): its last answer before Monday's first print ($340.4326)
 was $339.7844, -0.190%, where Friday's print ($341.4532) was +0.300%.
 
-**Lending against the tokens exists, and lives with the stale price.** Morpho
+**Lending against the tokens exists, and lives with the stale price.** On
+2026-09-30 (`morpho_markets.py --borrows-since 2026-09-16`,
+`status/morpho-2026-09-30.txt`) Morpho Blue had 292 markets on this chain, 81
+of them funded against a Robinhood stock token: **$756k supplied, $732k
+borrowed**, a 97% utilization. The borrowing arrived within three days, most of
+it from one caller in three transactions: Sunday 09-27 04:57 UTC, $300k
+against NVDA, SPCX and AAPL while AAPL's feed had been silent since Friday;
+Monday 09-28 17:27 UTC, $300k against GOOGL, AAPL and SPCX; Tuesday 09-29,
+$50k against NVDA. Another caller borrowed $75k against NVDA in five smaller
+ones. $380k of the borrowing since 09-16 fell outside the US regular session.
+It sits in the four largest markets, whose oracles are the custom ones in the
+first row of the table below: on a weekend they answer Friday's print.
+
+A week earlier the same census found little borrowing. Morpho
 Blue on this chain (`0x9D53d5E3bd5E8d4Cbfa6DB1ca238AEA02E651010`) had 275
 markets on 2026-09-23. 83 of them hold supply against a Robinhood stock token
-as collateral: **$0.88M supplied, $6.4k borrowed**, a utilization under 1%
+as collateral: **$0.88M supplied, $6.4k borrowed**
 (`morpho_markets.py`, every CreateMarket event and each market's state). By
 oracle:
 
@@ -331,7 +348,7 @@ for ten minutes, well inside the depth floor and far cheaper than a refusal.
 | parameter | value | reason |
 |---|---|---|
 | `liveMaxAge` | 21,600 s (6 h) | On weekdays the feed can go 13-21 h without a print, mostly overnight. Six hours means the pool takes over ~6 h after Friday's last print and during long weekday gaps, held to the 1% band during the regular session and the 10% band at other hours, and the feed takes back over at its next print. Over 09-16 -> 09-23 the feed was older than 6 h for 60% of the week, half of it on weekdays (the live page computes this from the feed's rounds). |
-| `twapWindow` | 1,800 s (30 min) | Same window PARE trusts for its pool leg, judged in three 10-minute sub-windows. With ~1 swap every 7 s on the weekend, each sub-window averages ~85 fills. |
+| `twapWindow` | 1,800 s (30 min) | Same window PARE trusts for its pool leg, judged in three 10-minute sub-windows. Weekend flow in AAPL's three pools ranged from ~85 swaps per sub-window (09-11 weekend) to ~6 (09-25 weekend: 1,770 in 52.2 h, `weekend_swaps.py`). The average is time-weighted, so a quiet sub-window still has a price; what thin flow removes is arbitrage pulling a pushed price back, which is what the depth floor and the median of three sub-windows are for. |
 | `heartbeat` | 86,400 s (24 h) | The feed's own heartbeat (`feed_directory.py`). The longest weekday gap measured is 20.8 h; every weekend silence (52-76 h) passes it. Outside the regular session the quiet tier never applies. |
 | `quietBandBps` | 100 (1%) | Twice the feed's 0.5% deviation threshold, and only during the regular session, where the next print landed at most 0.69% (AAPL) and 0.56% (SPY) from the last (`session_prints.py`). |
 | `maxDeviationBps` | 1,000 (10%) | The band outside the regular session and once the heartbeat has passed: the single-stock LULD band for closed-session moves. Measured weekend gaps: AAPL 0.25%, SPY 0.68%, NVDA 1.12% (`feed_gap.py`). |
@@ -449,8 +466,9 @@ guaranteed); that LPs re-center their ranges when the stock moves, because
 the pool clears the 5e16 floor only from -10.9% to +8.3% of today's price
 and a move past that, held for ten minutes, refuses until they do (no weekend
 with a large move has been observed on this chain yet); that lending curators will adopt a 24/7 price at all (no market
-has run on AfterHours yet; borrowing against stock tokens on this chain is
-$6.4k today, so the demand is a bet, not a measurement).
+has run on AfterHours yet; borrowing against stock tokens on this chain went
+from $6.4k on 09-23 to $732k on 09-30, $300k of it on a Sunday, so the
+borrowing is measured and the bet is whether curators move it to a 24/7 price).
 
 Not handled in v1: a sequencer-uptime check. Chainlink's feed list for this
 chain has 58 feeds and none of them is an L2 sequencer-uptime feed
@@ -521,8 +539,9 @@ On mainnet, the current AAPL instance (one pool), from the zero address
 (2026-09-30 00:06 UTC), `latestRoundData()` 118,426 and `price()` 120,519,
 the same `price()` in all four runs from 00:04 to 00:06 UTC; in ONCHAIN_TWAP,
 ten runs on 2026-09-26 from 22:59 to 23:17 UTC, blocks 73,459,093 to
-73,469,992, `latestRoundData()` 214,652 to 240,559, `price()` 216,736 to
-242,643. The real feed, pool and beacon-proxy token cost more per call than
+73,469,992, and one on 2026-09-30 at 03:17 UTC, block 76,187,902
+(`status/gas-2026-09-30.txt`): `latestRoundData()` 214,652 to 247,505,
+`price()` 216,736 to 249,587. The real feed, pool and beacon-proxy token cost more per call than
 the doubles, and the pool's cost moves: Uniswap v3's `observe()` binary-searches the observation buffer (3,000
 slots) for each requested time older than the pool's latest observation, so a
 read soon after a swap searches more than one after a quiet half hour. On an
